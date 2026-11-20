@@ -324,19 +324,22 @@ def evaluate_candidates(
             if mc_calc is not None and hasattr(mc_calc, "estimate_equity") and len(hero_cards) == 2:
                 try:
                     equity = mc_calc.estimate_equity(hero_cards, [], time_budget_ms=40.0)
+                    call_equity = max(0.05, equity - 0.05)
+                    shove_call_equity = max(0.05, equity - 0.10)
+                    shove_fe = 0.28
                     if hasattr(mc_calc, "calculate_ev_bb"):
                         call_ev = mc_calc.calculate_ev_bb(
-                            equity, pot_bb, call_cost_bb=to_call_bb, fold_equity=0.0
+                            call_equity, pot_bb, call_cost_bb=to_call_bb, fold_equity=0.0
                         )
                         shove_ev = mc_calc.calculate_ev_bb(
-                            equity, pot_bb, call_cost_bb=effective_bb, fold_equity=0.35
+                            shove_call_equity, pot_bb, call_cost_bb=effective_bb, fold_equity=shove_fe
                         )
                     else:
                         call_ev = round(
-                            equity * (pot_bb + to_call_bb) - (1.0 - equity) * to_call_bb, 3
+                            call_equity * (pot_bb + to_call_bb) - (1.0 - call_equity) * to_call_bb, 3
                         )
                         shove_ev = round(
-                            0.35 * pot_bb + 0.65 * (equity * (pot_bb + effective_bb) - (1.0 - equity) * effective_bb),
+                            shove_fe * pot_bb + (1.0 - shove_fe) * (shove_call_equity * (pot_bb + effective_bb) - (1.0 - shove_call_equity) * effective_bb),
                             3,
                         )
                     candidate_evs["CALL"] = float(call_ev)
@@ -952,7 +955,7 @@ def processing_loop(
                         default=0,
                     )
                     if max_opp_bet > hero_bet:
-                        preview_actions = ["FOLD", "CALL", "ALL_IN"]
+                        preview_actions = ["FOLD", "CALL", "RAISE", "ALL_IN"]
                     else:
                         preview_actions = ["CHECK", "BET_30", "ALL_IN"]
 

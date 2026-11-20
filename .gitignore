@@ -7,12 +7,16 @@ __pycache__/
 
 # Large test video recordings (exceed GitHub 100MB file limit)
 nagrania testowe/
+*.mp4
 
 # Debug artifacts
 data/debug_frames/
 
 # Audit packages and temporary archives
 *.zip
+audit_pack*/
+raport/
+scratch/
 
 # Logs
 logs/

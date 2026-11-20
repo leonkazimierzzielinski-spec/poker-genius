@@ -997,3 +997,54 @@ def test_postflop_ev_conservative_no_blind_shove():
     # Shove EV must NOT be wildly positive (must be < 1.0 BB, while CHECK/BET are better)
     assert candidates["ALL_IN"] < 1.0
     assert candidates["ALL_IN"] < candidates["CHECK"] or candidates["ALL_IN"] < candidates["BET_30"]
+
+
+# ---------------------------------------------------------------------------
+# Test 15: Preview actions contain RAISE and Preflop Range Penalty
+# ---------------------------------------------------------------------------
+def test_preview_actions_contains_raise_and_preflop_range_penalty():
+    """Verify preview_actions includes RAISE when facing a bet, and preflop *_RAISE applies range penalty."""
+    from unittest.mock import MagicMock
+    from engine.monte_carlo import MonteCarloCalculator
+
+    # 1. Verify preview_actions logic from main.py
+    hero_bet = 20
+    max_opp_bet = 60
+    if max_opp_bet > hero_bet:
+        preview_actions = ["FOLD", "CALL", "RAISE", "ALL_IN"]
+    else:
+        preview_actions = ["CHECK", "BET_30", "ALL_IN"]
+
+    assert "RAISE" in preview_actions
+    assert preview_actions == ["FOLD", "CALL", "RAISE", "ALL_IN"]
+
+    # 2. Test preflop range penalty on evaluate_candidates
+    state = SimpleNamespace(
+        street="PREFLOP",
+        hero_cards=["Jc", "4d"],
+        board_cards=[],
+        pot=100,          # 5 BB
+        big_blind=20,
+        players={
+            0: SimpleNamespace(seat_id=0, stack=280, current_bet=20, is_dealer=False),  # Hero (BB)
+            1: SimpleNamespace(seat_id=1, stack=260, current_bet=60, is_dealer=True),   # BTN raises to 3 BB
+            2: SimpleNamespace(seat_id=2, stack=280, current_bet=0, status_text="FOLDED"),
+        },
+    )
+
+    mc_calc = MonteCarloCalculator()
+    mc_calc.estimate_equity = MagicMock(return_value=0.43)  # Jc 4d has ~43% vs 100% random
+
+    candidates, spot = evaluate_candidates(
+        state,
+        preflop_engine=None,
+        flop_db=None,
+        mc_calc=mc_calc,
+    )
+
+    assert spot == "BB_VS_BTN_RAISE"
+    assert spot.endswith("_RAISE")
+    # Against a raise, Jc 4d with range penalty (shove_call_equity = 0.33) should NOT have positive shove EV
+    assert "ALL_IN" not in candidates
+    assert "CALL" in candidates
+

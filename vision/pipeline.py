@@ -283,12 +283,10 @@ class VisionPipeline:
 
         # Slightly lower card threshold for resized/interpolated tables
         orig_card_thresh = getattr(self.card_recognizer, "threshold", 0.90)
-        is_scaled = False
-        if table_rect is not None and len(table_rect) >= 4:
-            is_scaled = (table_rect[2], table_rect[3]) != (CW, CH)
-        elif self.anchor_template is not None:
-            # check unclipped rect dimensions
-            is_scaled = (effective_rect[2], effective_rect[3]) != (CW, CH)
+        is_scaled = (
+            abs((self._last_anchor_scale or 1.0) - 1.0) > 0.02
+            or (table_rect is not None and len(table_rect) >= 4 and (table_rect[2], table_rect[3]) != (CW, CH))
+        )
 
         if is_scaled and hasattr(self.card_recognizer, "threshold"):
             self.card_recognizer.threshold = min(orig_card_thresh, 0.82)
@@ -298,9 +296,17 @@ class VisionPipeline:
             for slot in hero_slots + board_slots:
                 slot_roi = rois[slot]
                 if hasattr(self.card_recognizer, "recognize_candidates"):
-                    cands = self.card_recognizer.recognize_candidates(slot_roi, top_k=3)
+                    try:
+                        cands = self.card_recognizer.recognize_candidates(
+                            slot_roi, top_k=3, slot_hint=slot
+                        )
+                    except TypeError:
+                        cands = self.card_recognizer.recognize_candidates(slot_roi, top_k=3)
                 else:
-                    c, s = self.card_recognizer.recognize(slot_roi)
+                    try:
+                        c, s = self.card_recognizer.recognize(slot_roi, slot_hint=slot)
+                    except TypeError:
+                        c, s = self.card_recognizer.recognize(slot_roi)
                     cands = [(c, s)] if c is not None else []
                 if cands:
                     slot_candidates[slot] = cands

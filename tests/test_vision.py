@@ -697,3 +697,55 @@ def test_find_all_anchors_preferred_scale_fast_path() -> None:
     assert len(anchors_fallback) == 1
     assert anchors_fallback[0][2] == tw_128
 
+
+def test_card_recognizer_rank_suit_mode(tmp_path: Path) -> None:
+    """Verify hybrid Rank+Suit decomposition mode in CardRecognizer."""
+    from vision.card_recognizer import CardRecognizer
+
+    # 1. Default instance uses rank+suit if templates exist
+    rec = CardRecognizer()
+    if Path("data/templates/ranks").is_dir() and Path("data/templates/suits").is_dir():
+        assert rec._use_rank_suit is True
+        assert len(rec.ranks) == 13
+        assert len(rec.suits) == 4
+
+        # Empty/blue table felt ROI is rejected
+        blue_felt = np.full((60, 40, 3), (120, 50, 20), dtype=np.uint8)
+        assert rec.recognize_candidates(blue_felt) == []
+        card, score = rec.recognize(blue_felt)
+        assert card is None
+        assert score == 0.0
+
+        # Construct a synthetic card with K rank and d suit
+        card_img = np.full((70, 50, 3), 245, dtype=np.uint8)
+        k_tpl = rec.ranks["K"]
+        kh, kw = k_tpl.shape
+        # paste K in red
+        for y in range(kh):
+            for x in range(kw):
+                if k_tpl[y, x] > 128:
+                    card_img[8 + y, 5 + x] = (20, 20, 220)
+
+        d_tpl = rec.suits["d"]
+        dh, dw = d_tpl.shape
+        for y in range(dh):
+            for x in range(dw):
+                if d_tpl[y, x] > 128:
+                    card_img[8 + kh + 6 + y, 5 + x] = (20, 20, 220)
+
+        cands = rec.recognize_candidates(card_img)
+        assert len(cands) > 0
+        assert cands[0][0] == "Kd"
+        assert cands[0][1] >= 0.70
+
+        best_card, best_score = rec.recognize(card_img)
+        assert best_card == "Kd"
+        assert best_score >= 0.70
+
+    # 2. Custom templates_dir disables rank+suit mode for backward compatibility
+    custom_dir = tmp_path / "custom_cards"
+    custom_dir.mkdir()
+    rec_custom = CardRecognizer(templates_dir=custom_dir)
+    assert rec_custom._use_rank_suit is False
+
+
