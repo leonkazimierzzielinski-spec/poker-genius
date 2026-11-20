@@ -43,17 +43,20 @@ class LiveScreenCapture(FrameSource):
         self,
         region: tuple[int, int, int, int] | None = None,
         target_fps: int = 15,
+        output_idx: int = 0,
     ) -> None:
         if not DXCAM_AVAILABLE or dxcam is None:
             raise RuntimeError("dxcam is not installed or available on this system.")
 
         self.region = region
         self.target_fps = target_fps
+        self.output_idx = int(output_idx)
         self._camera = None
         self._init_camera()
 
     def _init_camera(self) -> None:
         self._camera = dxcam.create(
+            output_idx=self.output_idx,
             region=self.region,
             max_buffer_len=4,
         )

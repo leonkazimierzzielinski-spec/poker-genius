@@ -85,6 +85,17 @@ class StateValidator:
         if len(state.hero_cards) not in (0, 2) or len(state.board_cards) not in (0, 3, 4, 5):
             errors.append("Invalid card count")
 
+        # Rule 2b: Postflop pot sanity check (unrecognized board protection)
+        all_bets_zero = all(p.current_bet == 0 for p in state.players.values())
+        max_preflop_limp_pot = max(state.small_blind + state.big_blind * 2, state.big_blind * 3)
+        if (
+            len(state.board_cards) == 0
+            and state.pot > max_preflop_limp_pot
+            and all_bets_zero
+            and state.pot < self.total_chips
+        ):
+            errors.append("Missing board cards on postflop pot")
+
         # Rule 3: Blinds monotonicity
         if not (state.small_blind > 0 and state.big_blind > state.small_blind):
             errors.append("Invalid blinds")

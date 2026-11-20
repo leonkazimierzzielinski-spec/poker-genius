@@ -1142,6 +1142,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         dest="max_frames",
         help="Maximum number of frames to process",
     )
+    parser.add_argument(
+        "--monitor",
+        type=int,
+        default=0,
+        help="Monitor index for live dxcam capture (0 = primary, 1 = secondary)",
+    )
     return parser
 
 
@@ -1165,7 +1171,7 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 1
-        source = LiveScreenCapture()
+        source = LiveScreenCapture(output_idx=args.monitor)
     else:
         source = OfflineReplayCapture(args.source)
 

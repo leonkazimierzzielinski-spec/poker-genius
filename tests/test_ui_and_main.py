@@ -463,6 +463,7 @@ def test_cli_argument_parsing():
     assert args.buy_in == 2
     assert args.headless is False
     assert args.show_video is None
+    assert args.monitor == 0
 
     # Custom options
     custom_args = parser.parse_args([
@@ -472,6 +473,7 @@ def test_cli_argument_parsing():
         "--buy-in", "10",
         "--headless",
         "--show-video",
+        "--monitor", "1",
     ])
     assert custom_args.mode == "offline"
     assert custom_args.source == "test_video.mp4"
@@ -479,10 +481,21 @@ def test_cli_argument_parsing():
     assert custom_args.buy_in == 10
     assert custom_args.headless is True
     assert custom_args.show_video is True
+    assert custom_args.monitor == 1
 
     # Test --no-show-video
     no_show = parser.parse_args(["--no-show-video"])
     assert no_show.show_video is False
+
+
+def test_cli_monitor_parsing() -> None:
+    """Verify that --monitor argument parses correctly for multi-monitor setups."""
+    parser = build_arg_parser()
+    args_default = parser.parse_args([])
+    assert args_default.monitor == 0
+
+    args_custom = parser.parse_args(["--monitor", "1"])
+    assert args_custom.monitor == 1
 
 
 # ---------------------------------------------------------------------------

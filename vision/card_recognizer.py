@@ -8,6 +8,26 @@ import cv2
 import numpy as np
 
 
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def _fit_glyph_to_box(crop: np.ndarray, target_w: int, target_h: int) -> np.ndarray:
+    """Resize glyph preserving aspect ratio, centered in a black canvas of (target_w, target_h)."""
+    h, w = crop.shape[:2]
+    if h == 0 or w == 0:
+        return np.zeros((target_h, target_w), dtype=np.uint8)
+    scale = min(target_w / w, target_h / h)
+    nw = max(1, int(round(w * scale)))
+    nh = max(1, int(round(h * scale)))
+    interp = cv2.INTER_AREA if scale < 1.0 else cv2.INTER_LINEAR
+    resized = cv2.resize(crop, (nw, nh), interpolation=interp)
+    canvas = np.zeros((target_h, target_w), dtype=np.uint8)
+    ox = (target_w - nw) // 2
+    oy = (target_h - nh) // 2
+    canvas[oy : oy + nh, ox : ox + nw] = resized
+    return canvas
+
+
 class CardRecognizer:
     """Recognizes playing cards from ROI patches using hybrid Rank+Suit or 3-channel template matching."""
 
@@ -15,13 +35,25 @@ class CardRecognizer:
         self,
         templates_dir: str | Path = "data/templates/cards",
         threshold: float = 0.92,
-        ranks_dir: str | Path = "data/templates/ranks",
-        suits_dir: str | Path = "data/templates/suits",
+        ranks_dir: str | Path | None = None,
+        suits_dir: str | Path | None = None,
     ) -> None:
         self.templates_dir = Path(templates_dir)
-        self.ranks_dir = Path(ranks_dir)
-        self.suits_dir = Path(suits_dir)
         self.threshold = float(threshold)
+
+        default_cards_dir = BASE_DIR / "data" / "templates" / "cards"
+        default_ranks_dir = BASE_DIR / "data" / "templates" / "ranks"
+        default_suits_dir = BASE_DIR / "data" / "templates" / "suits"
+
+        if ranks_dir is None:
+            self.ranks_dir = default_ranks_dir
+        else:
+            self.ranks_dir = Path(ranks_dir)
+
+        if suits_dir is None:
+            self.suits_dir = default_suits_dir
+        else:
+            self.suits_dir = Path(suits_dir)
 
         self.ranks: dict[str, np.ndarray] = {}
         self.suits: dict[str, np.ndarray] = {}
@@ -30,12 +62,16 @@ class CardRecognizer:
 
         # Check if hybrid rank+suit decomposition mode is available
         self._use_rank_suit = False
-        default_cards_dir = Path("data/templates/cards")
         is_default_templates = (
-            self.templates_dir == default_cards_dir
+            str(self.templates_dir) in ("data/templates/cards", "data\\templates\\cards")
             or self.templates_dir.resolve() == default_cards_dir.resolve()
+            or self.templates_dir.resolve() == (Path("data/templates/cards")).resolve()
         )
-        if is_default_templates and self.ranks_dir.is_dir() and self.suits_dir.is_dir():
+        if (
+            (is_default_templates or ranks_dir is not None or suits_dir is not None)
+            and self.ranks_dir.is_dir()
+            and self.suits_dir.is_dir()
+        ):
             self._load_rank_suit_templates()
             if len(self.ranks) >= 13 and len(self.suits) >= 4:
                 self._use_rank_suit = True
@@ -49,11 +85,11 @@ class CardRecognizer:
         for p in self.ranks_dir.glob("*.png"):
             img = cv2.imread(str(p), cv2.IMREAD_GRAYSCALE)
             if img is not None and img.size > 0:
-                self.ranks[p.stem] = img
+                self.ranks[p.stem] = _fit_glyph_to_box(img, 24, 32)
         for p in self.suits_dir.glob("*.png"):
             img = cv2.imread(str(p), cv2.IMREAD_GRAYSCALE)
             if img is not None and img.size > 0:
-                self.suits[p.stem] = img
+                self.suits[p.stem] = _fit_glyph_to_box(img, 24, 24)
 
     def _load_templates(self) -> None:
         if not self.templates_dir.is_dir():
@@ -88,8 +124,9 @@ class CardRecognizer:
             roi_bgr = card_roi
 
         roi_h, roi_w = roi_bgr.shape[:2]
-        # Ignore bottom 32% (action badges like Call/Check overlay on Hero cards)
-        badge_cut_h = int(roi_h * 0.68) if roi_h >= 30 else roi_h
+        is_hero = slot_hint in ("hero_card_1", "hero_card_2")
+        # Ignore bottom 32% on hero cards (action badges like Call/Check overlay on Hero cards)
+        badge_cut_h = int(roi_h * 0.68) if (is_hero and roi_h >= 30) else int(roi_h * 0.96)
         top_roi = roi_bgr[:badge_cut_h, :]
 
         gray = cv2.cvtColor(top_roi, cv2.COLOR_BGR2GRAY)
@@ -129,7 +166,9 @@ class CardRecognizer:
                 continue
             if bx > 28 and by < 5 and bw * bh < 40:
                 continue
-            if bh >= 12:
+            if not is_hero and by >= 48:
+                continue
+            if bh >= 11 and bw >= 4:
                 boxes.append((bx, by, bw, bh))
 
         if not boxes:
@@ -137,7 +176,9 @@ class CardRecognizer:
                 bx, by, bw, bh = cv2.boundingRect(c)
                 if by == 0 and bh <= 4:
                     continue
-                if bh >= 9:
+                if not is_hero and by >= 48:
+                    continue
+                if bh >= 8 and bw >= 3:
                     boxes.append((bx, by, bw, bh))
 
         if not boxes:
@@ -171,49 +212,27 @@ class CardRecognizer:
             suit_crop = below if (below.size > 0 and np.any(below > 0)) else None
 
         pad = 3
+        rank_fit = _fit_glyph_to_box(rank_crop, 24, 32)
+        rank_padded = cv2.copyMakeBorder(
+            rank_fit, pad, pad, pad, pad, cv2.BORDER_CONSTANT, value=0
+        )
         rank_scores: dict[str, float] = {}
         for r_name, r_tpl in self.ranks.items():
-            th, tw = r_tpl.shape[:2]
-            scaled = cv2.resize(rank_crop, (tw, th), interpolation=cv2.INTER_AREA)
-            padded = cv2.copyMakeBorder(
-                scaled, pad, pad, pad, pad, cv2.BORDER_CONSTANT, value=0
-            )
-            res = cv2.matchTemplate(padded, r_tpl, cv2.TM_CCOEFF_NORMED)
+            res = cv2.matchTemplate(rank_padded, r_tpl, cv2.TM_CCOEFF_NORMED)
             rank_scores[r_name] = float(cv2.minMaxLoc(res)[1])
 
         suit_scores: dict[str, float] = {}
-        mid_ratio = 0.55
         if suit_crop is not None and suit_crop.shape[0] >= 6 and suit_crop.shape[1] >= 6:
-            sh, sw = suit_crop.shape
-            top_third = suit_crop[: int(sh * 0.35), :]
-            mid_sec = suit_crop[int(sh * 0.35) : int(sh * 0.55), :]
-            top_w = max([np.sum(row > 128) for row in top_third]) if len(top_third) else 0
-            tot_w = max([np.sum(row > 128) for row in suit_crop])
-            mid_w = min([np.sum(row > 128) for row in mid_sec]) if len(mid_sec) else top_w
-            if tot_w > 0:
-                mid_ratio = mid_w / tot_w
-
-        for s_name in allowed_suits:
-            s_tpl = self.suits[s_name]
-            th, tw = s_tpl.shape[:2]
-            if (
-                suit_crop is not None
-                and suit_crop.shape[0] >= 6
-                and suit_crop.shape[1] >= 6
-            ):
-                scaled = cv2.resize(suit_crop, (tw, th), interpolation=cv2.INTER_AREA)
-                padded = cv2.copyMakeBorder(
-                    scaled, pad, pad, pad, pad, cv2.BORDER_CONSTANT, value=0
-                )
-                res = cv2.matchTemplate(padded, s_tpl, cv2.TM_CCOEFF_NORMED)
-                base_score = float(cv2.minMaxLoc(res)[1])
-                if color_group == "BLACK":
-                    if s_name == "c":
-                        base_score += 0.12 if mid_ratio <= 0.50 else -0.10
-                    elif s_name == "s":
-                        base_score += 0.12 if mid_ratio > 0.50 else -0.10
-                suit_scores[s_name] = base_score
-            else:
+            suit_fit = _fit_glyph_to_box(suit_crop, 24, 24)
+            suit_padded = cv2.copyMakeBorder(
+                suit_fit, pad, pad, pad, pad, cv2.BORDER_CONSTANT, value=0
+            )
+            for s_name in allowed_suits:
+                s_tpl = self.suits[s_name]
+                res = cv2.matchTemplate(suit_padded, s_tpl, cv2.TM_CCOEFF_NORMED)
+                suit_scores[s_name] = float(cv2.minMaxLoc(res)[1])
+        else:
+            for s_name in allowed_suits:
                 suit_scores[s_name] = 0.5
 
         candidates_list: list[tuple[str, float]] = []
@@ -223,7 +242,7 @@ class CardRecognizer:
                 candidates_list.append((r_name + s_name, comb))
 
         candidates_list.sort(key=lambda x: x[1], reverse=True)
-        eff_thresh = min(self.threshold, 0.72)
+        eff_thresh = min(self.threshold, 0.70)
         return [(c, s) for c, s in candidates_list if s >= eff_thresh][:top_k]
 
     def recognize_candidates(

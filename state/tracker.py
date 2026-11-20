@@ -60,9 +60,8 @@ class TableTracker:
         )
 
         street_reset = (
-            self.prev_state.street in ("FLOP", "TURN", "RIVER", "WAITING_FOR_TURN")
+            self.prev_state.street in ("FLOP", "TURN", "RIVER")
             and state.street == "PREFLOP"
-            and self.prev_state.street != "PREFLOP"
         )
 
         is_new_hand = hero_cards_changed or dealer_changed or street_reset

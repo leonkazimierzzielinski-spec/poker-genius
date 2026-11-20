@@ -454,3 +454,59 @@ def test_validator_all_in_stack_none_valid() -> None:
     is_valid_c, errors_c = validator.validate(state_corrupted)
     assert is_valid_c is False
     assert "Missing stack reading" in errors_c
+
+
+def test_tracker_waiting_for_turn_to_preflop_no_fake_new_hand() -> None:
+    """Verify that transition WAITING_FOR_TURN -> PREFLOP with same cards and dealer does NOT trigger NEW_HAND."""
+    tracker = TableTracker(table_id="table_1")
+    state_waiting = create_dummy_table_state(
+        pot=30,
+        stacks=(300, 290, 280),
+        bets=(0, 10, 20),
+        hero_cards=["Kh", "2s"],
+        board_cards=[],
+        dealer_seat=2,
+        is_valid=True,
+    )
+    state_waiting.street = "WAITING_FOR_TURN"
+    state_waiting.is_hero_turn = False
+
+    _, events1 = tracker.update(state_waiting)
+    assert tracker.hand_number == 1
+    assert any(e.event_type == "NEW_HAND" for e in events1)
+
+    # Now it becomes Hero's turn in the same hand on PREFLOP
+    state_hero_turn = create_dummy_table_state(
+        pot=30,
+        stacks=(300, 290, 280),
+        bets=(0, 10, 20),
+        hero_cards=["Kh", "2s"],
+        board_cards=[],
+        dealer_seat=2,
+        is_valid=True,
+    )
+    state_hero_turn.street = "PREFLOP"
+    state_hero_turn.is_hero_turn = True
+
+    _, events2 = tracker.update(state_hero_turn)
+    # hand_number must NOT increment and NEW_HAND must NOT be generated
+    assert tracker.hand_number == 1
+    assert not any(e.event_type == "NEW_HAND" for e in events2)
+    assert any(e.event_type == "HERO_TURN" for e in events2)
+
+
+def test_validator_postflop_pot_missing_board_cards_rejected() -> None:
+    """Verify that pot=218 with bets=0 and empty board is flagged as Missing board cards on postflop pot."""
+    validator = StateValidator()
+    state = create_dummy_table_state(
+        pot=218,
+        stacks=(232, 230, 220),
+        bets=(0, 0, 0),
+        hero_cards=["Kh", "2s"],
+        board_cards=[],
+        blinds=(10, 20),
+    )
+    is_valid, errors = validator.validate(state)
+    assert is_valid is False
+    assert "Missing board cards on postflop pot" in errors
+

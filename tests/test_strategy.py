@@ -335,3 +335,28 @@ def test_decision_maker_preview_mode() -> None:
     assert dec_inc.action == "WAIT"
     assert "Incomplete hero cards" in dec_inc.reason
 
+
+def test_exploit_timing_tell_fast_bet_not_check() -> None:
+    """Verify that last_reaction_ms < 500 when opponent has bet > 0 does NOT trigger fast check tell."""
+    engine = ExploitEngine()
+    modifiers = ProfileModifiers(profile_name="STANDARD_EXPLOIT", bluff_factor=1.0)
+
+    # Opponent seat 1 acted quickly (250 ms) but bet 40 chips (not a check!)
+    state = SimpleNamespace(
+        players={
+            0: SimpleNamespace(seat_id=0, is_active=True, last_reaction_ms=None, current_bet=0),
+            1: SimpleNamespace(seat_id=1, is_active=True, last_reaction_ms=250, current_bet=40),
+            2: SimpleNamespace(seat_id=2, is_active=True, last_reaction_ms=1200, current_bet=0),
+        },
+        street="FLOP",
+        big_blind=20,
+    )
+
+    candidate_evs = {"CHECK": 0.05, "BET_30": 0.10}
+    adjusted_evs, reasons = engine.apply_exploits(candidate_evs, state, modifiers, spot="POSTFLOP")
+
+    # Fast check bonus must NOT apply
+    assert "Timing Tell: fast check <500ms" not in reasons
+    assert adjusted_evs["BET_30"] == pytest.approx(0.10)
+
+

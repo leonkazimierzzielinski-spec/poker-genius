@@ -749,3 +749,47 @@ def test_card_recognizer_rank_suit_mode(tmp_path: Path) -> None:
     assert rec_custom._use_rank_suit is False
 
 
+def test_card_recognizer_board_full_height_and_cwd_independence(tmp_path: Path) -> None:
+    """Verify slot_hint board vs hero height handling and CWD independence."""
+    import os
+    from vision.card_recognizer import CardRecognizer
+
+    # 1. CWD independence
+    orig_cwd = os.getcwd()
+    try:
+        os.chdir(tmp_path)
+        rec = CardRecognizer()
+        assert rec._use_rank_suit is True
+        assert len(rec.ranks) == 13
+        assert len(rec.suits) == 4
+    finally:
+        os.chdir(orig_cwd)
+
+    # 2. Board card preserves lower portion (suit placed at bottom)
+    rec = CardRecognizer()
+    card_img = np.full((70, 50, 3), 245, dtype=np.uint8)
+    k_tpl = rec.ranks["K"]
+    kh, kw = k_tpl.shape
+    for y in range(kh):
+        for x in range(kw):
+            if k_tpl[y, x] > 128:
+                card_img[6 + y, 5 + x] = (20, 20, 220)
+
+    d_tpl = rec.suits["d"]
+    dh, dw = d_tpl.shape
+    # Place suit at y=40, preserved by board badge cut (0.96 * 70 = 67) but cut by hero (0.68 * 70 = 47)
+    for y in range(dh):
+        for x in range(dw):
+            if d_tpl[y, x] > 128:
+                card_img[40 + y, 5 + x] = (20, 20, 220)
+
+    board_card, board_score = rec.recognize(card_img, slot_hint="board_card_1")
+    assert board_card == "Kd"
+    assert board_score >= 0.70
+
+    # For hero_card_1, the badge cut at 68% cuts off the suit, so it cannot resolve Kd
+    hero_card, _ = rec.recognize(card_img, slot_hint="hero_card_1")
+    assert hero_card != "Kd"
+
+
+
