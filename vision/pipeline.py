@@ -1,0 +1,468 @@
+"""End-to-end vision pipeline: frame -> ROIs -> CV/OCR -> TableState."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import time
+
+import cv2
+import numpy as np
+
+try:
+    from core.contracts import PlayerState, TableState
+except ImportError:
+    PlayerState = None  # type: ignore[misc, assignment]
+    TableState = None  # type: ignore[misc, assignment]
+
+from vision.anchor import (
+    compute_table_rect,
+    compute_unclipped_table_rect,
+    crop_rois,
+    find_anchor,
+)
+from vision.card_recognizer import CardRecognizer
+from vision.ocr import DigitOCR, detect_hero_actions
+
+
+class VisionPipeline:
+    """Orchestrates screen detection, template matching, and OCR into TableState."""
+
+    def __init__(self, config_path: str | Path = "config.json") -> None:
+        self.config_path = Path(config_path)
+        self.config: dict = self._load_config()
+
+        self.anchor_config = self.config.get("anchor", {})
+        self.anchor_template: np.ndarray | None = None
+        self._load_anchor_template()
+
+        self.anchor_threshold: float = float(
+            self.anchor_config.get("match_threshold", 0.85)
+        )
+        self.table_offset_rel: list[float] = self.anchor_config.get(
+            "table_offset_rel", [0.0, 0.0, 1.0, 1.0]
+        )
+        self.canonical_table_size: tuple[int, int] = tuple(
+            self.config.get("canonical_table_size", [1757, 997])
+        )
+        self.rois_rel: dict[str, list[float]] = self.config.get("rois", {})
+        ocr_threshold = float(self.config.get("ocr_threshold", 0.75))
+        card_threshold = float(self.config.get("card_threshold", 0.90))
+        self.dealer_threshold = float(self.config.get("dealer_threshold", 90.0))
+
+        self.card_recognizer = CardRecognizer(threshold=card_threshold)
+        self.digit_ocr = DigitOCR(threshold=ocr_threshold)
+        self._table_signatures: dict[str, np.ndarray] = {}
+        self._table_last_seen: dict[str, int] = {}
+        self._table_counter: int = 0
+        self._last_anchor_scale: float | None = None
+        self.last_evicted_table_id: str | None = None
+
+        self.dealer_template: np.ndarray | None = None
+        d_path = Path("data/templates/dealer.png")
+        if d_path.is_file():
+            img_d = cv2.imread(str(d_path), cv2.IMREAD_COLOR)
+            if img_d is not None and img_d.size > 0:
+                self.dealer_template = img_d
+
+    def _load_config(self) -> dict:
+        if self.config_path.is_file():
+            try:
+                with self.config_path.open("r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return {
+            "anchor": {
+                "template_path": "data/templates/anchor.png",
+                "match_threshold": 0.85,
+                "table_offset_rel": [0.0, 0.0, 1.0, 1.0],
+            },
+            "rois": {},
+        }
+
+    def _load_anchor_template(self) -> None:
+        tpl_path = self.anchor_config.get(
+            "template_path", "data/templates/anchor.png"
+        )
+        path = Path(tpl_path)
+        if path.is_file():
+            img = cv2.imread(str(path), cv2.IMREAD_COLOR)
+            if img is not None and img.size > 0:
+                self.anchor_template = img
+
+    def _warp_to_canonical(
+        self, frame: np.ndarray, rect: tuple[int, int, int, int]
+    ) -> np.ndarray:
+        """Warp an arbitrary table rectangle (potentially unclipped/scaled) to canonical size.
+
+        Places the sliced sub-region of frame onto a canvas of size (th, tw, 3),
+        correctly handling negative or out-of-frame coordinates, and resizes to
+        canonical_table_size if tw != CW or th != CH.
+        """
+        CW, CH = self.canonical_table_size
+        tx, ty, tw, th = rect
+        tw = max(1, tw)
+        th = max(1, th)
+
+        canvas = np.zeros((th, tw, 3), dtype=np.uint8)
+        H, W = frame.shape[:2]
+
+        fx1 = max(0, tx)
+        fy1 = max(0, ty)
+        fx2 = min(W, tx + tw)
+        fy2 = min(H, ty + th)
+
+        cx1 = fx1 - tx
+        cy1 = fy1 - ty
+        cx2 = cx1 + (fx2 - fx1)
+        cy2 = cy1 + (fy2 - fy1)
+
+        if fx2 > fx1 and fy2 > fy1 and cx2 > cx1 and cy2 > cy1:
+            canvas[cy1:cy2, cx1:cx2] = frame[fy1:fy2, fx1:fx2]
+
+        if (tw, th) != (CW, CH):
+            return cv2.resize(canvas, (CW, CH), interpolation=cv2.INTER_LINEAR)
+        return canvas
+
+    def resolve_table_id(
+        self,
+        frame: np.ndarray,
+        table_rect: tuple[int, int, int, int] | None,
+        default_table_id: str = "table_1",
+        has_anchor: bool = True,
+    ) -> str:
+        """Resolve table_id based on top-left game ID region signature.
+
+        Supports dynamic allocation of up to 6 tables (table_1, table_2, ... table_6)
+        with LRU eviction, avoiding collision across multiple tournaments in one session.
+        """
+        if not has_anchor or table_rect is None or frame is None or frame.size == 0:
+            return default_table_id
+
+        tx, ty, tw, th = table_rect
+        gx1 = max(0, tx + int(tw * 0.020))
+        gx2 = min(frame.shape[1], tx + int(tw * 0.135))
+        gy1 = max(0, ty + int(th * 0.012))
+        gy2 = min(frame.shape[0], ty + int(th * 0.050))
+
+        if gx2 <= gx1 or gy2 <= gy1:
+            return default_table_id
+
+        crop = frame[gy1:gy2, gx1:gx2]
+        if float(np.std(crop)) < 5.0:
+            return default_table_id
+
+        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+        _otsu, bin_h = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        sig = bin_h.astype(np.float32)
+
+        self._table_counter += 1
+
+        best_id = None
+        best_score = -1.0
+        for tid, saved_sig in self._table_signatures.items():
+            if sig.shape != saved_sig.shape:
+                cur_sig = cv2.resize(sig, (saved_sig.shape[1], saved_sig.shape[0]))
+            else:
+                cur_sig = sig
+            res = cv2.matchTemplate(cur_sig, saved_sig, cv2.TM_CCOEFF_NORMED)
+            score = float(res[0][0])
+            if score > best_score:
+                best_score = score
+                best_id = tid
+
+        if best_id is not None and best_score >= 0.94:
+            self._table_last_seen[best_id] = self._table_counter
+            return best_id
+
+        # Allocate new table ID if below capacity
+        max_tables = 6
+        if len(self._table_signatures) < max_tables:
+            new_id = f"table_{len(self._table_signatures) + 1}"
+            self._table_signatures[new_id] = sig
+            self._table_last_seen[new_id] = self._table_counter
+            return new_id
+        else:
+            # Evict least recently seen table
+            lru_id = min(self._table_last_seen.items(), key=lambda item: item[1])[0]
+            self.last_evicted_table_id = lru_id
+            self._table_signatures[lru_id] = sig
+            self._table_last_seen[lru_id] = self._table_counter
+            return lru_id
+
+    def process_frame(
+        self,
+        frame: np.ndarray,
+        table_id: str = "table_1",
+        timestamp_ms: int | None = None,
+        table_rect: tuple[int, int, int, int] | None = None,
+        allow_table_resolution: bool = True,
+        has_anchor: bool | None = None,
+    ) -> TableState:
+        """Process a single frame and return extracted TableState."""
+        if TableState is None or PlayerState is None:
+            raise ImportError(
+                "core.contracts (TableState, PlayerState) is required to run VisionPipeline."
+            )
+
+        if timestamp_ms is None:
+            timestamp_ms = int(time.time() * 1000)
+
+        CW, CH = self.canonical_table_size
+        anchor_found = False
+
+        # Detect table bounds or fallback to full frame
+        if table_rect is None:
+            if self.anchor_template is not None:
+                anchor = find_anchor(
+                    frame,
+                    self.anchor_template,
+                    self.anchor_threshold,
+                    preferred_scale=self._last_anchor_scale,
+                )
+                if anchor is not None:
+                    anchor_found = True
+                    tpl_w = self.anchor_template.shape[1]
+                    tpl_h = self.anchor_template.shape[0]
+                    self._last_anchor_scale = anchor[2] / tpl_w
+                    unclipped_rect = compute_unclipped_table_rect(
+                        anchor,
+                        self.table_offset_rel,
+                        canonical_size=self.canonical_table_size,
+                        template_size=(tpl_w, tpl_h),
+                        frame_shape=frame.shape,
+                    )
+                    table_image = self._warp_to_canonical(frame, unclipped_rect)
+                    effective_rect = (0, 0, CW, CH)
+                else:
+                    table_rect = (0, 0, frame.shape[1], frame.shape[0])
+                    table_image = frame
+                    effective_rect = table_rect
+            else:
+                table_rect = (0, 0, frame.shape[1], frame.shape[0])
+                table_image = frame
+                effective_rect = table_rect
+        else:
+            # Provided table_rect (from main.py unclipped rect or manual ROI)
+            anchor_found = has_anchor if has_anchor is not None else True
+            table_image = self._warp_to_canonical(frame, table_rect)
+            effective_rect = (0, 0, CW, CH)
+
+        # Resolve table_id based on game ID header if default table_1 and allowed
+        if allow_table_resolution and table_id == "table_1":
+            table_id = self.resolve_table_id(
+                table_image, effective_rect, default_table_id=table_id, has_anchor=anchor_found
+            )
+
+        # Crop configured ROIs from normalized table image
+        rois = crop_rois(table_image, effective_rect, self.rois_rel)
+
+        # 1. Hero actions & active timer bar (evaluated early to gate board cards recognition)
+        is_hero_turn = False
+        available_actions: list[str] = []
+        hero_timer_roi = rois.get("seat_0_timer")
+        if "hero_actions" in rois:
+            is_hero_turn, available_actions = detect_hero_actions(
+                rois["hero_actions"], hero_timer_roi=hero_timer_roi
+            )
+
+        # 2. Hero cards & Board cards candidate collection with duplicate collision resolution
+        hero_slots = [k for k in ("hero_card_1", "hero_card_2") if k in rois]
+        board_slots = [
+            k
+            for k in (
+                "board_card_1",
+                "board_card_2",
+                "board_card_3",
+                "board_card_4",
+                "board_card_5",
+            )
+            if k in rois
+        ]
+
+        # Slightly lower card threshold for resized/interpolated tables
+        orig_card_thresh = getattr(self.card_recognizer, "threshold", 0.90)
+        is_scaled = False
+        if table_rect is not None and len(table_rect) >= 4:
+            is_scaled = (table_rect[2], table_rect[3]) != (CW, CH)
+        elif self.anchor_template is not None:
+            # check unclipped rect dimensions
+            is_scaled = (effective_rect[2], effective_rect[3]) != (CW, CH)
+
+        if is_scaled and hasattr(self.card_recognizer, "threshold"):
+            self.card_recognizer.threshold = min(orig_card_thresh, 0.82)
+
+        slot_candidates: dict[str, list[tuple[str, float]]] = {}
+        try:
+            for slot in hero_slots + board_slots:
+                slot_roi = rois[slot]
+                if hasattr(self.card_recognizer, "recognize_candidates"):
+                    cands = self.card_recognizer.recognize_candidates(slot_roi, top_k=3)
+                else:
+                    c, s = self.card_recognizer.recognize(slot_roi)
+                    cands = [(c, s)] if c is not None else []
+                if cands:
+                    slot_candidates[slot] = cands
+        finally:
+            if is_scaled and hasattr(self.card_recognizer, "threshold"):
+                self.card_recognizer.threshold = orig_card_thresh
+
+        # Sort slots by their highest candidate score descending for greedy assignment
+        sorted_slots = sorted(
+            slot_candidates.keys(),
+            key=lambda s: slot_candidates[s][0][1],
+            reverse=True,
+        )
+
+        used_cards: set[str] = set()
+        assigned_cards: dict[str, str] = {}
+        for slot in sorted_slots:
+            for card_code, _conf in slot_candidates[slot]:
+                if card_code not in used_cards:
+                    used_cards.add(card_code)
+                    assigned_cards[slot] = card_code
+                    break
+
+        hero_cards: list[str] = [
+            assigned_cards[k] for k in ("hero_card_1", "hero_card_2") if k in assigned_cards
+        ]
+        board_cards: list[str] = [
+            assigned_cards[k]
+            for k in (
+                "board_card_1",
+                "board_card_2",
+                "board_card_3",
+                "board_card_4",
+                "board_card_5",
+            )
+            if k in assigned_cards
+        ]
+
+        # 4. Pot
+        pot = 0
+        if "pot" in rois:
+            val = self.digit_ocr.read_int(rois["pot"])
+            if val is not None:
+                pot = val
+
+        # 4. Prize pool (supports decimal currency like $1.50)
+        prize_pool: float | int = 0
+        if "prize_pool" in rois:
+            f_val = self.digit_ocr.read_float(rois["prize_pool"])
+            if f_val is not None:
+                prize_pool = int(f_val) if f_val.is_integer() else f_val
+
+        # 5. Blinds
+        small_blind = 10
+        big_blind = 20
+        if "blinds" in rois:
+            blinds = self.digit_ocr.read_blinds(rois["blinds"])
+            if blinds is not None:
+                small_blind, big_blind = blinds
+
+        # 6. Players (seats 0, 1, 2)
+        best_dealer_seat = None
+        best_dealer_score = -1.0
+        if self.dealer_template is not None:
+            for s in (0, 1, 2):
+                d_key = f"seat_{s}_dealer"
+                if d_key in rois and rois[d_key].size > 0:
+                    d_crop = rois[d_key]
+                    th_d, tw_d = self.dealer_template.shape[:2]
+                    if d_crop.shape[0] >= th_d and d_crop.shape[1] >= tw_d:
+                        res_d = cv2.matchTemplate(d_crop, self.dealer_template, cv2.TM_CCOEFF_NORMED)
+                        score_d = float(cv2.minMaxLoc(res_d)[1])
+                        if score_d > best_dealer_score:
+                            best_dealer_score = score_d
+                            best_dealer_seat = s
+
+        players: dict[int, PlayerState] = {}
+        for seat_id in (0, 1, 2):
+            stack_key = f"seat_{seat_id}_stack"
+            bet_key = f"seat_{seat_id}_bet"
+            dealer_key = f"seat_{seat_id}_dealer"
+
+            stack = None
+            if stack_key in rois:
+                stack = self.digit_ocr.read_int(rois[stack_key])
+
+            current_bet = 0
+            if bet_key in rois:
+                b_val = self.digit_ocr.read_int(rois[bet_key])
+                if b_val is not None:
+                    current_bet = b_val
+
+            is_dealer = False
+            if best_dealer_score >= 0.75:
+                is_dealer = (seat_id == best_dealer_seat)
+            elif dealer_key in rois:
+                d_roi = rois[dealer_key]
+                if d_roi.size > 0 and float(np.mean(d_roi)) > self.dealer_threshold:
+                    is_dealer = True
+
+            is_active = (stack is not None and stack > 0) or (current_bet > 0)
+            if stack is None and current_bet > 0:
+                stack = 0
+                status_text = "ALL_IN"
+                is_active = True
+            elif stack is None and current_bet == 0:
+                status_text = "SIT_OUT"
+                is_active = False
+            elif is_active:
+                status_text = "ACTIVE"
+            else:
+                status_text = "FOLDED"
+
+            players[seat_id] = PlayerState(
+                seat_id=seat_id,
+                stack=stack,
+                current_bet=current_bet,
+                is_dealer=is_dealer,
+                is_active=is_active,
+                status_text=status_text,
+            )
+
+        # Refine Check vs Call if facing an opponent bet
+        if is_hero_turn and available_actions:
+            hero_bet = players[0].current_bet if 0 in players and players[0].current_bet is not None else 0
+            max_opp_bet = max(
+                (players[s].current_bet for s in (1, 2) if s in players and players[s].current_bet is not None),
+                default=0,
+            )
+            if max_opp_bet > hero_bet:
+                available_actions = ["CALL" if a == "CHECK" else a for a in available_actions]
+            elif max_opp_bet <= hero_bet:
+                available_actions = ["CHECK" if a == "CALL" else a for a in available_actions]
+
+        # 8. Street determination
+        if not is_hero_turn or len(hero_cards) != 2:
+            street = "WAITING_FOR_TURN"
+        else:
+            nb = len(board_cards)
+            if nb == 0:
+                street = "PREFLOP"
+            elif nb == 3:
+                street = "FLOP"
+            elif nb == 4:
+                street = "TURN"
+            elif nb == 5:
+                street = "RIVER"
+            else:
+                street = "PREFLOP"
+
+        return TableState(
+            table_id=table_id,
+            timestamp_ms=timestamp_ms,
+            prize_pool=prize_pool,
+            small_blind=small_blind,
+            big_blind=big_blind,
+            pot=pot,
+            hero_cards=hero_cards,
+            board_cards=board_cards,
+            street=street,
+            is_hero_turn=is_hero_turn,
+            available_actions=available_actions,
+            players=players,
+            is_valid=False,
+        )

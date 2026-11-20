@@ -1,0 +1,123 @@
+"""Deterministic strategy simplification and RTA-profile protection."""
+
+from strategy.multiplier_adapter import ProfileModifiers
+
+ALLOWED_ACTIONS: set[str] = {
+    "FOLD",
+    "CHECK",
+    "CALL",
+    "MIN_RAISE",
+    "BET_30",
+    "ALL_IN",
+}
+
+VARIANCE_RANKS_HIGH: dict[str, int] = {
+    "ALL_IN": 6,
+    "MIN_RAISE": 5,
+    "BET_30": 4,
+    "CALL": 3,
+    "CHECK": 2,
+    "FOLD": 1,
+}
+
+VARIANCE_RANKS_STANDARD: dict[str, int] = {
+    "CHECK": 6,
+    "FOLD": 5,
+    "CALL": 4,
+    "BET_30": 3,
+    "MIN_RAISE": 2,
+    "ALL_IN": 1,
+}
+
+
+def is_action_available(act: str, available_actions: list[str]) -> bool:
+    """Check if candidate action matches the available table actions."""
+    avail_set = set(available_actions)
+    if act in avail_set:
+        return True
+    if act == "BET_30" and ("BET" in avail_set or "RAISE" in avail_set):
+        return True
+    if act == "MIN_RAISE" and ("RAISE" in avail_set or "BET" in avail_set):
+        return True
+    if act == "ALL_IN" and ("ALL_IN" in avail_set or "RAISE" in avail_set or "BET" in avail_set):
+        return True
+    return False
+
+
+class StrategySimplifier:
+    """Simplifies solver strategies to deterministic pure actions with EV-loss filtering."""
+
+    def __init__(self, ev_loss_threshold_bb: float = 0.08):
+        self.ev_loss_threshold_bb = ev_loss_threshold_bb
+
+    def select_pure_action(
+        self,
+        evs: dict[str, float],
+        modifiers: ProfileModifiers,
+        available_actions: list[str] | None = None,
+    ) -> tuple[str, float, str | None]:
+        """
+        Select a deterministic pure action respecting allowed actions and EV-loss threshold.
+
+        Returns:
+            Tuple of (chosen_action, chosen_ev, filter_note).
+        """
+        # 1. Reduction of sizings and filtering allowed actions
+        candidates = {k: v for k, v in evs.items() if k in ALLOWED_ACTIONS}
+        if not candidates:
+            if evs:
+                candidates = dict(evs)
+            else:
+                return "CHECK", 0.0, None
+
+        if available_actions is not None and len(available_actions) > 0:
+            avail_candidates = {
+                k: v for k, v in candidates.items()
+                if is_action_available(k, available_actions)
+            }
+            if avail_candidates:
+                candidates = avail_candidates
+
+        # 2. Pure strategy: deterministic highest-EV selection
+        if modifiers.prefer_high_variance_borderline:
+            sorted_candidates = sorted(
+                candidates.items(),
+                key=lambda item: (round(item[1], 4), VARIANCE_RANKS_HIGH.get(item[0], 0)),
+                reverse=True,
+            )
+        else:
+            sorted_candidates = sorted(
+                candidates.items(),
+                key=lambda item: (round(item[1], 4), VARIANCE_RANKS_STANDARD.get(item[0], 0)),
+                reverse=True,
+            )
+
+        best_action, best_ev = sorted_candidates[0]
+
+        # 3. Minimum profit threshold (+0.08 BB)
+        chosen_action = best_action
+        chosen_ev = best_ev
+        filter_note: str | None = None
+
+        if best_action not in ("FOLD", "CHECK") and best_ev < self.ev_loss_threshold_bb:
+            if (
+                modifiers.prefer_high_variance_borderline
+                and best_ev >= 0.0
+                and best_action in ("ALL_IN", "CALL")
+            ):
+                filter_note = "Borderline 0EV high-variance call/shove"
+            else:
+                if available_actions is not None and len(available_actions) > 0:
+                    check_available = is_action_available("CHECK", available_actions)
+                else:
+                    check_available = "CHECK" in candidates
+
+                if check_available:
+                    chosen_action = "CHECK"
+                    chosen_ev = candidates.get("CHECK", 0.0)
+                else:
+                    chosen_action = "FOLD"
+                    chosen_ev = 0.0
+                filter_note = "Filtered marginal play < +0.08 BB"
+
+        return chosen_action, chosen_ev, filter_note

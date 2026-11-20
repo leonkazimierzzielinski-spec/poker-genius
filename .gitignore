@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Large test video recordings (exceed GitHub 100MB file limit)
+nagrania testowe/
+
+# Debug artifacts
+data/debug_frames/
+
+# Audit packages and temporary archives
+*.zip
+
+# Logs
+logs/
+*.log
+
+# Environment & IDE
+.env
+.venv/
+venv/
+env/
+.idea/
+.vscode/
