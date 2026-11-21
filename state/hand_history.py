@@ -49,6 +49,8 @@ class HandHistoryRecorder:
                 "hands_count": 0,
                 "recorded_keys": set(),
                 "prize_pool": prize_pool,
+                "hero_decisions_count": 0,
+                "tournament_result": None,
             }
 
         game = self._active_games[table_id]
@@ -80,6 +82,16 @@ class HandHistoryRecorder:
 
         if prize_pool is not None:
             game["prize_pool"] = prize_pool
+
+        if hand_summary.get("tournament_result"):
+            game["tournament_result"] = hand_summary["tournament_result"]
+
+        hero_decs = sum(
+            1
+            for r in (hand_summary.get("recommendations") or [])
+            if not str(r.get("reason", "")).startswith("[PLAN]")
+        )
+        game["hero_decisions_count"] += hero_decs
 
         # 1. JSONL write
         try:
@@ -222,7 +234,7 @@ class HandHistoryRecorder:
             ])
 
         # Snapshots
-        snaps = hand.get("snapshots") or []
+        snaps = list(dict.fromkeys(hand.get("snapshots") or []))
         if snaps:
             lines.extend(["", "### Zrzuty ekranu"])
             for snap in snaps:
@@ -318,6 +330,36 @@ class HandHistoryRecorder:
         zip_name = f"game_{ts_str}_{table_id}{prize_part}.zip"
         zip_path = self.output_dir / zip_name
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Append ## 📊 Podsumowanie gry to history.md before packing and copying
+        summary_lines = [
+            "## 📊 Podsumowanie gry",
+            f"- **Liczba rozdań**: {hands_count}",
+        ]
+        if prize is not None:
+            summary_lines.append(f"- **Pula nagród**: ${prize}")
+        tr = game.get("tournament_result")
+        if tr:
+            w_name = tr.get("winner_name", "—")
+            w_seat = tr.get("winner_seat", 0)
+            summary_lines.append(f"- **Zwycięzca turnieju**: {w_name} (S{w_seat})")
+        hero_decs = game.get("hero_decisions_count", 0)
+        summary_lines.append(f"- **Decyzje HUD (Hero)**: {hero_decs}")
+        summary_lines.extend(["", ""])
+
+        try:
+            with open(game["md_path"], "a", encoding="utf-8") as f:
+                f.write("\n".join(summary_lines))
+        except Exception:
+            pass
+
+        # Save standalone copy of history.md directly next to the .zip archive
+        md_name = f"game_{ts_str}_{table_id}{prize_part}.md"
+        md_dest = self.output_dir / md_name
+        try:
+            shutil.copy2(game["md_path"], md_dest)
+        except Exception:
+            pass
 
         try:
             with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:

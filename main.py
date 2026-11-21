@@ -784,6 +784,9 @@ def processing_loop(
     decision_locks: dict[str, Any] = {}
     last_active_decisions: dict[str, Any] = {}
     last_spots: dict[str, str] = {}
+    tournament_end_confirm: dict[str, int] = {}
+    finalized_tournament_tables: set[str] = set()
+    decision_snap_counts: dict[str, dict[str, int]] = {}
 
     def _on_manual_rect(rect: Any) -> None:
         if "table_1" in managed_tables:
@@ -812,6 +815,9 @@ def processing_loop(
         decision_locks.pop(tid, None)
         last_active_decisions.pop(tid, None)
         last_spots.pop(tid, None)
+        tournament_end_confirm.pop(tid, None)
+        finalized_tournament_tables.discard(tid)
+        decision_snap_counts.pop(tid, None)
 
     def _on_table_adjust_5arg(tid: str, dx: int, dy: int, sx: float, sy: float) -> None:
         if tid in managed_tables:
@@ -1073,29 +1079,12 @@ def processing_loop(
 
                 resolved_tid = getattr(state, "table_id", table_id)
 
-                # Track opponent signature to reset validator across alternating tournaments in same slot
+                # Track opponent signature to monitor visual changes (non-destructive)
                 canonical_img = getattr(pipeline, "_last_canonical_table", None)
                 if canonical_img is not None and hasattr(pipeline, "compute_opponents_signature"):
                     try:
                         opp_sig = pipeline.compute_opponents_signature(canonical_img)
                         if opp_sig is not None and table_id in managed_tables:
-                            last_sig = managed_tables[table_id].get("last_opponents_sig")
-                            if last_sig is not None:
-                                import cv2
-                                match_score = cv2.matchTemplate(opp_sig, last_sig, cv2.TM_CCOEFF_NORMED)[0][0]
-                                if match_score < 0.85:
-                                    if validator is not None:
-                                        validator.reset_table(table_id)
-                                    if hand_recorder is not None and table_id in trackers:
-                                        try:
-                                            hand_recorder.record_hand(trackers[table_id].get_hand_summary())
-                                            hand_recorder.finalize_game(table_id)
-                                        except Exception:
-                                            pass
-                                    trackers.pop(table_id, None)
-                                    decision_locks.pop(table_id, None)
-                                    last_active_decisions.pop(table_id, None)
-                                    last_spots.pop(table_id, None)
                             managed_tables[table_id]["last_opponents_sig"] = opp_sig
                     except Exception:
                         pass
@@ -1115,6 +1104,27 @@ def processing_loop(
                     decision_locks.pop(resolved_tid, None)
                     last_active_decisions.pop(resolved_tid, None)
                     last_spots.pop(resolved_tid, None)
+                    tournament_end_confirm.pop(resolved_tid, None)
+                    finalized_tournament_tables.discard(resolved_tid)
+                    decision_snap_counts.pop(resolved_tid, None)
+
+                # Unlock and reset when a new game starts after previous was finalized
+                if resolved_tid in finalized_tournament_tables and getattr(state, "is_valid", True):
+                    curr_stacks = [
+                        p.stack for p in getattr(state, "players", {}).values()
+                        if getattr(p, "stack", None) is not None
+                    ]
+                    valid_new_game_stacks = [s for s in curr_stacks if 0 < s < 880]
+                    if len(valid_new_game_stacks) >= 2:
+                        finalized_tournament_tables.discard(resolved_tid)
+                        tournament_end_confirm[resolved_tid] = 0
+                        decision_snap_counts.pop(resolved_tid, None)
+                        if validator is not None:
+                            validator.reset_table(resolved_tid)
+                        trackers.pop(resolved_tid, None)
+                        decision_locks.pop(resolved_tid, None)
+                        last_active_decisions.pop(resolved_tid, None)
+                        last_spots.pop(resolved_tid, None)
 
                 validation_errors: list[str] = []
                 if validator is not None:
@@ -1137,17 +1147,51 @@ def processing_loop(
                             if hand_recorder is not None and resolved_tid in trackers:
                                 try:
                                     hand_recorder.record_hand(trackers[resolved_tid].get_hand_summary())
-                                    hand_recorder.finalize_game(resolved_tid)
+                                    hand_recorder.finalize_game(resolved_tid, prize_pool=getattr(state, "prize_pool", None))
                                 except Exception:
                                     pass
                             trackers.pop(resolved_tid, None)
                             decision_locks.pop(resolved_tid, None)
                             last_active_decisions.pop(resolved_tid, None)
                             last_spots.pop(resolved_tid, None)
+                            tournament_end_confirm[resolved_tid] = 0
+                            finalized_tournament_tables.discard(resolved_tid)
+                            decision_snap_counts.pop(resolved_tid, None)
                             is_valid, validation_errors = validator.validate(state)
                     state.is_valid = is_valid
                 else:
                     is_valid = getattr(state, "is_valid", True)
+
+                # Check if returning from Heads-Up (eliminated player in previous hand) to full 3-max
+                if (
+                    is_valid
+                    and resolved_tid in trackers
+                    and getattr(state, "small_blind", 0) == 10
+                    and getattr(state, "big_blind", 0) == 20
+                ):
+                    prev_hand_players = trackers[resolved_tid].current_hand.get("players", {})
+                    had_eliminated = any(p.get("eliminated") or p.get("status") == "OUT" for p in prev_hand_players.values())
+                    pl_dict = getattr(state, "players", {})
+                    if (
+                        had_eliminated
+                        and len(pl_dict) == 3
+                        and all(getattr(p, "stack", None) is not None and 260 <= p.stack <= 320 for p in pl_dict.values())
+                    ):
+                        if hand_recorder is not None:
+                            try:
+                                hand_recorder.record_hand(trackers[resolved_tid].get_hand_summary())
+                                hand_recorder.finalize_game(resolved_tid, prize_pool=getattr(state, "prize_pool", None))
+                            except Exception:
+                                pass
+                        if validator is not None:
+                            validator.reset_table(resolved_tid)
+                        trackers.pop(resolved_tid, None)
+                        decision_locks.pop(resolved_tid, None)
+                        last_active_decisions.pop(resolved_tid, None)
+                        last_spots.pop(resolved_tid, None)
+                        tournament_end_confirm[resolved_tid] = 0
+                        finalized_tournament_tables.discard(resolved_tid)
+                        decision_snap_counts.pop(resolved_tid, None)
 
                 events: list[Any] = []
                 if TableTracker is not None:
@@ -1155,6 +1199,7 @@ def processing_loop(
                         trackers[resolved_tid] = TableTracker(resolved_tid)
                     state, events = trackers[resolved_tid].update(state)
                     if any(getattr(e, "event_type", "") == "NEW_HAND" for e in events):
+                        decision_snap_counts.pop(resolved_tid, None)
                         if resolved_tid in decision_locks:
                             decision_locks[resolved_tid].reset()
                         last_active_decisions.pop(resolved_tid, None)
@@ -1167,7 +1212,9 @@ def processing_loop(
                                         frame, table_rect, resolved_tid, prev_h_num, "showdown"
                                     )
                                     if snap_rel:
-                                        trackers[resolved_tid].last_completed_hand.setdefault("snapshots", []).append(snap_rel)
+                                        snaps_list = trackers[resolved_tid].last_completed_hand.setdefault("snapshots", [])
+                                        if snap_rel not in snaps_list:
+                                            snaps_list.append(snap_rel)
                                     hand_recorder.record_hand(trackers[resolved_tid].last_completed_hand)
                                 except Exception:
                                     pass
@@ -1179,17 +1226,28 @@ def processing_loop(
                                     frame, table_rect, resolved_tid, trackers[resolved_tid].hand_number, f"street_{to_st}"
                                 )
                                 if snap_rel and trackers[resolved_tid].current_hand:
-                                    trackers[resolved_tid].current_hand.setdefault("snapshots", []).append(snap_rel)
+                                    snaps_list = trackers[resolved_tid].current_hand.setdefault("snapshots", [])
+                                    if snap_rel not in snaps_list:
+                                        snaps_list.append(snap_rel)
                             except Exception:
                                 pass
-                    if trackers[resolved_tid].current_hand.get("tournament_result") and not trackers[resolved_tid].current_hand.get("_game_finalized"):
-                        trackers[resolved_tid].current_hand["_game_finalized"] = True
-                        if hand_recorder is not None:
-                            try:
-                                hand_recorder.record_hand(trackers[resolved_tid].current_hand)
-                                hand_recorder.finalize_game(resolved_tid, prize_pool=state.prize_pool)
-                            except Exception:
-                                pass
+                    has_tr = bool(trackers[resolved_tid].current_hand.get("tournament_result"))
+                    if is_valid and has_tr:
+                        tournament_end_confirm[resolved_tid] = tournament_end_confirm.get(resolved_tid, 0) + 1
+                        if (
+                            tournament_end_confirm[resolved_tid] >= 3
+                            and resolved_tid not in finalized_tournament_tables
+                        ):
+                            finalized_tournament_tables.add(resolved_tid)
+                            trackers[resolved_tid].current_hand["_game_finalized"] = True
+                            if hand_recorder is not None:
+                                try:
+                                    hand_recorder.record_hand(trackers[resolved_tid].get_hand_summary())
+                                    hand_recorder.finalize_game(resolved_tid, prize_pool=getattr(state, "prize_pool", None))
+                                except Exception:
+                                    pass
+                    else:
+                        tournament_end_confirm[resolved_tid] = 0
 
                 if logger is not None and hasattr(logger, "log_state"):
                     logger.log_state(state, events)
@@ -1200,7 +1258,21 @@ def processing_loop(
                 just_locked_decision = False
                 spot: str = last_spots.get(resolved_tid, "--")
 
-                if is_valid and len(hero_cards) == 2 and (is_hero_turn or is_preview_candidate):
+                hero_stk = getattr(getattr(state, "players", {}).get(0), "stack", None)
+                if is_valid and len(hero_cards) == 2 and hero_stk == 0:
+                    decision = Decision(
+                        table_id=resolved_tid,
+                        action="WAIT",
+                        ev_bb=None,
+                        confidence=1.0,
+                        profile_used="STANDARD_EXPLOIT",
+                        reason="Hero is All-In",
+                    )
+                    if resolved_tid in decision_locks:
+                        decision_locks[resolved_tid].reset()
+                    last_active_decisions.pop(resolved_tid, None)
+                    last_spots.pop(resolved_tid, None)
+                elif is_valid and len(hero_cards) == 2 and (is_hero_turn or is_preview_candidate):
                     if is_preview_candidate:
                         # Preview mode: pre-compute recommendation before Hero's turn starts
                         board_cards = getattr(state, "board_cards", [])
@@ -1356,11 +1428,18 @@ def processing_loop(
                 if just_locked_decision and is_hero_turn and hand_recorder is not None:
                     try:
                         cur_h_num = getattr(trackers.get(resolved_tid), "hand_number", 1)
+                        cur_st = getattr(state, "street", "flop").lower()
+                        table_counts = decision_snap_counts.setdefault(resolved_tid, {})
+                        table_counts[cur_st] = table_counts.get(cur_st, 0) + 1
+                        cnt = table_counts[cur_st]
+                        tag = f"decision_{cur_st}" if cnt == 1 else f"decision_{cur_st}_{cnt}"
                         snap_rel = hand_recorder.save_snapshot(
-                            frame, table_rect, resolved_tid, cur_h_num, f"decision_{getattr(state, 'street', 'flop').lower()}"
+                            frame, table_rect, resolved_tid, cur_h_num, tag
                         )
                         if snap_rel and getattr(trackers.get(resolved_tid), "current_hand", None):
-                            trackers[resolved_tid].current_hand.setdefault("snapshots", []).append(snap_rel)
+                            snaps_list = trackers[resolved_tid].current_hand.setdefault("snapshots", [])
+                            if snap_rel not in snaps_list:
+                                snaps_list.append(snap_rel)
                     except Exception:
                         pass
 

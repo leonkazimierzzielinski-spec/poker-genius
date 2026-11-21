@@ -1,5 +1,35 @@
 # Poker Genius — Dziennik Postępu Prac (Progress Log)
 
+## V14.2 — 1 Gra = 1 Paczka .zip + Kopia .md, Czyste Śledzenie Ulic i Historii, Naprawa KONIEC STOŁU oraz Usunięcie Fałszywych Timing Tell (2026-11-21)
+
+### 1. Wdrożone zmiany i nowa architektura
+1. **1 gra = 1 paczka `.zip` + kopia `.md` obok (`main.py`, `state/hand_history.py`):**
+   - **Usunięcie przedwczesnego rozbijania gier:** w `main.py` całkowicie usunięto wywołania `validator.reset_table`, `hand_recorder.finalize_game` oraz resetowanie trackerów z bloku `compute_opponents_signature` (`match_score < 0.85`), które reagowało na dymki akcji przeciwników i rozbijało pojedynczą grę na kilkanaście paczek `.zip`.
+   - **3-klatkowe potwierdzenie końca turnieju:** wprowadzono licznik `tournament_end_confirm[table_id]` oraz zestaw `finalized_tournament_tables`. Gra jest finalizowana do archiwum wyłącznie po 3 kolejnych klatkach `VALID` potwierdzających `tournament_result`. Nowa gra na tym samym oknie jest odblokowywana dopiero po wykryciu nowego turnieju (spadek blindów z resetem, powrót z Heads-Up do pełnego 3-max ze stackami `260..320` przy `10/20` lub co najmniej 2 graczy ze stackami `0 < stack < 880`).
+   - **Kopia `.md` bezpośrednio w folderze `hand_histories/`:** w `HandHistoryRecorder.finalize_game` tworzony jest nie tylko plik `game_...zip`, lecz również bezpośrednia kopia `game_...md` obok archiwum (ułatwiająca szybki podgląd i udostępnianie bez rozpakowywania).
+   - **Sekcja `## 📊 Podsumowanie gry`:** na końcu każdego pliku `history.md` generowane jest podsumowanie zawierające liczbę rozdań, pulę nagród (`$prize`), zwycięzcę turnieju oraz liczbę podjętych decyzji HUD w turze Hero (z wykluczeniem `[PLAN]`).
+   - **Deduplikacja zdjęć:** zrzuty ekranu w `snapshots` są w pełni deduplikowane w raporcie Markdown (`dict.fromkeys`), a kolejne decyzje Hero na tej samej ulicy są numerowane (`decision_<street>_1`, `decision_<street>_2`).
+2. **Naprawa `tournament_result` i ochrona przed `ALL_IN (0)` (`state/tracker.py`, `main.py`):**
+   - **Ścisły warunek końca stołu:** `tournament_result` jest ustawiany wyłącznie gdy `pot == 0` ORAZ (`stack >= 880` u 1 gracza LUB dokładnie 2 rywali ma status `OUT` / `eliminated == True`). Wyeliminowało to fałszywy komunikat `🏆 KONIEC STOŁU — Zwycięzca: Ty (S0), stack 100` pojawiający się podczas all-ina dwóch rywali z pulą w toku (`pot > 0`).
+   - **Ochrona `Hero is All-In`:** w `main.py` gdy `hero_stack == 0`, system zwraca decyzję `WAIT` (`"Hero is All-In"`), całkowicie uniemożliwiając generowanie bezsensownej rekomendacji `ALL_IN (0)`.
+3. **Czyste śledzenie ulic, eliminacja glitchy OCR i naprawa `Timing Tell` (`state/tracker.py`, `strategy/exploit.py`):**
+   - **Realna ulica z liczby kart na boardzie (`_resolve_real_street`):** ulica pokerowa jest wyznaczana ściśle z liczby kart na stole (`0→PREFLOP`, `3→FLOP`, `4→TURN`, `5→RIVER`). Przejście `WAITING_FOR_TURN <-> PREFLOP` przy pustym boardzie nie jest zdarzeniem `STREET_CHANGE`, nie zeruje `street_bet` i nie uruchamia fałszywego `FOLD` ani wielokrotnego naliczania `invested_total` (`40→80→120`).
+   - **Naprawa `Timing Tell: fast check <500ms`:** przy każdym realnym `STREET_CHANGE` zerowane jest `last_reaction_ms = None` u wszystkich graczy. W `strategy/exploit.py` wprowadzono bezpieczny przedział `150 <= last_reaction_ms < 500`, odrzucając artefakty `0..149 ms` z klatek przejściowych.
+   - **Filtr glitchy animacji OCR i zgarniania puli:** zignorowano drobne wartości OCR `0 < curr_bet < small_blind` przy `stack > 0` (np. `BET 1`, `BET 2`, `RAISE 4`) oraz artefakty animacji zgarniania puli z poprzedniego rozdania (`cur_bet > 2 * big_blind` na starcie rozdania bez kart na stole).
+   - **Czysta tabela `HUD vs Hero`:** `record_recommendation` zapisuje realną ulicę, pomija rekomendacje `[PLAN]` i deduplikuje wpisy po krotce `(real_street, action, sizing_bb, sizing_chips)`.
+
+### 2. Wyniki testów jednostkowych (`pytest -v tests/`)
+- Liczba testów: **124 passed in 6.41s (100% sukcesu)**.
+- Nowe testy jednostkowe:
+  1. `tests/test_state.py::test_tracker_no_false_tournament_end_on_two_opponents_all_in`: weryfikuje brak fałszywego `tournament_result` przy stackach 0 rywali i puli w toku (`pot=800`) oraz poprawne ogłoszenie zwycięzcy po zebraniu puli (`pot=0`).
+  2. `tests/test_state.py::test_tracker_waiting_for_turn_does_not_double_invested_or_false_fold`: weryfikuje brak wielokrotnego akumulowania `invested_total` oraz brak fałszywego `FOLD` przy oscylacji między `WAITING_FOR_TURN` a `PREFLOP`.
+  3. `tests/test_state.py::test_tracker_ignores_sub_sb_ocr_glitch_and_stale_pot_sweep`: weryfikuje ignorowanie jednocyfrowych glitchy OCR poniżej SB oraz filtrowanie artefaktu zgarniania puli (740 żetonów) na starcie nowego rozdania.
+  4. `tests/test_state.py::test_hand_history_saves_both_zip_and_standalone_md_with_summary`: weryfikuje tworzenie pary `game_...zip` + `game_...md`, poprawność sekcji `## 📊 Podsumowanie gry` oraz deduplikację zrzutów ekranu.
+  5. `tests/test_strategy.py::test_exploit_timing_tell_ignores_zero_ms_transition_artifact`: weryfikuje brak fałszywego timing tell dla czasów reakcji 0 ms i 50 ms oraz poprawne zadziałanie dla 250 ms.
+  6. `tests/test_ui_and_main.py::test_hero_all_in_stack_zero_returns_wait_not_all_in_zero`: weryfikuje, że dla `hero.stack == 0` system emituje decyzję `WAIT` (`"Hero is All-In"`) zamiast `ALL_IN (0)`.
+
+---
+
 ## V14.1 — Hotfix: Usunięcie UnboundLocalError (spot i now_sec) w processing_loop oraz Zachowanie Sizingu na Klatkach z Keszu DecisionLock (2026-11-21)
 
 ### 1. Wdrożone poprawki

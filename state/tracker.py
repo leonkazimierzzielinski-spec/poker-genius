@@ -18,6 +18,18 @@ class GameEvent:
     details: dict = field(default_factory=dict)
 
 
+def _resolve_real_street(state: TableState) -> str:
+    """Resolve poker street strictly from community cards count on board."""
+    n_board = len(getattr(state, "board_cards", []) or [])
+    if n_board >= 5:
+        return "RIVER"
+    if n_board == 4:
+        return "TURN"
+    if n_board == 3:
+        return "FLOP"
+    return "PREFLOP"
+
+
 class TableTracker:
     """Tracks state transitions across valid frames, measures reaction times, and produces game events."""
 
@@ -28,6 +40,7 @@ class TableTracker:
         self.last_state_change_ms: int | None = None
         self.current_hand: dict[str, Any] = {}
         self.last_completed_hand: dict[str, Any] | None = None
+        self._current_real_street: str = "PREFLOP"
 
     def _format_time(self, ts_ms: int) -> str:
         if ts_ms >= 100_000_000_000:
@@ -36,25 +49,37 @@ class TableTracker:
         return f"{tot_s // 60:02d}:{tot_s % 60:02d}"
 
     def _init_current_hand(self, state: TableState) -> None:
+        self._current_real_street = _resolve_real_street(state)
         players_dict: dict[int, dict[str, Any]] = {}
         starting_stacks: dict[int, int | None] = {}
         starting_bets: dict[int, int] = {}
 
+        # Pre-filter starting bets to eliminate stale pot sweep artifacts from previous hand
+        for sid in (0, 1, 2):
+            p = state.players.get(sid)
+            cur_bet = getattr(p, "current_bet", 0) if p else 0
+            if (
+                len(getattr(state, "board_cards", []) or []) == 0
+                and not getattr(state, "hero_cards", [])
+                and cur_bet > 2 * max(1, getattr(state, "big_blind", 20))
+            ):
+                cur_bet = 0
+            starting_bets[sid] = cur_bet
+
         is_mid_hand = bool(
-            len(state.board_cards) > 0
-            or any((getattr(p, "current_bet", 0) or 0) > state.big_blind for p in state.players.values())
+            len(getattr(state, "board_cards", []) or []) > 0
+            or any(starting_bets[sid] > getattr(state, "big_blind", 20) for sid in (0, 1, 2))
         )
 
         for sid in (0, 1, 2):
             p = state.players.get(sid)
-            cur_bet = getattr(p, "current_bet", 0) if p else 0
+            cur_bet = starting_bets[sid]
             is_dealer = bool(getattr(p, "is_dealer", False)) if p else False
             stack = getattr(p, "stack", None) if p else None
             is_active = getattr(p, "is_active", True) if p else True
             status_text = getattr(p, "status_text", "ACTIVE") if p else "ACTIVE"
 
             starting_stacks[sid] = stack
-            starting_bets[sid] = cur_bet
 
             eliminated = bool(stack is None and not is_active)
             folded = bool(not eliminated and ((not is_active) or (status_text == "FOLDED")))
@@ -87,10 +112,9 @@ class TableTracker:
             p_info = players_dict[sid]
             if p_info["invested_total"] > 0 and not p_info.get("eliminated"):
                 act = "BET" if is_mid_hand else "BLIND"
-                st = state.street if is_mid_hand else "PREFLOP"
                 action_log.append({
                     "time_str": self._format_time(state.timestamp_ms),
-                    "street": st,
+                    "street": self._current_real_street,
                     "seat_id": sid,
                     "player_name": p_info["name"],
                     "action": act,
@@ -107,7 +131,7 @@ class TableTracker:
             "prize_pool": getattr(state, "prize_pool", None),
             "hero_cards": list(getattr(state, "hero_cards", [])),
             "board_cards": list(getattr(state, "board_cards", [])),
-            "street": getattr(state, "street", "PREFLOP"),
+            "street": self._current_real_street,
             "pot": getattr(state, "pot", 0),
             "players": players_dict,
             "action_log": action_log,
@@ -173,18 +197,34 @@ class TableTracker:
         act = getattr(decision, "action", "WAIT")
         if act == "WAIT":
             return
+        rsn = str(getattr(decision, "reason", "") or "")
+        if rsn.startswith("[PLAN]"):
+            return
+
+        real_st = self._current_real_street or street
+        if real_st == "WAITING_FOR_TURN":
+            real_st = "PREFLOP"
+
+        s_bb = getattr(decision, "sizing_bb", None)
+        s_chips = getattr(decision, "sizing_chips", None)
+
         recs = self.current_hand.setdefault("recommendations", [])
         if recs:
             last = recs[-1]
-            if last.get("street") == street and last.get("action") == act:
+            if (
+                last.get("street") == real_st
+                and last.get("action") == act
+                and last.get("sizing_bb") == s_bb
+                and last.get("sizing_chips") == s_chips
+            ):
                 return
         recs.append({
-            "street": street,
+            "street": real_st,
             "action": act,
-            "sizing_bb": getattr(decision, "sizing_bb", None),
-            "sizing_chips": getattr(decision, "sizing_chips", None),
+            "sizing_bb": s_bb,
+            "sizing_chips": s_chips,
             "ev_bb": getattr(decision, "ev_bb", None),
-            "reason": getattr(decision, "reason", ""),
+            "reason": rsn,
             "timestamp_ms": timestamp_ms,
         })
 
@@ -234,9 +274,11 @@ class TableTracker:
             prev_dealer is not None and curr_dealer is not None and prev_dealer != curr_dealer
         )
 
+        curr_real_st = _resolve_real_street(state)
+        prev_real_st = _resolve_real_street(self.prev_state)
         street_reset = (
-            self.prev_state.street in ("FLOP", "TURN", "RIVER")
-            and state.street == "PREFLOP"
+            prev_real_st in ("FLOP", "TURN", "RIVER")
+            and curr_real_st == "PREFLOP"
         )
 
         is_new_hand = hero_cards_changed or dealer_changed or street_reset
@@ -265,12 +307,21 @@ class TableTracker:
         if state.board_cards:
             self.current_hand["board_cards"] = list(state.board_cards)
         self.current_hand["pot"] = getattr(state, "pot", self.current_hand.get("pot", 0))
-        self.current_hand["street"] = state.street
+        self.current_hand["street"] = self._current_real_street
         if getattr(state, "prize_pool", None) is not None:
             self.current_hand["prize_pool"] = state.prize_pool
 
-        # Detect STREET_CHANGE
-        if not is_new_hand and state.street != self.prev_state.street:
+        # Detect STREET_CHANGE (strictly based on community cards count progression)
+        street_order = {"PREFLOP": 0, "FLOP": 1, "TURN": 2, "RIVER": 3}
+        is_real_street_change = (
+            not is_new_hand
+            and street_order.get(curr_real_st, 0) > street_order.get(self._current_real_street, 0)
+        )
+
+        if is_real_street_change:
+            from_st = self._current_real_street
+            self._current_real_street = curr_real_st
+            self.current_hand["street"] = curr_real_st
             self.last_state_change_ms = state.timestamp_ms
             events.append(
                 GameEvent(
@@ -278,8 +329,8 @@ class TableTracker:
                     table_id=self.table_id,
                     timestamp_ms=state.timestamp_ms,
                     details={
-                        "from_street": self.prev_state.street,
-                        "to_street": state.street,
+                        "from_street": from_st,
+                        "to_street": curr_real_st,
                     },
                 )
             )
@@ -295,7 +346,7 @@ class TableTracker:
                         p_dict["last_action"] = "FOLD"
                         self.current_hand["action_log"].append({
                             "time_str": self._format_time(state.timestamp_ms),
-                            "street": self.prev_state.street,
+                            "street": from_st,
                             "seat_id": sid,
                             "player_name": p_dict["name"],
                             "action": "FOLD",
@@ -309,6 +360,10 @@ class TableTracker:
                 if not p_dict.get("folded") and not p_dict.get("eliminated"):
                     p_dict["street_bet"] = 0
 
+            # Reset reaction times on street change
+            for p in state.players.values():
+                p.last_reaction_ms = None
+
         # Hero turn ended: check FOLD (Condition C) or CHECK
         if not is_new_hand and self.prev_state.is_hero_turn and not state.is_hero_turn:
             max_opp = max((getattr(p, "current_bet", 0) for sid, p in self.prev_state.players.items() if sid != 0), default=0)
@@ -319,14 +374,14 @@ class TableTracker:
                 if (
                     max_opp > hero_prev_bet
                     and hero_curr_bet <= hero_prev_bet
-                    and state.street == self.prev_state.street
+                    and curr_real_st == prev_real_st
                 ):
                     p0_dict["folded"] = True
                     p0_dict["status"] = "FOLD"
                     p0_dict["last_action"] = "FOLD"
                     self.current_hand["action_log"].append({
                         "time_str": self._format_time(state.timestamp_ms),
-                        "street": state.street,
+                        "street": self._current_real_street,
                         "seat_id": 0,
                         "player_name": p0_dict["name"],
                         "action": "FOLD",
@@ -341,7 +396,7 @@ class TableTracker:
                     p0_dict["last_decision_sec"] = dec_sec
                     self.current_hand["action_log"].append({
                         "time_str": self._format_time(state.timestamp_ms),
-                        "street": self.prev_state.street,
+                        "street": self._current_real_street,
                         "seat_id": 0,
                         "player_name": p0_dict["name"],
                         "action": "CHECK",
@@ -369,7 +424,7 @@ class TableTracker:
                         p_dict["last_action"] = "FOLD"
                         self.current_hand["action_log"].append({
                             "time_str": self._format_time(state.timestamp_ms),
-                            "street": state.street,
+                            "street": self._current_real_street,
                             "seat_id": sid,
                             "player_name": p_dict["name"],
                             "action": "FOLD",
@@ -390,6 +445,11 @@ class TableTracker:
                     p_dict["is_dealer"] = curr_p.is_dealer
 
                     if curr_p.current_bet > p_dict["street_bet"]:
+                        # Ignore sub-small_blind OCR animation glitches if player has stack remaining
+                        sb_val = max(1, getattr(state, "small_blind", 10))
+                        if 0 < curr_p.current_bet < sb_val and (curr_p.stack or 0) > 0:
+                            continue
+
                         delta = curr_p.current_bet - p_dict["street_bet"]
                         p_dict["invested_total"] += delta
                         p_dict["street_bet"] = curr_p.current_bet
@@ -397,7 +457,7 @@ class TableTracker:
                         # Check if posting blind
                         is_blind_action = False
                         if (
-                            state.street in ("WAITING_FOR_TURN", "PREFLOP")
+                            self._current_real_street == "PREFLOP"
                             and not self.current_hand.get("hero_cards")
                             and curr_p.current_bet in (state.small_blind, state.big_blind)
                             and not p_dict.get("has_posted_blind", False)
@@ -435,7 +495,7 @@ class TableTracker:
                         p_dict["last_action"] = f"{act_name} {curr_p.current_bet}"
                         self.current_hand["action_log"].append({
                             "time_str": self._format_time(state.timestamp_ms),
-                            "street": state.street,
+                            "street": self._current_real_street,
                             "seat_id": seat_id,
                             "player_name": p_dict["name"],
                             "action": act_name,
@@ -461,13 +521,26 @@ class TableTracker:
                         curr_p.last_reaction_ms = prev_p.last_reaction_ms
 
         # Check tournament winner
-        big_stack_p = [sid for sid, p in state.players.items() if (getattr(p, "stack", 0) or 0) >= 880]
-        active_alive = [
-            sid for sid, p in state.players.items()
-            if getattr(p, "stack", None) is not None and p.stack > 0 and getattr(p, "is_active", True)
+        pot_val = int(getattr(state, "pot", 0) or 0)
+        eliminated_count = sum(
+            1 for sid in (0, 1, 2)
+            if self.current_hand.get("players", {}).get(sid, {}).get("eliminated", False)
+        )
+        big_stack_p = [
+            sid for sid in (0, 1, 2)
+            if sid in state.players and (getattr(state.players[sid], "stack", None) or 0) >= 880
         ]
-        if len(big_stack_p) == 1 or len(active_alive) == 1:
-            win_sid = big_stack_p[0] if big_stack_p else active_alive[0]
+        if pot_val == 0 and (len(big_stack_p) == 1 or eliminated_count == 2):
+            if len(big_stack_p) == 1:
+                win_sid = big_stack_p[0]
+            else:
+                alive_sids = [
+                    sid for sid, p in state.players.items()
+                    if not self.current_hand.get("players", {}).get(sid, {}).get("eliminated", False)
+                    and (getattr(p, "stack", None) or 0) > 0
+                ]
+                win_sid = alive_sids[0] if alive_sids else 0
+
             win_p = state.players.get(win_sid)
             win_name = self.current_hand.get("players", {}).get(win_sid, {}).get("name", f"S{win_sid}")
             self.current_hand["tournament_result"] = {
@@ -476,6 +549,8 @@ class TableTracker:
                 "prize_pool": getattr(state, "prize_pool", None),
                 "final_stack": getattr(win_p, "stack", 900) if win_p else 900,
             }
+        else:
+            self.current_hand.pop("tournament_result", None)
 
         # Detect HERO_TURN
         if state.is_hero_turn and not self.prev_state.is_hero_turn:

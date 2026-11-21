@@ -1158,5 +1158,301 @@ def test_hand_history_per_game_zip_with_and_without_snapshots(tmp_path) -> None:
     assert not active_dir.exists()
 
 
+def test_tracker_no_false_tournament_end_on_two_opponents_all_in() -> None:
+    """Verify that when 2 opponents are All-In with stack=0 but pot > 0, tournament_result is NOT triggered."""
+    tracker = TableTracker("table_1")
+
+    # S0=100 (Hero), S1=0 (All-in), S2=0 (All-in), pot=800 on Flop
+    st1 = TableState(
+        table_id="table_1",
+        timestamp_ms=1000,
+        prize_pool=6,
+        small_blind=10,
+        big_blind=20,
+        pot=800,
+        hero_cards=["Kh", "Qh"],
+        board_cards=["Ah", "7c", "2d"],
+        street="FLOP",
+        is_hero_turn=False,
+        available_actions=[],
+        players={
+            0: PlayerState(seat_id=0, stack=100, current_bet=0, is_dealer=True, is_active=True),
+            1: PlayerState(seat_id=1, stack=0, current_bet=400, is_dealer=False, is_active=True, status_text="ALL_IN"),
+            2: PlayerState(seat_id=2, stack=0, current_bet=400, is_dealer=False, is_active=True, status_text="ALL_IN"),
+        },
+        is_valid=True,
+    )
+    tracker.update(st1)
+
+    # pot is 800 > 0: tournament_result MUST be None
+    assert tracker.current_hand.get("tournament_result") is None
+
+    # Frame 2: River dealt, showdown resolved, pot collected (pot=0), S2 won stack 900
+    st2 = TableState(
+        table_id="table_1",
+        timestamp_ms=3000,
+        prize_pool=6,
+        small_blind=10,
+        big_blind=20,
+        pot=0,
+        hero_cards=["Kh", "Qh"],
+        board_cards=["Ah", "7c", "2d", "8s", "Jh"],
+        street="RIVER",
+        is_hero_turn=False,
+        available_actions=[],
+        players={
+            0: PlayerState(seat_id=0, stack=0, current_bet=0, is_dealer=True, is_active=False),
+            1: PlayerState(seat_id=1, stack=0, current_bet=0, is_dealer=False, is_active=False),
+            2: PlayerState(seat_id=2, stack=900, current_bet=0, is_dealer=False, is_active=True),
+        },
+        is_valid=True,
+    )
+    tracker.update(st2)
+
+    # Now pot=0 and S2 has stack >= 880: tournament_result is set
+    tr = tracker.current_hand.get("tournament_result")
+    assert tr is not None
+    assert tr["winner_seat"] == 2
+    assert tr["final_stack"] == 900
+
+
+def test_tracker_waiting_for_turn_does_not_double_invested_or_false_fold() -> None:
+    """Verify that street oscillating between WAITING_FOR_TURN and PREFLOP does not reset street_bet or double invested_total."""
+    tracker = TableTracker("table_1")
+
+    # Frame 1: Hero posts BB 20
+    st1 = TableState(
+        table_id="table_1",
+        timestamp_ms=1000,
+        prize_pool=6,
+        small_blind=10,
+        big_blind=20,
+        pot=30,
+        hero_cards=["Ac", "Kd"],
+        board_cards=[],
+        street="PREFLOP",
+        is_hero_turn=False,
+        available_actions=[],
+        players={
+            0: PlayerState(seat_id=0, stack=280, current_bet=20, is_dealer=False),
+            1: PlayerState(seat_id=1, stack=290, current_bet=10, is_dealer=False),
+            2: PlayerState(seat_id=2, stack=300, current_bet=0, is_dealer=True),
+        },
+        is_valid=True,
+    )
+    tracker.update(st1)
+
+    # Frame 2: Opponent raises to 40, Hero calls to 40
+    st2 = TableState(
+        table_id="table_1",
+        timestamp_ms=2000,
+        prize_pool=6,
+        small_blind=10,
+        big_blind=20,
+        pot=90,
+        hero_cards=["Ac", "Kd"],
+        board_cards=[],
+        street="PREFLOP",
+        is_hero_turn=False,
+        available_actions=[],
+        players={
+            0: PlayerState(seat_id=0, stack=260, current_bet=40, is_dealer=False),
+            1: PlayerState(seat_id=1, stack=290, current_bet=10, is_dealer=False),
+            2: PlayerState(seat_id=2, stack=260, current_bet=40, is_dealer=True),
+        },
+        is_valid=True,
+    )
+    tracker.update(st2)
+    assert tracker.current_hand["players"][0]["invested_total"] == 40
+    assert tracker.current_hand["players"][0]["folded"] is False
+
+    # Frame 3: Street changes to WAITING_FOR_TURN with same board (empty) and same bets
+    st3 = TableState(
+        table_id="table_1",
+        timestamp_ms=2500,
+        prize_pool=6,
+        small_blind=10,
+        big_blind=20,
+        pot=90,
+        hero_cards=["Ac", "Kd"],
+        board_cards=[],
+        street="WAITING_FOR_TURN",
+        is_hero_turn=False,
+        available_actions=[],
+        players={
+            0: PlayerState(seat_id=0, stack=260, current_bet=40, is_dealer=False),
+            1: PlayerState(seat_id=1, stack=290, current_bet=10, is_dealer=False),
+            2: PlayerState(seat_id=2, stack=260, current_bet=40, is_dealer=True),
+        },
+        is_valid=True,
+    )
+    tracker.update(st3)
+    assert tracker.current_hand["players"][0]["invested_total"] == 40
+    assert tracker.current_hand["players"][0]["folded"] is False
+
+    # Frame 4: Street toggles back to PREFLOP
+    st4 = TableState(
+        table_id="table_1",
+        timestamp_ms=3000,
+        prize_pool=6,
+        small_blind=10,
+        big_blind=20,
+        pot=90,
+        hero_cards=["Ac", "Kd"],
+        board_cards=[],
+        street="PREFLOP",
+        is_hero_turn=False,
+        available_actions=[],
+        players={
+            0: PlayerState(seat_id=0, stack=260, current_bet=40, is_dealer=False),
+            1: PlayerState(seat_id=1, stack=290, current_bet=10, is_dealer=False),
+            2: PlayerState(seat_id=2, stack=260, current_bet=40, is_dealer=True),
+        },
+        is_valid=True,
+    )
+    tracker.update(st4)
+
+    # Invested total must stay strictly 40 (no double/triple accumulation) and no false fold!
+    assert tracker.current_hand["players"][0]["invested_total"] == 40
+    assert tracker.current_hand["players"][0]["folded"] is False
+
+
+def test_tracker_ignores_sub_sb_ocr_glitch_and_stale_pot_sweep() -> None:
+    """Verify filtering of sub-small_blind OCR animation glitches and start-of-hand pot sweep artifacts."""
+    tracker = TableTracker("table_1")
+
+    # Frame 1: Normal preflop with blinds 10/20
+    st1 = TableState(
+        table_id="table_1",
+        timestamp_ms=1000,
+        prize_pool=6,
+        small_blind=10,
+        big_blind=20,
+        pot=30,
+        hero_cards=["Ac", "Kd"],
+        board_cards=[],
+        street="PREFLOP",
+        is_hero_turn=False,
+        available_actions=[],
+        players={
+            0: PlayerState(seat_id=0, stack=280, current_bet=20, is_dealer=False),
+            1: PlayerState(seat_id=1, stack=290, current_bet=10, is_dealer=False),
+            2: PlayerState(seat_id=2, stack=300, current_bet=0, is_dealer=True),
+        },
+        is_valid=True,
+    )
+    tracker.update(st1)
+
+    # Frame 2: Seat 2 has OCR glitch current_bet=2 (< small_blind 10) with remaining stack 298
+    st2 = TableState(
+        table_id="table_1",
+        timestamp_ms=1500,
+        prize_pool=6,
+        small_blind=10,
+        big_blind=20,
+        pot=32,
+        hero_cards=["Ac", "Kd"],
+        board_cards=[],
+        street="PREFLOP",
+        is_hero_turn=False,
+        available_actions=[],
+        players={
+            0: PlayerState(seat_id=0, stack=280, current_bet=20, is_dealer=False),
+            1: PlayerState(seat_id=1, stack=290, current_bet=10, is_dealer=False),
+            2: PlayerState(seat_id=2, stack=298, current_bet=2, is_dealer=True),
+        },
+        is_valid=True,
+    )
+    tracker.update(st2)
+
+    # The glitch bet of 2 should be completely ignored in action_log and invested_total
+    assert tracker.current_hand["players"][2]["invested_total"] == 0
+    assert not any(a.get("seat_id") == 2 for a in tracker.current_hand["action_log"])
+
+    # Test stale pot sweep: new hand starting with no board cards and no hero cards, but bet=740 (> 2*BB)
+    tracker2 = TableTracker("table_2")
+    st_sweep = TableState(
+        table_id="table_2",
+        timestamp_ms=1000,
+        prize_pool=6,
+        small_blind=30,
+        big_blind=60,
+        pot=0,
+        hero_cards=[],
+        board_cards=[],
+        street="PREFLOP",
+        is_hero_turn=False,
+        available_actions=[],
+        players={
+            0: PlayerState(seat_id=0, stack=160, current_bet=0, is_dealer=False),
+            1: PlayerState(seat_id=1, stack=740, current_bet=740, is_dealer=False),
+            2: PlayerState(seat_id=2, stack=0, current_bet=0, is_dealer=True),
+        },
+        is_valid=True,
+    )
+    tracker2.update(st_sweep)
+
+    # 740 is a stale animation artifact and should be zeroed out
+    assert tracker2.current_hand["mid_hand_join"] is False
+    assert tracker2.current_hand["players"][1]["invested_total"] == 0
+    assert not any("740" in a.get("action", "") or a.get("amount") == 740 for a in tracker2.current_hand["action_log"])
+
+
+def test_hand_history_saves_both_zip_and_standalone_md_with_summary(tmp_path) -> None:
+    """Verify finalize_game writes both .zip and companion .md with summary and deduplicates snapshots."""
+    from state.hand_history import HandHistoryRecorder
+
+    out_dir = tmp_path / "hh_dual_test"
+    rec = HandHistoryRecorder(output_dir=out_dir, save_snapshots=True)
+
+    hand = {
+        "hand_number": 1,
+        "table_id": "table_1",
+        "start_ts_ms": 1700000000000,
+        "blinds": (10, 20),
+        "prize_pool": 6,
+        "hero_cards": ["Ah", "Kd"],
+        "board_cards": ["Jh", "Th", "2c"],
+        "street": "FLOP",
+        "pot": 60,
+        "players": {
+            0: {"seat_id": 0, "name": "Ty (S0)", "stack": 280, "invested_total": 20, "is_dealer": False, "folded": False},
+            1: {"seat_id": 1, "name": "Rywal 1 (S1)", "stack": 280, "invested_total": 20, "is_dealer": False, "folded": False},
+        },
+        "action_log": [{"time_str": "12:00:00", "street": "PREFLOP", "seat_id": 1, "action": "BLIND", "amount": 20}],
+        "recommendations": [
+            {"street": "FLOP", "action": "CHECK", "sizing_bb": None, "ev_bb": 0.5, "reason": "[PLAN] Preview check"},
+            {"street": "FLOP", "action": "BET_30", "sizing_bb": 1, "ev_bb": 1.2, "reason": "Value bet"},
+        ],
+        "snapshots": ["snapshots/h001_decision_flop.jpg", "snapshots/h001_decision_flop.jpg"],
+        "tournament_result": {
+            "winner_seat": 0,
+            "winner_name": "Ty (S0)",
+            "prize_pool": 6,
+            "final_stack": 900,
+        },
+    }
+    rec.record_hand(hand)
+
+    zip_path = rec.finalize_game("table_1", prize_pool=6)
+    assert zip_path is not None
+    assert zip_path.exists()
+
+    # Standalone .md must exist right next to the .zip
+    md_path = zip_path.with_suffix(".md")
+    assert md_path.exists()
+
+    content = md_path.read_text(encoding="utf-8")
+    assert "## 📊 Podsumowanie gry" in content
+    assert "- **Liczba rozdań**: 1" in content
+    assert "- **Pula nagród**: $6" in content
+    assert "- **Zwycięzca turnieju**: Ty (S0) (S0)" in content
+    assert "- **Decyzje HUD (Hero)**: 1" in content  # Excludes [PLAN]!
+
+    # Snapshots must be deduplicated (only 1 occurrence)
+    assert content.count("![snapshots/h001_decision_flop.jpg](snapshots/h001_decision_flop.jpg)") == 1
+
+
+
 
 

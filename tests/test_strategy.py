@@ -74,6 +74,55 @@ def test_exploit_timing_tell_fast_check():
     assert any("Timing Tell" in r for r in reasons)
 
 
+def test_exploit_timing_tell_ignores_zero_ms_transition_artifact() -> None:
+    """Verify that reaction times < 150 ms (0 ms or 50 ms transition artifacts) do NOT trigger timing tell."""
+    engine = ExploitEngine()
+    modifiers = ProfileModifiers(profile_name="STANDARD_EXPLOIT", bluff_factor=1.0)
+
+    # 1. Artifact reaction time = 0 ms (new street transition frame)
+    state_0ms = SimpleNamespace(
+        players={
+            0: SimpleNamespace(seat_id=0, is_active=True, last_reaction_ms=None),
+            1: SimpleNamespace(seat_id=1, is_active=True, last_reaction_ms=0, current_bet=0),
+            2: SimpleNamespace(seat_id=2, is_active=True, last_reaction_ms=1200, current_bet=0),
+        },
+        street="FLOP",
+        big_blind=20,
+    )
+    candidate_evs = {"CHECK": 0.05, "BET_30": 0.10}
+    evs_0, reasons_0 = engine.apply_exploits(candidate_evs.copy(), state_0ms, modifiers, spot="POSTFLOP")
+    assert evs_0["BET_30"] == pytest.approx(0.10)
+    assert not any("Timing Tell" in r for r in reasons_0)
+
+    # 2. Artifact reaction time = 50 ms
+    state_50ms = SimpleNamespace(
+        players={
+            0: SimpleNamespace(seat_id=0, is_active=True, last_reaction_ms=None),
+            1: SimpleNamespace(seat_id=1, is_active=True, last_reaction_ms=50, current_bet=0),
+            2: SimpleNamespace(seat_id=2, is_active=True, last_reaction_ms=1200, current_bet=0),
+        },
+        street="FLOP",
+        big_blind=20,
+    )
+    evs_50, reasons_50 = engine.apply_exploits(candidate_evs.copy(), state_50ms, modifiers, spot="POSTFLOP")
+    assert evs_50["BET_30"] == pytest.approx(0.10)
+    assert not any("Timing Tell" in r for r in reasons_50)
+
+    # 3. Real fast check = 250 ms (triggers timing tell)
+    state_250ms = SimpleNamespace(
+        players={
+            0: SimpleNamespace(seat_id=0, is_active=True, last_reaction_ms=None),
+            1: SimpleNamespace(seat_id=1, is_active=True, last_reaction_ms=250, current_bet=0),
+            2: SimpleNamespace(seat_id=2, is_active=True, last_reaction_ms=1200, current_bet=0),
+        },
+        street="FLOP",
+        big_blind=20,
+    )
+    evs_250, reasons_250 = engine.apply_exploits(candidate_evs.copy(), state_250ms, modifiers, spot="POSTFLOP")
+    assert evs_250["BET_30"] == pytest.approx(0.22)
+    assert any("Timing Tell: fast check <500ms" in r for r in reasons_250)
+
+
 def test_exploit_sizing_tell_one_bb():
     """Simulate 1 BB weak bet on flop and verify ALL_IN boost and Sizing Tell reason."""
     engine = ExploitEngine()

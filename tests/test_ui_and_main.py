@@ -1851,6 +1851,112 @@ def test_processing_loop_live_no_unbound_spot_and_keeps_sizing() -> None:
     assert captured_decisions[3].sizing_chips == 20
 
 
+def test_hero_all_in_stack_zero_returns_wait_not_all_in_zero() -> None:
+    """Verify that when Hero has stack == 0 (already all-in), processing_loop returns WAIT ('Hero is All-In') rather than ALL_IN (0)."""
+    import queue
+    import threading
+    import time
+    import numpy as np
+    from unittest.mock import MagicMock
+    from PySide6.QtWidgets import QApplication
+    from main import processing_loop
+    from ui.hud import HudBridge
+    from core.contracts import TableState, PlayerState, Decision
+
+    app = QApplication.instance() or QApplication([])
+
+    frame_q = queue.Queue()
+    stop_ev = threading.Event()
+    trackers: dict[str, Any] = {}
+    bridge = HudBridge()
+
+    captured_decisions: list[Decision] = []
+
+    def _on_dec(dec: Decision, *args: Any) -> None:
+        if getattr(dec, "reason", "") != "Szukam stołu Stake...":
+            captured_decisions.append(dec)
+
+    bridge.decision_updated.connect(_on_dec)
+
+    # Hero (seat 0) has stack=0 and 2 cards on the Flop
+    state_hero_all_in = TableState(
+        table_id="table_1",
+        timestamp_ms=1000,
+        prize_pool=6,
+        small_blind=10,
+        big_blind=20,
+        pot=600,
+        hero_cards=["Ah", "Kd"],
+        board_cards=["7c", "8d", "2h"],
+        street="FLOP",
+        is_hero_turn=True,
+        available_actions=["CALL", "ALL_IN"],
+        players={
+            0: PlayerState(seat_id=0, stack=0, current_bet=300, is_dealer=True, status_text="ALL_IN"),
+            1: PlayerState(seat_id=1, stack=100, current_bet=300, is_dealer=False),
+        },
+        is_valid=True,
+    )
+
+    mock_pipeline = MagicMock()
+    mock_pipeline.anchor_template = None
+    mock_pipeline._last_canonical_table = None
+    mock_pipeline.process_frame.return_value = state_hero_all_in
+
+    mock_validator = MagicMock()
+    mock_validator.validate.return_value = (True, [])
+
+    mock_dm = MagicMock()
+
+    t = threading.Thread(
+        target=processing_loop,
+        args=(
+            frame_q,
+            mock_pipeline,
+            mock_validator,
+            trackers,
+            None,
+            None,
+            None,
+            mock_dm,
+            None,
+            bridge,
+            stop_ev,
+        ),
+        kwargs={
+            "headless": True,
+            "show_video": False,
+            "playback": None,
+            "is_live": True,
+            "hand_recorder": None,
+        },
+        daemon=True,
+    )
+    t.start()
+
+    time.sleep(0.1)
+    bridge.manual_rect_changed.emit((100, 100, 800, 500))
+
+    dummy_frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+    frame_q.put(dummy_frame)
+
+    start_wait = time.time()
+    while len(captured_decisions) < 1 and time.time() - start_wait < 3.0:
+        app.processEvents()
+        time.sleep(0.05)
+
+    stop_ev.set()
+    frame_q.put(None)
+    t.join(timeout=2.0)
+
+    assert not t.is_alive(), "processing_loop thread should have stopped cleanly"
+    assert len(captured_decisions) >= 1
+    dec = captured_decisions[0]
+    assert dec.action == "WAIT"
+    assert dec.reason == "Hero is All-In"
+    assert mock_dm.decide.call_count == 0
+
+
 
 
 
