@@ -783,6 +783,7 @@ def processing_loop(
     last_idle_emit: float = 0.0
     decision_locks: dict[str, Any] = {}
     last_active_decisions: dict[str, Any] = {}
+    last_spots: dict[str, str] = {}
 
     def _on_manual_rect(rect: Any) -> None:
         if "table_1" in managed_tables:
@@ -810,6 +811,7 @@ def processing_loop(
         trackers.pop(tid, None)
         decision_locks.pop(tid, None)
         last_active_decisions.pop(tid, None)
+        last_spots.pop(tid, None)
 
     def _on_table_adjust_5arg(tid: str, dx: int, dy: int, sx: float, sy: float) -> None:
         if tid in managed_tables:
@@ -895,6 +897,7 @@ def processing_loop(
                 break
 
             now_ms = int(time.time() * 1000)
+            now_sec = time.perf_counter()
 
             # Optional OpenCV background video preview
             if show_video and frame is not None:
@@ -1092,6 +1095,7 @@ def processing_loop(
                                     trackers.pop(table_id, None)
                                     decision_locks.pop(table_id, None)
                                     last_active_decisions.pop(table_id, None)
+                                    last_spots.pop(table_id, None)
                             managed_tables[table_id]["last_opponents_sig"] = opp_sig
                     except Exception:
                         pass
@@ -1110,6 +1114,7 @@ def processing_loop(
                     trackers.pop(resolved_tid, None)
                     decision_locks.pop(resolved_tid, None)
                     last_active_decisions.pop(resolved_tid, None)
+                    last_spots.pop(resolved_tid, None)
 
                 validation_errors: list[str] = []
                 if validator is not None:
@@ -1138,6 +1143,7 @@ def processing_loop(
                             trackers.pop(resolved_tid, None)
                             decision_locks.pop(resolved_tid, None)
                             last_active_decisions.pop(resolved_tid, None)
+                            last_spots.pop(resolved_tid, None)
                             is_valid, validation_errors = validator.validate(state)
                     state.is_valid = is_valid
                 else:
@@ -1152,6 +1158,7 @@ def processing_loop(
                         if resolved_tid in decision_locks:
                             decision_locks[resolved_tid].reset()
                         last_active_decisions.pop(resolved_tid, None)
+                        last_spots.pop(resolved_tid, None)
                         if getattr(trackers[resolved_tid], "last_completed_hand", None):
                             if hand_recorder is not None:
                                 try:
@@ -1191,6 +1198,7 @@ def processing_loop(
                 hero_cards = getattr(state, "hero_cards", [])
                 is_preview_candidate = is_valid and len(hero_cards) == 2 and not is_hero_turn
                 just_locked_decision = False
+                spot: str = last_spots.get(resolved_tid, "--")
 
                 if is_valid and len(hero_cards) == 2 and (is_hero_turn or is_preview_candidate):
                     if is_preview_candidate:
@@ -1243,6 +1251,7 @@ def processing_loop(
                         candidate_evs, spot = evaluate_candidates(
                             eval_state, preflop_engine, flop_db, mc_calc
                         )
+                        last_spots[resolved_tid] = spot
                         if decision_maker is not None and hasattr(decision_maker, "decide"):
                             decision = decision_maker.decide(
                                 eval_state, candidate_evs, spot=spot, allow_preview=is_preview_candidate
@@ -1341,6 +1350,7 @@ def processing_loop(
                     if resolved_tid in decision_locks:
                         decision_locks[resolved_tid].reset()
                     last_active_decisions.pop(resolved_tid, None)
+                    last_spots.pop(resolved_tid, None)
 
                 # Save decision snapshot on locked decision during hero turn
                 if just_locked_decision and is_hero_turn and hand_recorder is not None:
@@ -1353,9 +1363,6 @@ def processing_loop(
                             trackers[resolved_tid].current_hand.setdefault("snapshots", []).append(snap_rel)
                     except Exception:
                         pass
-                else:
-                    decision.sizing_bb = None
-                    decision.sizing_chips = None
 
                 # Diagnostic scan summary for HUD details view
                 val_status = "VALID" if is_valid else f"INVALID: {', '.join(validation_errors)}"

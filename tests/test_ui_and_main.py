@@ -1698,6 +1698,160 @@ def test_hud_snapshots_toggle_button_in_details() -> None:
     assert hud.btn_snapshots.isHidden() is True
 
 
+def test_processing_loop_live_no_unbound_spot_and_keeps_sizing() -> None:
+    """Verify that processing_loop with is_live=True avoids UnboundLocalError on spot and preserves sizing on locked frames."""
+    import queue
+    import threading
+    import time
+    import numpy as np
+    from unittest.mock import MagicMock
+    from PySide6.QtWidgets import QApplication
+    from main import processing_loop
+    from ui.hud import HudBridge
+    from core.contracts import TableState, PlayerState, Decision
+
+    app = QApplication.instance() or QApplication([])
+
+    frame_q = queue.Queue()
+    stop_ev = threading.Event()
+    trackers: dict[str, Any] = {}
+    bridge = HudBridge()
+
+    captured_decisions: list[Decision] = []
+
+    def _on_dec(dec: Decision, *args: Any) -> None:
+        if getattr(dec, "reason", "") != "Szukam stołu Stake...":
+            captured_decisions.append(dec)
+
+    bridge.decision_updated.connect(_on_dec)
+
+    state_invalid = TableState(
+        table_id="table_1",
+        timestamp_ms=1000,
+        prize_pool=6,
+        small_blind=10,
+        big_blind=20,
+        pot=0,
+        hero_cards=[],
+        board_cards=[],
+        street="WAITING_FOR_TURN",
+        is_hero_turn=False,
+        available_actions=[],
+        players={},
+        is_valid=False,
+    )
+
+    state_valid = TableState(
+        table_id="table_1",
+        timestamp_ms=1000,
+        prize_pool=6,
+        small_blind=10,
+        big_blind=20,
+        pot=60,
+        hero_cards=["Ah", "Kd"],
+        board_cards=["7c", "8d", "2h"],
+        street="FLOP",
+        is_hero_turn=True,
+        available_actions=["CHECK", "BET_30", "ALL_IN"],
+        players={
+            0: PlayerState(seat_id=0, stack=280, current_bet=0, is_dealer=True),
+            1: PlayerState(seat_id=1, stack=280, current_bet=0, is_dealer=False),
+        },
+        is_valid=True,
+    )
+
+    mock_pipeline = MagicMock()
+    mock_pipeline.anchor_template = None
+    mock_pipeline._last_canonical_table = None
+    mock_pipeline.process_frame.side_effect = [
+        state_invalid,
+        state_valid,
+        state_valid,
+        state_valid,
+    ]
+
+    mock_validator = MagicMock()
+    mock_validator.validate.side_effect = [
+        (False, ["No cards"]),
+        (True, []),
+        (True, []),
+        (True, []),
+    ]
+
+    mock_dm = MagicMock()
+    mock_dm.decide.return_value = Decision(
+        table_id="table_1",
+        action="BET_30",
+        ev_bb=2.5,
+        confidence=0.95,
+        profile_used="STANDARD_EXPLOIT",
+        reason="Value bet",
+    )
+
+    t = threading.Thread(
+        target=processing_loop,
+        args=(
+            frame_q,
+            mock_pipeline,
+            mock_validator,
+            trackers,
+            None,
+            None,
+            None,
+            mock_dm,
+            None,
+            bridge,
+            stop_ev,
+        ),
+        kwargs={
+            "headless": True,
+            "show_video": False,
+            "playback": None,
+            "is_live": True,
+            "hand_recorder": None,
+        },
+        daemon=True,
+    )
+    t.start()
+
+    time.sleep(0.1)
+    bridge.manual_rect_changed.emit((100, 100, 800, 500))
+
+    dummy_frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+    for _ in range(4):
+        frame_q.put(dummy_frame)
+
+    start_wait = time.time()
+    while len(captured_decisions) < 4 and time.time() - start_wait < 3.0:
+        app.processEvents()
+        time.sleep(0.05)
+
+    stop_ev.set()
+    frame_q.put(None)
+    t.join(timeout=2.0)
+
+    assert not t.is_alive(), "processing_loop thread should have stopped cleanly"
+    assert len(captured_decisions) == 4
+
+    # Frame 0: Invalid / no cards -> WAIT (no UnboundLocalError on spot or now_sec)
+    assert captured_decisions[0].action == "WAIT"
+
+    # Frame 1: Hero turn frame 1 (confirming via DecisionLock) -> WAIT ("Skanowanie sytuacji...")
+    assert captured_decisions[1].action == "WAIT"
+    assert "Skanowanie sytuacji..." in (captured_decisions[1].reason or "")
+
+    # Frame 2: Hero turn frame 2 (locked decision computed) -> BET_30 with quantized sizing
+    assert captured_decisions[2].action == "BET_30"
+    assert captured_decisions[2].sizing_bb == 1
+    assert captured_decisions[2].sizing_chips == 20
+
+    # Frame 3: Hero turn frame 3 (from DecisionLock cache) -> SIZING PRESERVED!
+    assert captured_decisions[3].action == "BET_30"
+    assert captured_decisions[3].sizing_bb == 1
+    assert captured_decisions[3].sizing_chips == 20
+
+
+
 
 
 

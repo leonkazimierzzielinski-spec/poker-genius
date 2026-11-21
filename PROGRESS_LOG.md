@@ -1,5 +1,28 @@
 # Poker Genius — Dziennik Postępu Prac (Progress Log)
 
+## V14.1 — Hotfix: Usunięcie UnboundLocalError (spot i now_sec) w processing_loop oraz Zachowanie Sizingu na Klatkach z Keszu DecisionLock (2026-11-21)
+
+### 1. Wdrożone poprawki
+1. **Usunięcie `UnboundLocalError` na zmiennych `spot` i `now_sec` (`main.py`):**
+   - W `processing_loop` dodano `last_spots: dict[str, str] = {}` oraz przypisanie `spot: str = last_spots.get(resolved_tid, "--")` przed blokiem ewaluacji kart i tury Hero. Gwarantuje to, że zmienna `spot` jest zawsze zdefiniowana (dla klatek niepoprawnych, w fazie `WAITING_FOR_TURN`, w fazie zbierania konfirmacji oraz na decyzjach serwowanych z pamięci podręcznej `DecisionLock`).
+   - Słownik `last_spots` jest czyszczony spójnie z `decision_locks` i `trackers` (usunięcie stołu przez użytkownika, rotacja przeciwników w slocie, wygaśnięcie LRU, spadek blindów i zdarzenie `NEW_HAND`).
+   - Dodano inicjalizację `now_sec = time.perf_counter()` na początku pętli każdej klatki (obok `now_ms = int(time.time() * 1000)`), eliminując błąd `UnboundLocalError` przy zapisie `last_valid_decisions[resolved_tid] = (now_sec, decision, scan_summary)` podczas tury Hero.
+2. **Nienaruszony sizing na klatkach z pamięci podręcznej `DecisionLock` (`main.py`):**
+   - Usunięto zabłąkaną klauzulę `else` pod blokiem snapshotów decyzji:
+     ```python
+     else:
+         decision.sizing_bb = None
+         decision.sizing_chips = None
+     ```
+     która na klatkach gdzie `just_locked_decision == False` zerowała pola `sizing_bb` i `sizing_chips` obiektu `Decision`. Dzięki temu decyzje zamrożone przez `DecisionLock` prezentują identyczny, spójny sizing przez cały czas trwania tury Hero.
+3. **Nowy test regresyjny (`tests/test_ui_and_main.py`):**
+   - `test_processing_loop_live_no_unbound_spot_and_keeps_sizing`: symuluje działanie `processing_loop(..., is_live=True)` na sekwencji klatek (1 klatka niepoprawna/bez kart + 3 identyczne klatki poprawne z turą Hero). Potwierdza stabilność wątku, 2-klatkowe zatwierdzenie przez `DecisionLock` oraz nienaruszenie wartości `sizing_bb` i `sizing_chips` na klatce serwowanej z pamięci podręcznej.
+
+### 2. Wyniki testów jednostkowych (`pytest -v tests/`)
+- Liczba testów: **118 passed in 5.43s (100% sukcesu)**.
+
+---
+
 ## V14 — Stabilizacja i Zatwierdzanie Decyzji (DecisionLock), Naprawa Historii Rozdań + Zwycięzca Stołu oraz Osobne Paczki .zip dla Każdej Gry z Lekkim Zapisem Zdjęć (2026-11-21)
 
 ### 1. Wdrożone zmiany i nowa architektura
