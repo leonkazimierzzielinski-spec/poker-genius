@@ -1,5 +1,45 @@
 # Poker Genius — Dziennik Postępu Prac (Progress Log)
 
+## V8.2 — Naprawa 10/T (bw>=2), stabilizacja table_id (wycięcie #ID bez mini-kart) i precyzyjny Obszar (2026-11-21)
+
+### 1. Rozwiązane problemy z testów na żywo (`--mode live`)
+1. **Odczyt karty `10` / `T` na mniejszych oknach (`vision/card_recognizer.py`):**
+   - Na pomniejszonych oknach stołu cienka cyfra `1` w karcie `10` osiąga szerokość 2–3 pikseli. Poprzedni filtr minimalnej szerokości `bw >= 4` (oraz fallback `bw >= 3`) odrzucał cyfrę `1`, pozostawiając jedynie cyfrę `0` (błędnie interpretowaną jako np. `Q`).
+   - Zmniejszono filtr szerokości do `bw >= 2` (oraz fallback `bw >= 2`), zachowując odrzucanie 1-pikselowych szumów krawędziowych.
+   - Uodporniono scalanie `1` + `0` na pochylonych kartach Hero: warunek `abs(by1 - ry) <= 9 and (bx1 < rx + rw + 15 or abs(bx1 - rx) <= 20)` bezbłędnie scala cyfry przy przesunięciu pionowym do 9 px i poziomym do 20 px.
+2. **Stabilizacja `table_id` i zapobieganie mnożeniu `table_1..table_6` (`vision/pipeline.py`):**
+   - Poprzednie współrzędne nagłówka stołu (`gy1 = 0.012..0.050`) obejmowały górny pasek z ikonami oraz mini-kartami (`[☰] [🏠] [mini-karty] [+]`). Mini-karty zmieniają się przy każdym nowym rozdaniu, przez co korelacja szablonu stołu spadała poniżej 0.94 i w każdym rozdaniu alokowany był nowy stół (`table_1`, `table_2`, ..., `table_6`).
+   - Przesunięto ROI sygnatury ściśle na numer turnieju `#ID`: `gy1..gy2 = 0.055..0.092`, `gx1..gx2 = 0.045..0.185`, całkowicie wycinając mini-karty.
+   - Pomiary korelacji: w ramach tego samego turnieju we wszystkich kolejnych rozdaniach cross-correlation wynosi `0.985..1.000`. Pomiędzy dwoma równoległymi stołami w `2 gry na raz` (`#105538734` vs `#105538775`) korelacja wynosi `0.879`.
+   - Skalibrowano próg dopasowania na `best_score >= 0.90`. Dzięki temu ten sam turniej zachowuje stały `table_id`, a dwa równoległe turnieje są stabilnie rozdzielane na `table_1` i `table_2`.
+   - W `main.py` skrócono timeout nieaktywnych stołów (`stale_tids`) z `15.0 s` do `5.0 s`.
+3. **Inteligentne centrowanie stołu po zaznaczeniu `📐 Obszar` (`main.py`):**
+   - Po manualnym zaznaczeniu obszaru (`manual_rect`) silnik próbuje najpierw znaleźć wzorzec kotwicy `find_anchor` wewnątrz wskazanego wycinka.
+   - Po wykryciu kotwicy jej współrzędne są przeliczane na pełną klatkę i wyznaczany jest precyzyjny stół kanoniczny (`compute_unclipped_table_rect`) z flagą `has_anchor=True`.
+   - Jeśli w wycinku nie ma kotwicy, system bezpiecznie stosuje `manual_rect` jako fallback (`has_anchor=False`).
+
+### 2. Wyniki weryfikacji na klatkach testowych (pełna ścieżka produkcyjna `main.py`)
+
+| Nagranie | Klatka | Oczekiwane Karty / Pula | Wykryte Hero | Wykryty Board | Pot | Stan / Spot | Decyzja | Status |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `2026-11-18 224127` | `0` | Hero `2s Tc` | `['2s', 'Tc']` | `[]` | **`80`** | VALID / `WAITING_FOR_TURN` | **`WAIT`** | **PASS** |
+| `2026-11-18 224127` | `765` | Hero `Kd 3c` | `['Kd', '3c']` | `[]` | **`30`** | VALID / `WAITING_FOR_TURN` | **`WAIT`** | **PASS** |
+| `2026-11-18 224127` | `2370` | Hero `7c 5s` | `['7c', '5s']` | `[]` | **`90`** | VALID / `WAITING_FOR_TURN` | **`WAIT`** | **PASS** |
+| `2026-11-18 224127` | `4950` | `5h Jh` \| `Jd 2s 9h` | `['5h', 'Jh']` | `['Jd', '2s', '9h']` | **`60`** | VALID / `WAITING_FOR_TURN` | **`WAIT`** | **PASS** |
+| `2026-11-19 211257` | `2604` | Hero `Kh 2s` \| `7d Td Th 2h` | `['Kh', '2s']` | `['7d', 'Td', 'Th', '2h']` | **`218`** | VALID / `WAITING_FOR_TURN` | **`WAIT`** | **PASS** |
+| `2026-11-19 211257` | `3643` | Hero `Jc 4d` vs min-raise | `['Jc', '4d']` | `[]` | **`30`** | VALID / `WAITING_FOR_TURN` | **`WAIT`** | **PASS** |
+| `2026-11-19 211257` | `3880` | Hero vs All-in 166 | `['Jc', '4d']` | `[]` | **`206`** | VALID / `WAITING_FOR_TURN` | **`WAIT`** | **PASS** |
+| `2026-11-19 211257` | `4757` | Hero `7s 7d` \| `Qc 7c 7h` | `['7s', '7d']` | `['Qc', '7c', '7h']` | **`682`** | VALID / `WAITING_FOR_TURN` | **`WAIT`** | **PASS** |
+| `2 gry na raz` | `1383` | `Ks 9s` \| `3s Ac Ah` | `['Ks', '9s']` | `['3s', 'Ac', 'Ah']` | **`80`** | VALID / `WAITING_FOR_TURN` | **`WAIT`** | **PASS** |
+| `2 gry na raz` | `2418` | `4d Qs` \| Stół 2 | `['4d', 'Qs']` | `[]` | **`50`** | VALID / `WAITING_FOR_TURN` | **`WAIT`** | **PASS** |
+
+### 3. Wyniki testów jednostkowych (`pytest -v tests/`)
+- Liczba testów: **91 passed in 3.21s (100% sukcesu)**.
+- Nowy test: `tests/test_vision.py::test_card_recognizer_thin_one_in_ten` (weryfikacja odczytu '10' / 'T' przy cienkiej cyfrze '1' o szerokości 2–3 px).
+- Zaktualizowane testy syntetyczne: `test_resolve_table_id_two_games` oraz `test_resolve_table_id_more_than_two_tables` dostosowane do nowej geometrii ROI `#ID`.
+
+---
+
 ## V8.1 — Naprawa ucinania 3-cyfrowych pul (Pot: 682, klatka 4757) (2026-11-21)
 
 ### 1. Przyczyna źródłowa błędu odczytu `Pot: 682` jako `82`

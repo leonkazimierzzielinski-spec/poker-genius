@@ -363,11 +363,11 @@ def test_resolve_table_id_two_games(tmp_path: Path) -> None:
     table_rect = (0, 0, 1000, 600)
     # Frame with Game 1 header pattern
     frame_game_1 = np.zeros((600, 1000, 3), dtype=np.uint8)
-    cv2.putText(frame_game_1, "#105522643", (20, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+    cv2.putText(frame_game_1, "#105522643", (55, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
     # Frame with Game 2 header pattern
     frame_game_2 = np.zeros((600, 1000, 3), dtype=np.uint8)
-    cv2.putText(frame_game_2, "#998877665", (20, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+    cv2.putText(frame_game_2, "#998877665", (55, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
     t1_first = pipeline.resolve_table_id(frame_game_1, table_rect)
     assert t1_first == "table_1"
@@ -639,15 +639,15 @@ def test_resolve_table_id_more_than_two_tables(tmp_path: Path) -> None:
 
     # Frame 1: Tournament 1
     f1 = np.zeros((600, 1000, 3), dtype=np.uint8)
-    cv2.putText(f1, "#105522643", (20, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+    cv2.putText(f1, "#105522643", (55, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
     # Frame 2: Tournament 2
     f2 = np.zeros((600, 1000, 3), dtype=np.uint8)
-    cv2.putText(f2, "#998877665", (20, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+    cv2.putText(f2, "#998877665", (55, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
     # Frame 3: Tournament 3
     f3 = np.zeros((600, 1000, 3), dtype=np.uint8)
-    cv2.putText(f3, "#105540008", (20, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+    cv2.putText(f3, "#105540008", (55, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
     t1 = pipeline.resolve_table_id(f1, table_rect)
     t2 = pipeline.resolve_table_id(f2, table_rect)
@@ -790,6 +790,38 @@ def test_card_recognizer_board_full_height_and_cwd_independence(tmp_path: Path) 
     # For hero_card_1, the badge cut at 68% cuts off the suit, so it cannot resolve Kd
     hero_card, _ = rec.recognize(card_img, slot_hint="hero_card_1")
     assert hero_card != "Kd"
+
+
+def test_card_recognizer_thin_one_in_ten() -> None:
+    """Verify CardRecognizer recognizes '10' (T) when digit 1 has thin width (w=2..3 px)."""
+    from vision.card_recognizer import CardRecognizer
+
+    rec = CardRecognizer()
+    if not (Path("data/templates/ranks").is_dir() and Path("data/templates/suits").is_dir()):
+        pytest.skip("Rank/suit templates not present")
+
+    t_tpl = rec.ranks["T"]
+    s_tpl = rec.suits["s"]
+
+    # Construct scaled-down synthetic card image
+    card = np.full((80, 56, 3), 250, dtype=np.uint8)
+    # Resize T so that '1' contour has thin width (2-3 px)
+    t_small = cv2.resize(t_tpl, (12, 16), interpolation=cv2.INTER_NEAREST)
+    card[10:26, 8:20][t_small > 0] = (20, 20, 20)
+
+    # Suit 's'
+    s_small = cv2.resize(s_tpl, (12, 14), interpolation=cv2.INTER_NEAREST)
+    card[32:46, 8:20][s_small > 0] = (20, 20, 20)
+
+    cands = rec.recognize_candidates(card, slot_hint="hero_left")
+    assert len(cands) > 0
+    top_card, top_score = cands[0]
+    assert top_card == "Ts"
+    assert top_score >= 0.75
+
+    card_str, score = rec.recognize(card, slot_hint="hero_left")
+    assert card_str == "Ts"
+
 
 
 

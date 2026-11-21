@@ -29,6 +29,7 @@ try:
         compute_table_rect,
         compute_unclipped_table_rect,
         find_all_anchors,
+        find_anchor,
     )
     from vision.capture import (
         DXCAM_AVAILABLE,
@@ -39,6 +40,7 @@ try:
     from vision.pipeline import VisionPipeline
 except ImportError:
     find_all_anchors = None  # type: ignore[assignment]
+    find_anchor = None  # type: ignore[assignment]
     compute_table_rect = None  # type: ignore[assignment]
     compute_unclipped_table_rect = None  # type: ignore[assignment]
     DXCAM_AVAILABLE = False
@@ -810,8 +812,50 @@ def processing_loop(
             # Detect anchors or fallback to single table / manual ROI
             manual_rect = manual_rect_holder[0]
             if manual_rect is not None:
-                table_jobs = [("table_1", manual_rect)]
-                anchors: list[tuple[int, int, int, int]] = []
+                mx, my, mw, mh = manual_rect
+                sub_anchor = None
+                if (
+                    getattr(pipeline, "anchor_template", None) is not None
+                    and find_anchor is not None
+                    and frame is not None
+                    and frame.size > 0
+                ):
+                    sub_frame = frame[max(0, my) : max(0, my + mh), max(0, mx) : max(0, mx + mw)]
+                    if sub_frame.size > 0:
+                        try:
+                            sub_anchor = find_anchor(
+                                sub_frame,
+                                pipeline.anchor_template,
+                                threshold=pipeline.anchor_threshold,
+                            )
+                        except Exception:
+                            sub_anchor = None
+
+                if sub_anchor is not None:
+                    ax, ay, aw, ah = sub_anchor
+                    full_anchor = (max(0, mx) + ax, max(0, my) + ay, aw, ah)
+                    anchors = [full_anchor]
+                    if compute_unclipped_table_rect is not None:
+                        tpl_w = pipeline.anchor_template.shape[1] if getattr(pipeline, "anchor_template", None) is not None else None
+                        tpl_h = pipeline.anchor_template.shape[0] if getattr(pipeline, "anchor_template", None) is not None else None
+                        template_size = (tpl_w, tpl_h) if tpl_w and tpl_h else None
+                        canonical_sz = getattr(pipeline, "canonical_table_size", (1757, 997))
+                        table_offset = getattr(pipeline, "table_offset_rel", [0.0, 0.0, 1.0, 1.0])
+                        table_rect = compute_unclipped_table_rect(
+                            full_anchor,
+                            table_offset,
+                            canonical_size=canonical_sz,
+                            template_size=template_size,
+                            frame_shape=frame.shape,
+                        )
+                    elif compute_table_rect is not None:
+                        table_rect = compute_table_rect(full_anchor, pipeline.table_offset_rel, frame.shape)
+                    else:
+                        table_rect = manual_rect
+                    table_jobs = [("table_1", table_rect)]
+                else:
+                    table_jobs = [("table_1", manual_rect)]
+                    anchors = []
             else:
                 anchors = []
                 if (
@@ -866,8 +910,8 @@ def processing_loop(
                         table_id=table_id,
                         timestamp_ms=now_ms,
                         table_rect=table_rect,
-                        allow_table_resolution=(len(anchors) <= 1 if manual_rect is None else False),
-                        has_anchor=(manual_rect is None and len(anchors) > 0),
+                        allow_table_resolution=(len(anchors) <= 1 if (manual_rect is None or len(anchors) > 0) else False),
+                        has_anchor=(len(anchors) > 0),
                     )
                 except Exception:
                     continue
@@ -875,11 +919,11 @@ def processing_loop(
                 resolved_tid = getattr(state, "table_id", table_id)
 
                 now_sec = time.perf_counter()
-                if len(anchors) <= 1 and manual_rect is None:
+                if len(anchors) <= 1:
                     table_last_seen[resolved_tid] = now_sec
                     stale_tids = [
                         tid for tid, last_t in table_last_seen.items()
-                        if now_sec - last_t > 15.0 and tid != resolved_tid
+                        if now_sec - last_t > 5.0 and tid != resolved_tid
                     ]
                     for stale_tid in stale_tids:
                         table_last_seen.pop(stale_tid, None)

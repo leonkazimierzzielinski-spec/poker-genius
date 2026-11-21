@@ -141,10 +141,10 @@ class VisionPipeline:
             return default_table_id
 
         tx, ty, tw, th = table_rect
-        gx1 = max(0, tx + int(tw * 0.020))
-        gx2 = min(frame.shape[1], tx + int(tw * 0.135))
-        gy1 = max(0, ty + int(th * 0.012))
-        gy2 = min(frame.shape[0], ty + int(th * 0.050))
+        gx1 = max(0, tx + int(tw * 0.045))
+        gx2 = min(frame.shape[1], tx + int(tw * 0.185))
+        gy1 = max(0, ty + int(th * 0.055))
+        gy2 = min(frame.shape[0], ty + int(th * 0.092))
 
         if gx2 <= gx1 or gy2 <= gy1:
             return default_table_id
@@ -172,7 +172,7 @@ class VisionPipeline:
                 best_score = score
                 best_id = tid
 
-        if best_id is not None and best_score >= 0.94:
+        if best_id is not None and best_score >= 0.90:
             self._table_last_seen[best_id] = self._table_counter
             return best_id
 

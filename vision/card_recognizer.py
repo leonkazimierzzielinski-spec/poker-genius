@@ -168,7 +168,7 @@ class CardRecognizer:
                 continue
             if not is_hero and by >= 48:
                 continue
-            if bh >= 11 and bw >= 4:
+            if bh >= 11 and bw >= 2:
                 boxes.append((bx, by, bw, bh))
 
         if not boxes:
@@ -178,7 +178,7 @@ class CardRecognizer:
                     continue
                 if not is_hero and by >= 48:
                     continue
-                if bh >= 8 and bw >= 3:
+                if bh >= 8 and bw >= 2:
                     boxes.append((bx, by, bw, bh))
 
         if not boxes:
@@ -189,7 +189,7 @@ class CardRecognizer:
         suit_idx = 1
         if len(boxes) > 1:
             bx1, by1, bw1, bh1 = boxes[1]
-            if abs(by1 - ry) <= 8 and bx1 < rx + rw + 15:
+            if abs(by1 - ry) <= 9 and (bx1 < rx + rw + 15 or abs(bx1 - rx) <= 20):
                 rx_m = min(rx, bx1)
                 ry_m = min(ry, by1)
                 rw_m = max(rx + rw, bx1 + bw1) - rx_m
