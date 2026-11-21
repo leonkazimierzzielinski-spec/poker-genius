@@ -1173,4 +1173,86 @@ def test_debug_roi_overlay_and_exclude_capture(qapp) -> None:
     assert hud._debug_overlay.isHidden() is True
 
 
+def test_table_adjust_signal_and_drag_mode(qapp) -> None:
+    """Verify table adjustment buttons, signals, scale limits, and overlay drag mode."""
+    from ui.hud import DebugRoiOverlay, HudBridge, HudOverlay
+
+    bridge = HudBridge()
+    received_adjust: list[tuple[int, int, float]] = []
+
+    def _on_adjust(dx: int, dy: int, s: float) -> None:
+        received_adjust.append((dx, dy, s))
+
+    bridge.table_adjust_changed.connect(_on_adjust)
+
+    # 1. Test direct signal emission
+    bridge.table_adjust_changed.emit(10, -5, 1.05)
+    assert len(received_adjust) == 1
+    assert received_adjust[-1] == (10, -5, 1.05)
+
+    # 2. Test HudOverlay adjustment methods and buttons
+    hud = HudOverlay(bridge=bridge)
+    hud.show()
+    assert hud.table_dx == 0
+    assert hud.table_dy == 0
+    assert hud.table_scale_mult == 1.0
+    assert hud.adjust_panel.isHidden() is True
+
+    # Show details reveals adjust_panel
+    hud.toggle_details()
+    assert hud.adjust_panel.isHidden() is False
+
+    # Adjust dx (+10 without shift)
+    hud.adjust_table_dx(1)
+    assert hud.table_dx == 10
+    assert received_adjust[-1] == (10, 0, 1.0)
+
+    # Adjust dy (-10)
+    hud.adjust_table_dy(-1)
+    assert hud.table_dy == -10
+    assert received_adjust[-1] == (10, -10, 1.0)
+
+    # Adjust scale (+1%)
+    hud.adjust_table_scale(0.01)
+    assert abs(hud.table_scale_mult - 1.01) < 0.001
+    assert received_adjust[-1] == (10, -10, 1.01)
+
+    # Reset table adjust
+    hud.reset_table_adjust()
+    assert hud.table_dx == 0
+    assert hud.table_dy == 0
+    assert hud.table_scale_mult == 1.0
+    assert received_adjust[-1] == (0, 0, 1.0)
+
+    # Reset via reset_auto_rect
+    hud.apply_table_adjust(15, 20, 1.08)
+    hud.reset_auto_rect()
+    assert hud.table_dx == 0
+    assert hud.table_dy == 0
+    assert hud.table_scale_mult == 1.0
+
+    # 3. Test drag mode toggle
+    assert hud.is_drag_mode is False
+    drag_active = hud.toggle_drag_mode()
+    assert drag_active is True
+    assert hud.is_drag_mode is True
+    assert hud.is_debug_overlay_enabled is True
+    assert hud._debug_overlay._drag_mode is True
+
+    drag_off = hud.toggle_drag_mode()
+    assert drag_off is False
+    assert hud.is_drag_mode is False
+    assert hud._debug_overlay._drag_mode is False
+
+    # Test DebugRoiOverlay set_drag_mode directly
+    overlay = DebugRoiOverlay(bridge=bridge)
+    overlay.set_drag_mode(True)
+    assert overlay._drag_mode is True
+    overlay.set_drag_mode(False)
+    assert overlay._drag_mode is False
+
+    hud.close()
+    overlay.close()
+
+
 

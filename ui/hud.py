@@ -187,6 +187,7 @@ class HudBridge(QObject):
     manual_rect_changed = Signal(object)
     table_removed = Signal(str)
     debug_overlay_updated = Signal(object)
+    table_adjust_changed = Signal(int, int, float)
 
 
 class RegionSelectorOverlay(QWidget):
@@ -299,6 +300,12 @@ class DebugRoiOverlay(QWidget):
         self.bridge = bridge
         self._data: dict[str, Any] | None = None
         self._tables: dict[str, dict[str, Any]] = {}
+        self._drag_mode: bool = False
+        self._drag_start_pos: QPoint | None = None
+        self._drag_start_adjust: tuple[int, int] = (0, 0)
+        self._current_dx: int = 0
+        self._current_dy: int = 0
+        self._current_scale: float = 1.0
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -339,6 +346,51 @@ class DebugRoiOverlay(QWidget):
         self._tables.pop(table_id, None)
         if self.isVisible():
             self.update()
+
+    def set_drag_mode(self, enabled: bool) -> None:
+        """Enable or disable interactive table dragging mode."""
+        self._drag_mode = enabled
+        hwnd = int(self.winId()) if self.effectiveWinId() else 0
+        if enabled:
+            self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+            set_click_through(hwnd, False)
+            self.setCursor(Qt.CursorShape.SizeAllCursor)
+        else:
+            self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+            set_click_through(hwnd, True)
+            self.unsetCursor()
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        if self._drag_mode and event.button() == Qt.MouseButton.LeftButton:
+            self._drag_start_pos = event.globalPosition().toPoint()
+            self._drag_start_adjust = (self._current_dx, self._current_dy)
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        if self._drag_mode and self._drag_start_pos is not None:
+            delta = event.globalPosition().toPoint() - self._drag_start_pos
+            screen = self.screen() or QApplication.primaryScreen()
+            dpr = screen.devicePixelRatio() if screen else 1.0
+            new_dx = self._drag_start_adjust[0] + int(round(delta.x() * dpr))
+            new_dy = self._drag_start_adjust[1] + int(round(delta.y() * dpr))
+            self._current_dx = new_dx
+            self._current_dy = new_dy
+            if self.bridge is not None and hasattr(self.bridge, "table_adjust_changed"):
+                self.bridge.table_adjust_changed.emit(new_dx, new_dy, self._current_scale)
+            self.update()
+            event.accept()
+        else:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if self._drag_mode and event.button() == Qt.MouseButton.LeftButton:
+            self._drag_start_pos = None
+            self.set_drag_mode(False)
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
 
     def paintEvent(self, event: Any) -> None:
         if not self._data and not self._tables:
@@ -479,6 +531,10 @@ class HudOverlay(QWidget):
         self.is_locked: bool = False
         self.show_details: bool = False
         self.is_debug_overlay_enabled: bool = False
+        self.table_dx: int = 0
+        self.table_dy: int = 0
+        self.table_scale_mult: float = 1.0
+        self.is_drag_mode: bool = False
         self._drag_pos: QPoint | None = None
         self._selector: RegionSelectorOverlay | None = None
         self._debug_overlay: DebugRoiOverlay | None = None
@@ -495,6 +551,8 @@ class HudOverlay(QWidget):
             self.bridge.decision_updated.connect(self.on_decision_updated)
             if hasattr(self.bridge, "table_removed"):
                 self.bridge.table_removed.connect(self.remove_table)
+            if hasattr(self.bridge, "table_adjust_changed"):
+                self.bridge.table_adjust_changed.connect(self.on_table_adjust_from_bridge)
 
     def _init_window(self) -> None:
         self.setWindowFlags(
@@ -569,6 +627,84 @@ class HudOverlay(QWidget):
 
         self.status_label = QLabel(self.container)
         self.container_layout.addWidget(self.status_label)
+
+        # Manual table adjustment panel (visible when show_details is True)
+        self.adjust_panel = QWidget(self.container)
+        adjust_layout = QHBoxLayout(self.adjust_panel)
+        adjust_layout.setContentsMargins(0, 2, 0, 2)
+        adjust_layout.setSpacing(4)
+
+        adj_btn_style = """
+            QPushButton {
+                background-color: rgba(255, 255, 255, 0.08);
+                color: #cbd5e1;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 3px;
+                padding: 1px 5px;
+                font-size: 11px;
+                font-weight: bold;
+                min-width: 18px;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 0.2);
+                color: #ffffff;
+            }
+        """
+
+        self.btn_adj_left = QPushButton("◀", self.adjust_panel)
+        self.btn_adj_left.setStyleSheet(adj_btn_style)
+        self.btn_adj_left.setToolTip("Przesuń stół w lewo (Shift: 2px, domyślnie 10px)")
+        self.btn_adj_left.clicked.connect(lambda: self.adjust_table_dx(-1))
+        adjust_layout.addWidget(self.btn_adj_left)
+
+        self.btn_adj_up = QPushButton("▲", self.adjust_panel)
+        self.btn_adj_up.setStyleSheet(adj_btn_style)
+        self.btn_adj_up.setToolTip("Przesuń stół w górę (Shift: 2px, domyślnie 10px)")
+        self.btn_adj_up.clicked.connect(lambda: self.adjust_table_dy(-1))
+        adjust_layout.addWidget(self.btn_adj_up)
+
+        self.btn_adj_down = QPushButton("▼", self.adjust_panel)
+        self.btn_adj_down.setStyleSheet(adj_btn_style)
+        self.btn_adj_down.setToolTip("Przesuń stół w dół (Shift: 2px, domyślnie 10px)")
+        self.btn_adj_down.clicked.connect(lambda: self.adjust_table_dy(1))
+        adjust_layout.addWidget(self.btn_adj_down)
+
+        self.btn_adj_right = QPushButton("▶", self.adjust_panel)
+        self.btn_adj_right.setStyleSheet(adj_btn_style)
+        self.btn_adj_right.setToolTip("Przesuń stół w prawo (Shift: 2px, domyślnie 10px)")
+        self.btn_adj_right.clicked.connect(lambda: self.adjust_table_dx(1))
+        adjust_layout.addWidget(self.btn_adj_right)
+
+        self.btn_adj_sminus = QPushButton("-", self.adjust_panel)
+        self.btn_adj_sminus.setStyleSheet(adj_btn_style)
+        self.btn_adj_sminus.setToolTip("Zmniejsz skalę stołu o 1%")
+        self.btn_adj_sminus.clicked.connect(lambda: self.adjust_table_scale(-0.01))
+        adjust_layout.addWidget(self.btn_adj_sminus)
+
+        self.btn_adj_splus = QPushButton("+", self.adjust_panel)
+        self.btn_adj_splus.setStyleSheet(adj_btn_style)
+        self.btn_adj_splus.setToolTip("Zwiększ skalę stołu o 1%")
+        self.btn_adj_splus.clicked.connect(lambda: self.adjust_table_scale(0.01))
+        adjust_layout.addWidget(self.btn_adj_splus)
+
+        self.btn_adj_drag = QPushButton("✋ Przesuń", self.adjust_panel)
+        self.btn_adj_drag.setStyleSheet(adj_btn_style)
+        self.btn_adj_drag.setToolTip("Tryb przeciągania ramki stołu myszą")
+        self.btn_adj_drag.clicked.connect(self.toggle_drag_mode)
+        adjust_layout.addWidget(self.btn_adj_drag)
+
+        self.btn_adj_reset = QPushButton("↺", self.adjust_panel)
+        self.btn_adj_reset.setStyleSheet(adj_btn_style)
+        self.btn_adj_reset.setToolTip("Resetuj przesunięcie i skalę do (0, 0) | 100%")
+        self.btn_adj_reset.clicked.connect(self.reset_table_adjust)
+        adjust_layout.addWidget(self.btn_adj_reset)
+
+        self.adjust_label = QLabel("Offset: (0, 0) | 100%", self.adjust_panel)
+        self.adjust_label.setStyleSheet("color: #94a3b8; font-size: 10px; font-weight: bold;")
+        adjust_layout.addWidget(self.adjust_label)
+
+        self.adjust_panel.setVisible(self.show_details)
+        self.container_layout.addWidget(self.adjust_panel)
 
         # Multi-table cards layout
         self.tables_layout = QVBoxLayout()
@@ -724,6 +860,8 @@ class HudOverlay(QWidget):
         """
         self.show_details = not self.show_details
         self.btn_debug_overlay.setVisible(self.show_details)
+        if hasattr(self, "adjust_panel"):
+            self.adjust_panel.setVisible(self.show_details)
         for tid, detail_lbl in self.details_widgets.items():
             detail_lbl.setVisible(self.show_details and bool(detail_lbl.text()))
         if self.show_details:
@@ -797,7 +935,76 @@ class HudOverlay(QWidget):
             "border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 4px; padding: 2px 6px; "
             "font-size: 10px; font-weight: bold;"
         )
+        self.reset_table_adjust()
         self._apply_lock_state()
+
+    def adjust_table_dx(self, direction: int) -> None:
+        """Adjust horizontal table offset."""
+        shift = bool(QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier)
+        step = 2 if shift else 10
+        self.apply_table_adjust(self.table_dx + direction * step, self.table_dy, self.table_scale_mult)
+
+    def adjust_table_dy(self, direction: int) -> None:
+        """Adjust vertical table offset."""
+        shift = bool(QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier)
+        step = 2 if shift else 10
+        self.apply_table_adjust(self.table_dx, self.table_dy + direction * step, self.table_scale_mult)
+
+    def adjust_table_scale(self, delta: float) -> None:
+        """Adjust table scale multiplier."""
+        new_s = max(0.50, min(2.00, round(self.table_scale_mult + delta, 2)))
+        self.apply_table_adjust(self.table_dx, self.table_dy, new_s)
+
+    def apply_table_adjust(self, dx: int, dy: int, scale_mult: float) -> None:
+        """Apply table adjustment and emit to bridge."""
+        self.table_dx = dx
+        self.table_dy = dy
+        self.table_scale_mult = scale_mult
+        self._update_adjust_label()
+        if self._debug_overlay is not None:
+            self._debug_overlay._current_dx = dx
+            self._debug_overlay._current_dy = dy
+            self._debug_overlay._current_scale = scale_mult
+        if self.bridge is not None and hasattr(self.bridge, "table_adjust_changed"):
+            self.bridge.table_adjust_changed.emit(dx, dy, scale_mult)
+
+    def reset_table_adjust(self) -> None:
+        """Reset manual table offset and scale to (0, 0) | 100%."""
+        self.apply_table_adjust(0, 0, 1.0)
+
+    def _update_adjust_label(self) -> None:
+        pct = int(round(self.table_scale_mult * 100))
+        if hasattr(self, "adjust_label"):
+            self.adjust_label.setText(f"({self.table_dx:+d}, {self.table_dy:+d}) | {pct}%")
+
+    def toggle_drag_mode(self) -> bool:
+        """Toggle interactive drag mode on debug overlay."""
+        self.is_drag_mode = not self.is_drag_mode
+        if self._debug_overlay is not None:
+            if self.is_drag_mode and not self.is_debug_overlay_enabled:
+                self.toggle_debug_overlay()
+            self._debug_overlay.set_drag_mode(self.is_drag_mode)
+        if hasattr(self, "btn_adj_drag"):
+            if self.is_drag_mode:
+                self.btn_adj_drag.setStyleSheet(
+                    "background-color: #e67e22; color: #ffffff; border: 1px solid #d35400; "
+                    "border-radius: 3px; padding: 1px 5px; font-size: 11px; font-weight: bold;"
+                )
+            else:
+                self.btn_adj_drag.setStyleSheet(
+                    "background-color: rgba(255, 255, 255, 0.08); color: #cbd5e1; "
+                    "border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 3px; padding: 1px 5px; "
+                    "font-size: 11px; font-weight: bold;"
+                )
+        return self.is_drag_mode
+
+    @Slot(int, int, float)
+    def on_table_adjust_from_bridge(self, dx: int, dy: int, scale_mult: float) -> None:
+        """Receive adjustment update (e.g. from mouse drag on overlay)."""
+        self.table_dx = dx
+        self.table_dy = dy
+        self.table_scale_mult = scale_mult
+        self._update_adjust_label()
 
     def showEvent(self, event: Any) -> None:
         super().showEvent(event)

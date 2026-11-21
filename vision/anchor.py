@@ -180,19 +180,73 @@ def find_anchor(
     return None
 
 
+def find_right_anchor(
+    frame: np.ndarray,
+    right_template: np.ndarray,
+    left_anchor: tuple[int, int, int, int],
+    threshold: float = 0.72,
+    canonical_size: tuple[int, int] = (1757, 997),
+    left_template_size: tuple[int, int] = (78, 35),
+) -> tuple[int, int, int, int] | None:
+    """Find right anchor [⚙][🏆] in a narrow horizontal strip to the right of left_anchor.
+
+    Searches y in [ay - 25, ay + ah + 25] and x in [ax + int(tw * 0.50), min(fw, ax + int(tw * 1.25))].
+    Scales right_template by aw / left_template_size[0].
+    Returns (x, y, w, h) in full frame coordinates or None if confidence < threshold.
+    """
+    if (
+        frame is None
+        or right_template is None
+        or frame.size == 0
+        or right_template.size == 0
+    ):
+        return None
+
+    ax, ay, aw, ah = left_anchor
+    ltpl_w = left_template_size[0] if left_template_size[0] > 0 else 78
+    scale = aw / ltpl_w
+    tw = int(round(canonical_size[0] * scale))
+
+    fh, fw = frame.shape[:2]
+    y1 = max(0, ay - 25)
+    y2 = min(fh, ay + ah + 25)
+    x1 = max(0, ax + int(tw * 0.50))
+    x2 = min(fw, ax + int(tw * 1.25))
+    if x2 <= x1 or y2 <= y1:
+        return None
+
+    rw_s = int(round(right_template.shape[1] * scale))
+    rh_s = int(round(right_template.shape[0] * scale))
+    if rw_s > (x2 - x1) or rh_s > (y2 - y1) or rw_s <= 0 or rh_s <= 0:
+        return None
+
+    scaled_tpl = (
+        right_template
+        if (rw_s, rh_s) == (right_template.shape[1], right_template.shape[0])
+        else cv2.resize(right_template, (rw_s, rh_s), interpolation=cv2.INTER_LINEAR)
+    )
+    strip = frame[y1:y2, x1:x2]
+    res = cv2.matchTemplate(strip, scaled_tpl, cv2.TM_CCOEFF_NORMED)
+    _min_v, max_v, _min_l, max_l = cv2.minMaxLoc(res)
+    if max_v >= threshold:
+        return (x1 + int(max_l[0]), y1 + int(max_l[1]), rw_s, rh_s)
+    return None
+
+
 def compute_unclipped_table_rect(
     anchor_rect: tuple[int, int, int, int],
     table_offset_rel: list[float],
     canonical_size: tuple[int, int] = (1757, 997),
     template_size: tuple[int, int] | None = None,
     frame_shape: tuple[int, ...] | None = None,
+    right_anchor: tuple[int, int, int, int] | None = None,
 ) -> tuple[int, int, int, int]:
-    """Compute unclipped table rect from detected anchor and relative offset.
+    """Compute unclipped table rect from detected anchor(s) and relative offset.
 
     Preserves negative tx, ty and unclipped tw, th so that warping onto a canonical
     canvas preserves exact pixel alignment without any coordinate drift.
-    If frame_shape is provided and the table is centered in a wide browser window,
-    automatically accounts for window margin offset.
+    Uses dual-anchor alignment when right_anchor is provided, falling back to pure
+    left anchor offset tx = ax - ox * tw without screen-wide centering.
     """
     ax, ay, aw, ah = anchor_rect
     if len(table_offset_rel) < 4 or table_offset_rel[2] <= 0 or table_offset_rel[3] <= 0:
@@ -204,15 +258,26 @@ def compute_unclipped_table_rect(
     tw = int(round(canonical_size[0] * scale))
     th = int(round(canonical_size[1] * scale))
     ox, oy = table_offset_rel[:2]
-    tx = int(round(ax - ox * tw))
+    tx_single = int(round(ax - ox * tw))
     ty = int(round(ay - oy * th))
 
-    # Center table horizontally if single window has wide margins
-    if frame_shape is not None and len(frame_shape) >= 2:
-        frame_w = frame_shape[1]
-        tx_centered = (frame_w - tw) // 2
-        if abs(tx_centered - tx) > 50 and ax < int(tw * 0.15):
-            tx = tx_centered
+    if right_anchor is not None:
+        rx, ry, rw, rh = right_anchor
+        container_w = (rx + rw) - ax
+        if container_w < tw * 0.85:
+            # Narrow responsive Stake container (e.g. 211257 where table is centered in window)
+            game_center_x = (ax + (rx + rw)) / 2.0 + 30.0 * (scale / 1.28205)
+            tx = int(round(game_center_x - tw / 2.0))
+        else:
+            # Standard or wide container (e.g. 224127, 2 gry na raz, wide laptop screens)
+            game_center_x = (ax + (rx + rw)) / 2.0 + 14.0 * scale
+            tx_dual = int(round(game_center_x - tw / 2.0))
+            if abs(tx_dual - tx_single) <= 15 * scale:
+                tx = tx_dual
+            else:
+                tx = tx_single
+    else:
+        tx = tx_single
 
     return (tx, ty, tw, th)
 

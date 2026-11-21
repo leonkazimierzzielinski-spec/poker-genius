@@ -9,6 +9,7 @@
   ],
   "anchor": {
     "template_path": "data/templates/anchor.png",
+    "right_template_path": "data/templates/anchor_right.png",
     "match_threshold": 0.85,
     "table_offset_rel": [
       0.0296,

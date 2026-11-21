@@ -1,5 +1,64 @@
 # Poker Genius — Dziennik Postępu Prac (Progress Log)
 
+## V10 — Dwupunktowe kotwiczenie stołu (anchor_right), usunięcie błędu centrowania i ręczne dostrajanie ramki w HUD (2026-11-21)
+
+### 1. Diagnoza źródłowej przyczyny przesunięcia na żywo o ~400 px
+1. **Analiza zrzutu ekranu z włączoną nakładką `🎯 Ramki ROI`:**
+   - W trybie `--mode live` na laptopie HiDPI (`2880x1800`) skala (`1.15x`, `2027x1150`) oraz wysokość pionowa (`ty = 335`) były idealne, lecz `tx` wynosiło `426 px` zamiast prawdziwego położenia stołu `~30 px`.
+   - **Winowajca (`vision/anchor.py`, dawne linie 210–215):**
+     Kod obliczał `tx_centered = (frame_w - tw) // 2 = (2880 - 2027) // 2 = 426 px` i na siłę nadpisywał `tx`, błędnie zakładając, że cały monitor to samo okno gry i ignorując obecność panelu `Bet Slip` po prawej stronie okna przeglądarki!
+   - Co więcej, przycisk `📐 Obszar` również korzystał z `compute_unclipped_table_rect(..., frame_shape=frame.shape)`, przez co centrowanie psuło nawet ręcznie zaznaczony stół.
+
+### 2. Wdrożone zmiany i nowa architektura
+1. **Usunięcie błędnego centrowania do monitora (`vision/anchor.py`):**
+   - Całkowicie wycięto linie wymuszające `tx_centered = (frame_w - tw) // 2`.
+   - Podstawowa pozycja stołu wyliczana jest bezpośrednio z lewej kotwicy: `tx = int(round(ax - ox * tw))`, co na ekranie 2880px daje natychmiast prawidłowe `tx = 30 px`.
+2. **Nowy szablon prawej kotwicy i dwupunktowe kotwiczenie (`data/templates/anchor_right.png`, `vision/anchor.py`):**
+   - Dodano czysty szablon `anchor_right.png` (35x78) zawierający ikony `[⚙][🏆]` z prawego górnego rogu obszaru gry.
+   - Dodano funkcję `find_right_anchor(frame, right_template, left_anchor, threshold=0.72)` przeszukującą wąski pas w osi X stołu na wysokości lewej kotwicy (< 1 ms).
+   - W `compute_unclipped_table_rect(..., right_anchor=...)`:
+     * W responsywnych, wąskich oknach Stake (np. `211257`, gdzie kontener gry jest węższy niż pełna szerokość stołu `tw`), stół jest centrowany wewnątrz kontenera gry między lewą a prawą kotwicą: `game_center_x = (ax + rx + rw) / 2.0 + offset`, dając dokładnie `tx = -198`.
+     * W standardowych oknach (`224127`, `2 gry na raz`, ekrany z panelem Bet Slip) pozycja stołu jest precyzyjnie potwierdzana lub utrzymywana przy lewej kotwicy bez żadnego przesunięcia monitorowego.
+3. **Integracja w silniku wizji i pętli głównej (`vision/pipeline.py`, `main.py`):**
+   - `VisionPipeline` automatycznie wczytuje `right_anchor_template` z `data/templates/anchor_right.png`.
+   - `main.py` oraz `pipeline.process_frame` wyszukują prawą kotwicę i przekazują ją do `compute_unclipped_table_rect`.
+4. **Ręczne dostrajanie i przeciąganie ramki stołu w HUD (`ui/hud.py`, `main.py`):**
+   - Dodano sygnał `HudBridge.table_adjust_changed = Signal(int, int, float)` (`dx, dy, scale_mult`).
+   - W panelu `🔍 Szczegóły` w `HudOverlay` dodano kompaktowy pasek sterowania:
+     * Przyciski przesunięcia: `◀` `▲` `▼` `▶` (krok 10 px, z `Shift` precyzyjny krok 2 px).
+     * Przyciski skalowania: `-` `+` (korekta skali o ±1%).
+     * Przycisk przeciągania myszą: `✋ Przesuń` — tymczasowo wyłącza `click-through` na `DebugRoiOverlay`, zmienia kursor na `SizeAllCursor` i pozwala przeciągnąć cyjanową ramkę stołu myszą wprost na stół, a po puszczeniu natychmiast wraca do `click-through`.
+     * Przycisk `↺` (resetuje do `(0, 0) | 100%`). Przycisk `↺ Auto` również automatycznie resetuje przesunięcia.
+     * Etykieta stanu: `Offset: (dx, dy) | skala%`.
+   - W `main.py` korekta `(dx, dy, scale_mult)` jest aplikowana na `table_rect` przed `pipeline.process_frame` oraz przed wysłaniem `debug_overlay_updated`, zapewniając natychmiastowy podgląd przesuniętych ramek na żywo.
+
+### 3. Wyniki weryfikacji na klatkach testowych i symulacji panelu Bet Slip
+
+| Nagranie / Test | Klatka | Rozdzielczość | Wykryte `table_rect` | Karty Hero | Karty Board | Pot | Status |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `2026-11-19 211257` | `1827` | `1858x1248` | `(-198, 7, 2253x1278)` | `['Kh', '2s']` | `[]` | `70` | **VALID** |
+| `2026-11-19 211257` | `2604` | `1858x1248` | `(-198, 7, 2253x1278)` | `['Kh', '2s']` | `['7d', 'Td', 'Th', '2h']` | `218` | **VALID** |
+| `2026-11-19 211257` | `3643` | `1858x1248` | `(-198, 7, 2253x1278)` | `['Jc', '4d']` | `[]` | `30` | **VALID** |
+| `2026-11-19 211257` | `3880` | `1858x1248` | `(-198, 7, 2253x1278)` | `['Jc', '4d']` | `[]` | `206` | **VALID** |
+| `2026-11-19 211257` | `4757` | `1858x1248` | `(-198, 7, 2253x1278)` | `['7s', '7d']` | `['Qc', '7c', '7h']` | `682` | **VALID** |
+| `2026-11-18 224127` | `0` | `1772x1126` | `(13, 32, 1757x997)` | `['2s', 'Tc']` | `[]` | `80` | **VALID** |
+| `2026-11-18 224127` | `765` | `1772x1126` | `(13, 32, 1757x997)` | `['Kd', '3c']` | `[]` | `30` | **VALID** |
+| `2026-11-18 224127` | `2370` | `1772x1126` | `(13, 32, 1757x997)` | `['7c', '5s']` | `[]` | `90` | **VALID** |
+| `2026-11-18 224127` | `4950` | `1772x1126` | `(13, 32, 1757x997)` | `['5h', 'Jh']` | `['Jd', '2s', '9h']` | `60` | **VALID** |
+| `2 gry na raz` | `1383` | `1706x1022` | `(-22, -9, 1757x997)` | `['Ks', '9s']` | `['3s', 'Ac', 'Ah']` | `80` | **VALID** |
+| `2 gry na raz` | `1627` | `1706x1022` | `(-22, -9, 1757x997)` | `['Ks', '9s']` | `['3s', 'Ac', 'Ah']` | `240` | **VALID** |
+| `2 gry na raz` | `2418` | `1706x1022` | `(-22, -9, 1757x997)` | `['4d', 'Qs']` | `[]` | `50` | **VALID** |
+| `2 gry na raz` | `2605` | `1706x1022` | `(-22, -9, 1757x997)` | `['4d', 'Qs']` | `['5d', '8c', 'Jh']` | `50` | **VALID** |
+| **Sztuczny Bet Slip (+800px)** | `211257 f2604` | `2658x1248` | `(-198, 7, 2253x1278)` | `['Kh', '2s']` | `['7d', 'Td', 'Th', '2h']` | `218` | **VALID (100%)** |
+
+### 4. Wyniki testów jednostkowych (`pytest -v tests/`)
+- Liczba testów: **98 passed in 4.88s (100% sukcesu)**.
+- Nowe testy:
+  1. `tests/test_vision.py::test_compute_unclipped_table_rect_wide_monitor_with_right_panel`: weryfikuje odporność na panel Bet Slip na ekranie 2880x1800 (brak przesunięcia do 426px, precyzja <= 2px) oraz funkcję `find_right_anchor`.
+  2. `tests/test_ui_and_main.py::test_table_adjust_signal_and_drag_mode`: weryfikuje sygnał `table_adjust_changed`, przyciski przesunięcia/skalowania/resetu oraz tryb przeciągania myszą `set_drag_mode`.
+
+---
+
 ## V9.1 — Nakładka diagnostyczna na ekran (DebugRoiOverlay + WDA_EXCLUDEFROMCAPTURE) (2026-11-21)
 
 ### 1. Wdrożone zmiany i usprawnienia

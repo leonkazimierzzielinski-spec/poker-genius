@@ -20,6 +20,7 @@ from vision.anchor import (
     compute_unclipped_table_rect,
     crop_rois,
     find_anchor,
+    find_right_anchor,
 )
 from vision.card_recognizer import CardRecognizer
 from vision.ocr import DigitOCR, detect_hero_actions
@@ -34,6 +35,7 @@ class VisionPipeline:
 
         self.anchor_config = self.config.get("anchor", {})
         self.anchor_template: np.ndarray | None = None
+        self.right_anchor_template: np.ndarray | None = None
         self._load_anchor_template()
 
         self.anchor_threshold: float = float(
@@ -90,6 +92,15 @@ class VisionPipeline:
             img = cv2.imread(str(path), cv2.IMREAD_COLOR)
             if img is not None and img.size > 0:
                 self.anchor_template = img
+
+        right_tpl_path = self.anchor_config.get(
+            "right_template_path", "data/templates/anchor_right.png"
+        )
+        r_path = Path(right_tpl_path)
+        if r_path.is_file():
+            r_img = cv2.imread(str(r_path), cv2.IMREAD_COLOR)
+            if r_img is not None and r_img.size > 0:
+                self.right_anchor_template = r_img
 
     def _warp_to_canonical(
         self, frame: np.ndarray, rect: tuple[int, int, int, int]
@@ -226,12 +237,22 @@ class VisionPipeline:
                     tpl_w = self.anchor_template.shape[1]
                     tpl_h = self.anchor_template.shape[0]
                     self._last_anchor_scale = anchor[2] / tpl_w
+                    right_anchor = None
+                    if self.right_anchor_template is not None:
+                        right_anchor = find_right_anchor(
+                            frame,
+                            self.right_anchor_template,
+                            anchor,
+                            canonical_size=self.canonical_table_size,
+                            left_template_size=(tpl_w, tpl_h),
+                        )
                     unclipped_rect = compute_unclipped_table_rect(
                         anchor,
                         self.table_offset_rel,
                         canonical_size=self.canonical_table_size,
                         template_size=(tpl_w, tpl_h),
                         frame_shape=frame.shape,
+                        right_anchor=right_anchor,
                     )
                     table_image = self._warp_to_canonical(frame, unclipped_rect)
                     effective_rect = (0, 0, CW, CH)

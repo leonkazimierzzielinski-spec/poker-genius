@@ -30,6 +30,7 @@ try:
         compute_unclipped_table_rect,
         find_all_anchors,
         find_anchor,
+        find_right_anchor,
     )
     from vision.capture import (
         DXCAM_AVAILABLE,
@@ -41,6 +42,7 @@ try:
 except ImportError:
     find_all_anchors = None  # type: ignore[assignment]
     find_anchor = None  # type: ignore[assignment]
+    find_right_anchor = None  # type: ignore[assignment]
     compute_table_rect = None  # type: ignore[assignment]
     compute_unclipped_table_rect = None  # type: ignore[assignment]
     DXCAM_AVAILABLE = False
@@ -738,14 +740,26 @@ def processing_loop(
 ) -> None:
     """Thread 2: Processes frames, evaluates decisions, logs sessions, and updates HUD."""
     manual_rect_holder: list[tuple[int, int, int, int] | None] = [None]
+    adjust_holder: list[Any] = [0, 0, 1.0]
     last_idle_emit: float = 0.0
 
     def _on_manual_rect(rect: Any) -> None:
         manual_rect_holder[0] = rect
 
+    def _on_table_adjust(dx: int, dy: int, scale_mult: float) -> None:
+        adjust_holder[0] = dx
+        adjust_holder[1] = dy
+        adjust_holder[2] = scale_mult
+
     if hud_bridge is not None and hasattr(hud_bridge, "manual_rect_changed"):
         try:
             hud_bridge.manual_rect_changed.connect(_on_manual_rect)
+        except Exception:
+            pass
+
+    if hud_bridge is not None and hasattr(hud_bridge, "table_adjust_changed"):
+        try:
+            hud_bridge.table_adjust_changed.connect(_on_table_adjust)
         except Exception:
             pass
 
@@ -864,12 +878,25 @@ def processing_loop(
                         template_size = (tpl_w, tpl_h) if tpl_w and tpl_h else None
                         canonical_sz = getattr(pipeline, "canonical_table_size", (1757, 997))
                         table_offset = getattr(pipeline, "table_offset_rel", [0.0, 0.0, 1.0, 1.0])
+                        right_anchor = None
+                        if getattr(pipeline, "right_anchor_template", None) is not None and find_right_anchor is not None:
+                            try:
+                                right_anchor = find_right_anchor(
+                                    frame,
+                                    pipeline.right_anchor_template,
+                                    full_anchor,
+                                    canonical_size=canonical_sz,
+                                    left_template_size=template_size or (78, 35),
+                                )
+                            except Exception:
+                                right_anchor = None
                         table_rect = compute_unclipped_table_rect(
                             full_anchor,
                             table_offset,
                             canonical_size=canonical_sz,
                             template_size=template_size,
                             frame_shape=frame.shape,
+                            right_anchor=right_anchor,
                         )
                     elif compute_table_rect is not None:
                         table_rect = compute_table_rect(full_anchor, pipeline.table_offset_rel, frame.shape)
@@ -932,12 +959,25 @@ def processing_loop(
                     table_offset = getattr(pipeline, "table_offset_rel", [0.0, 0.0, 1.0, 1.0])
                     for idx, anchor in enumerate(anchors):
                         table_id = f"table_{idx + 1}"
+                        right_anchor = None
+                        if getattr(pipeline, "right_anchor_template", None) is not None and find_right_anchor is not None:
+                            try:
+                                right_anchor = find_right_anchor(
+                                    frame,
+                                    pipeline.right_anchor_template,
+                                    anchor,
+                                    canonical_size=canonical_sz,
+                                    left_template_size=template_size or (78, 35),
+                                )
+                            except Exception:
+                                right_anchor = None
                         table_rect = compute_unclipped_table_rect(
                             anchor,
                             table_offset,
                             canonical_size=canonical_sz,
                             template_size=template_size,
                             frame_shape=frame.shape,
+                            right_anchor=right_anchor,
                         )
                         table_jobs.append((table_id, table_rect))
                 elif anchors and compute_table_rect is not None:
@@ -948,7 +988,17 @@ def processing_loop(
                 else:
                     table_jobs.append(("table_1", None))
 
-            for table_id, table_rect in table_jobs:
+            for table_id, orig_table_rect in table_jobs:
+                table_rect = orig_table_rect
+                if table_rect is not None:
+                    dx, dy, scale_mult = adjust_holder
+                    if dx != 0 or dy != 0 or abs(scale_mult - 1.0) > 0.001:
+                        tx, ty, tw, th = table_rect
+                        new_tw = int(round(tw * scale_mult))
+                        new_th = int(round(th * scale_mult))
+                        new_tx = tx + dx - (new_tw - tw) // 2
+                        new_ty = ty + dy - (new_th - th) // 2
+                        table_rect = (new_tx, new_ty, new_tw, new_th)
                 table_start = time.perf_counter()
 
                 try:

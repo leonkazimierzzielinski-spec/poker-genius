@@ -15,6 +15,7 @@ from vision.anchor import (
     crop_rois,
     find_all_anchors,
     find_anchor,
+    find_right_anchor,
 )
 from vision.capture import OfflineReplayCapture
 from vision.card_recognizer import CardRecognizer
@@ -874,6 +875,74 @@ def test_detect_hero_actions_zoned_rejects_noise() -> None:
     assert "FOLD" in acts
     assert ("CHECK" in acts or "CALL" in acts)
     assert "BET" not in acts
+
+
+def test_compute_unclipped_table_rect_wide_monitor_with_right_panel() -> None:
+    """Verify wide monitor (2880x1800) with Bet Slip on the right does not shift table to monitor center (426px)."""
+    # Synthetic wide screen simulating laptop 2880x1800 display with Bet Slip panel taking right ~900px
+    canonical_size = (1757, 997)
+    table_offset_rel = [0.0296, 0.0301, 0.0444, 0.0351]
+    template_size = (78, 35)
+
+    # Scale 1.1538x (aw = 90)
+    left_anchor = (90, 370, 90, 40)
+    # Right anchor in the game area header right before Bet Slip
+    right_anchor = (1930, 370, 90, 40)
+    frame_shape = (1800, 2880, 3)
+
+    # 1. With dual-anchor and wide frame_shape
+    rect_dual = compute_unclipped_table_rect(
+        left_anchor,
+        table_offset_rel,
+        canonical_size=canonical_size,
+        template_size=template_size,
+        frame_shape=frame_shape,
+        right_anchor=right_anchor,
+    )
+    tx, ty, tw, th = rect_dual
+    # Old flawed logic forced tx = (2880 - 2027) // 2 = 426
+    assert tx != 426, "Table must NOT be centered across the entire 2880px monitor!"
+    assert abs(tx - 30) <= 2, f"Expected tx around 30px on the left side of the screen, got {tx}"
+    assert tw == 2027
+    assert th == 1150
+    assert ty == 335
+
+    # 2. Fallback without right_anchor must also NOT center to monitor-wide 426px
+    rect_single = compute_unclipped_table_rect(
+        left_anchor,
+        table_offset_rel,
+        canonical_size=canonical_size,
+        template_size=template_size,
+        frame_shape=frame_shape,
+        right_anchor=None,
+    )
+    tx_s, ty_s, tw_s, th_s = rect_single
+    assert tx_s != 426
+    assert abs(tx_s - 30) <= 2
+
+    # 3. Test find_right_anchor in synthetic frame
+    frame = np.zeros(frame_shape, dtype=np.uint8)
+    rtpl = np.zeros((35, 78, 3), dtype=np.uint8)
+    rtpl[:, :] = (80, 80, 80)
+    cv2.circle(rtpl, (20, 17), 10, (255, 255, 255), -1)
+    cv2.rectangle(rtpl, (45, 7), (70, 27), (255, 200, 0), -1)
+
+    scale = 90 / 78.0
+    rw_s, rh_s = int(round(78 * scale)), int(round(35 * scale))
+    scaled_rtpl = cv2.resize(rtpl, (rw_s, rh_s))
+    rx_true, ry_true = 1750, 370
+    frame[ry_true : ry_true + rh_s, rx_true : rx_true + rw_s] = scaled_rtpl
+
+    found_ra = find_right_anchor(
+        frame,
+        rtpl,
+        left_anchor,
+        canonical_size=canonical_size,
+        left_template_size=template_size,
+    )
+    assert found_ra is not None
+    assert abs(found_ra[0] - rx_true) <= 2
+    assert abs(found_ra[1] - ry_true) <= 2
 
 
 
