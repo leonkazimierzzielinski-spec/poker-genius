@@ -79,14 +79,39 @@ class DecisionMaker:
             paid_places=paid_places,
         )
 
+        # Determine if check is free (to_call == 0)
+        players = getattr(state, "players", {}) or {}
+        hero_p = players.get(0) if isinstance(players, dict) else (players[0] if len(players) > 0 else None)
+        hero_bet = getattr(hero_p, "bet", 0) or 0 if hero_p else 0
+        opp_bets = [
+            getattr(p, "bet", 0) or 0
+            for s_id, p in (players.items() if isinstance(players, dict) else enumerate(players))
+            if s_id != 0 and p is not None and getattr(p, "is_active", True)
+        ]
+        max_opp_bet = max(opp_bets) if opp_bets else 0
+        to_call = max(0, max_opp_bet - hero_bet)
+
+        available_actions = getattr(state, "available_actions", None)
+        has_check = bool(available_actions and "CHECK" in available_actions)
+        facing_bet = (to_call > 0) or (available_actions is not None and "CALL" in available_actions)
+
+        # Hard safety rule: Never fold when free check is available
+        clean_evs = dict(candidate_evs)
+        if not facing_bet or (has_check and to_call == 0):
+            clean_evs = {k: v for k, v in clean_evs.items() if k != "FOLD"}
+            if "CHECK" not in clean_evs and (available_actions is None or "CHECK" in available_actions):
+                clean_evs["CHECK"] = 0.0
+
         exploited_evs, reasons = self.exploit_engine.apply_exploits(
-            candidate_evs=candidate_evs,
+            candidate_evs=clean_evs,
             state=state,
             modifiers=modifiers,
             spot=spot,
         )
 
-        available_actions = getattr(state, "available_actions", None)
+        if not facing_bet or (has_check and to_call == 0):
+            exploited_evs = {k: v for k, v in exploited_evs.items() if k != "FOLD"}
+
         action, ev_bb, filter_note = self.simplifier.select_pure_action(
             evs=exploited_evs,
             modifiers=modifiers,
@@ -95,6 +120,26 @@ class DecisionMaker:
 
         if filter_note:
             reasons.append(filter_note)
+
+        # Alt action computation: if 2nd best legal action is within 0.05 BB
+        alt_action: str | None = None
+        alt_ev_bb: float | None = None
+        if ev_bb is not None:
+            from strategy.simplifier import is_action_available
+            legal_evs = {
+                k: v for k, v in exploited_evs.items()
+                if (available_actions is None or is_action_available(k, available_actions))
+                and k != action
+            }
+            if not facing_bet or (has_check and to_call == 0):
+                legal_evs.pop("FOLD", None)
+
+            if legal_evs:
+                sorted_alt = sorted(legal_evs.items(), key=lambda it: it[1], reverse=True)
+                cand_act, cand_ev = sorted_alt[0]
+                if cand_ev >= ev_bb - 0.05:
+                    alt_action = cand_act
+                    alt_ev_bb = round(cand_ev, 4)
 
         prefix = "[PLAN] " if is_preview else ""
         if reasons:
@@ -111,4 +156,6 @@ class DecisionMaker:
             confidence=confidence,
             profile_used=modifiers.profile_name,
             reason=reason_str,
+            alt_action=alt_action,
+            alt_ev_bb=alt_ev_bb,
         )

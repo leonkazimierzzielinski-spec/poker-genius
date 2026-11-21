@@ -50,12 +50,12 @@ def test_multiplier_adapter_profiles():
     assert p20.use_icm is True
 
 
-def test_exploit_timing_tell_fast_check():
-    """Simulate fast check (<500ms) and verify BET_30 boost and Timing Tell reason."""
+def test_exploit_timing_tell_removed():
+    """Verify that timing tells (reaction_ms) are completely removed/ignored in V15."""
     engine = ExploitEngine()
     modifiers = ProfileModifiers(profile_name="STANDARD_EXPLOIT", bluff_factor=1.0)
 
-    # Opponent seat 1 checked in 250 ms
+    # Opponent seat 1 checked in 250 ms (previously triggered fast check)
     state = SimpleNamespace(
         players={
             0: SimpleNamespace(seat_id=0, is_active=True, last_reaction_ms=None),
@@ -69,58 +69,9 @@ def test_exploit_timing_tell_fast_check():
     candidate_evs = {"CHECK": 0.05, "BET_30": 0.10}
     adjusted_evs, reasons = engine.apply_exploits(candidate_evs, state, modifiers, spot="POSTFLOP")
 
-    # Fast check bonus: 0.12 * 1.0 = 0.12 -> 0.10 + 0.12 = 0.22
-    assert adjusted_evs["BET_30"] == pytest.approx(0.22)
-    assert any("Timing Tell" in r for r in reasons)
-
-
-def test_exploit_timing_tell_ignores_zero_ms_transition_artifact() -> None:
-    """Verify that reaction times < 150 ms (0 ms or 50 ms transition artifacts) do NOT trigger timing tell."""
-    engine = ExploitEngine()
-    modifiers = ProfileModifiers(profile_name="STANDARD_EXPLOIT", bluff_factor=1.0)
-
-    # 1. Artifact reaction time = 0 ms (new street transition frame)
-    state_0ms = SimpleNamespace(
-        players={
-            0: SimpleNamespace(seat_id=0, is_active=True, last_reaction_ms=None),
-            1: SimpleNamespace(seat_id=1, is_active=True, last_reaction_ms=0, current_bet=0),
-            2: SimpleNamespace(seat_id=2, is_active=True, last_reaction_ms=1200, current_bet=0),
-        },
-        street="FLOP",
-        big_blind=20,
-    )
-    candidate_evs = {"CHECK": 0.05, "BET_30": 0.10}
-    evs_0, reasons_0 = engine.apply_exploits(candidate_evs.copy(), state_0ms, modifiers, spot="POSTFLOP")
-    assert evs_0["BET_30"] == pytest.approx(0.10)
-    assert not any("Timing Tell" in r for r in reasons_0)
-
-    # 2. Artifact reaction time = 50 ms
-    state_50ms = SimpleNamespace(
-        players={
-            0: SimpleNamespace(seat_id=0, is_active=True, last_reaction_ms=None),
-            1: SimpleNamespace(seat_id=1, is_active=True, last_reaction_ms=50, current_bet=0),
-            2: SimpleNamespace(seat_id=2, is_active=True, last_reaction_ms=1200, current_bet=0),
-        },
-        street="FLOP",
-        big_blind=20,
-    )
-    evs_50, reasons_50 = engine.apply_exploits(candidate_evs.copy(), state_50ms, modifiers, spot="POSTFLOP")
-    assert evs_50["BET_30"] == pytest.approx(0.10)
-    assert not any("Timing Tell" in r for r in reasons_50)
-
-    # 3. Real fast check = 250 ms (triggers timing tell)
-    state_250ms = SimpleNamespace(
-        players={
-            0: SimpleNamespace(seat_id=0, is_active=True, last_reaction_ms=None),
-            1: SimpleNamespace(seat_id=1, is_active=True, last_reaction_ms=250, current_bet=0),
-            2: SimpleNamespace(seat_id=2, is_active=True, last_reaction_ms=1200, current_bet=0),
-        },
-        street="FLOP",
-        big_blind=20,
-    )
-    evs_250, reasons_250 = engine.apply_exploits(candidate_evs.copy(), state_250ms, modifiers, spot="POSTFLOP")
-    assert evs_250["BET_30"] == pytest.approx(0.22)
-    assert any("Timing Tell: fast check <500ms" in r for r in reasons_250)
+    # No timing tell bonus or reason
+    assert adjusted_evs["BET_30"] == pytest.approx(0.10)
+    assert not any("Timing Tell" in r for r in reasons)
 
 
 def test_exploit_sizing_tell_one_bb():
@@ -174,8 +125,8 @@ def test_simplifier_loose_callers_borderline():
     assert note == "Borderline 0EV high-variance call/shove"
 
 
-def test_exploit_bb_iso_vs_limp():
-    """Verify MDA Iso-Shove bonus when spot is BB_ISO_VS_LIMP."""
+def test_exploit_bb_iso_vs_limp_no_unconditional_shove():
+    """Verify that BB_ISO_VS_LIMP does NOT unconditionally boost ALL_IN in V15."""
     engine = ExploitEngine()
     modifiers = ProfileModifiers(profile_name="STANDARD_EXPLOIT")
     state = SimpleNamespace(players={}, street="PREFLOP", big_blind=20)
@@ -183,8 +134,8 @@ def test_exploit_bb_iso_vs_limp():
     candidate_evs = {"CHECK": 0.0, "MIN_RAISE": 0.10, "ALL_IN": 0.20}
     adjusted_evs, reasons = engine.apply_exploits(candidate_evs, state, modifiers, spot="BB_ISO_VS_LIMP")
 
-    assert adjusted_evs["ALL_IN"] == pytest.approx(0.30)
-    assert any("MDA Iso-Shove" in r for r in reasons)
+    assert adjusted_evs["ALL_IN"] == pytest.approx(0.20)
+    assert not any("MDA Iso-Shove" in r for r in reasons)
 
 
 def test_exploit_high_steal_boost():
@@ -565,6 +516,83 @@ def test_decision_lock_confirms_and_freezes_until_state_change() -> None:
     # Reset clears all locks
     lock.reset()
     assert lock.get_locked(fp2) is None
+
+
+def test_never_fold_when_free_check_available():
+    """Verify that BB facing a limp (to_call == 0) with trash cards like Jh 5c NEVER folds."""
+    decision_maker = DecisionMaker()
+    state = SimpleNamespace(
+        table_id="table_1",
+        is_valid=True,
+        is_hero_turn=True,
+        street="PREFLOP",
+        hero_cards=["Jh", "5c"],
+        available_actions=["CHECK", "BET", "ALL_IN"],
+        players={
+            0: SimpleNamespace(seat_id=0, is_active=True, bet=20, stack=280),
+            1: SimpleNamespace(seat_id=1, is_active=True, bet=20, stack=280),
+            2: SimpleNamespace(seat_id=2, is_active=False, bet=0, stack=0),
+        },
+        big_blind=20,
+    )
+    candidate_evs = {"FOLD": 0.0, "CHECK": -0.05, "MIN_RAISE": -0.20, "ALL_IN": -0.80}
+    decision = decision_maker.decide(state, candidate_evs, spot="BB_ISO_VS_LIMP")
+    assert decision.action != "FOLD", "Must never suggest FOLD on a free check"
+    assert decision.action == "CHECK"
+
+
+def test_bb_vs_limp_deep_14bb_q8s_not_all_in():
+    """Verify that Qh 8h at 14.5 BB on BB facing limp does NOT shove ALL_IN."""
+    from engine.preflop_nash import PreflopNashEngine
+    engine = PreflopNashEngine()
+    action, ev = engine.get_action(["Qh", "8h"], 14.5, "BB_ISO_VS_LIMP")
+    assert action in ("MIN_RAISE", "CHECK"), f"Expected MIN_RAISE or CHECK, got {action}"
+    assert action != "ALL_IN", "Q8s at 14.5 BB must never shove"
+
+
+def test_icm_bubble_factor_activates_at_5x_and_above():
+    """Verify ICM Bubble Factor is 1.0 (inactive) in 2x/3x, and > 1.0 in 5x+ with 3 players alive."""
+    from strategy.icm import compute_bubble_factor, is_icm_active, get_payout_splits
+    # 2x / 3x prize pool: winner take all
+    assert not is_icm_active(num_alive=3, prize_pool=4, buy_in=2)
+    assert not is_icm_active(num_alive=3, prize_pool=6, buy_in=2)
+    payouts_2x = get_payout_splits(prize_pool=4, buy_in=2)
+    assert payouts_2x == [1.0, 0.0, 0.0]
+    bf_2x = compute_bubble_factor(300, 300, 300, payouts_2x)
+    assert bf_2x == pytest.approx(1.0)
+
+    # 5x+ prize pool: 2nd place pays (e.g. 75% / 25%)
+    assert is_icm_active(num_alive=3, prize_pool=10, buy_in=2)
+    payouts_5x = get_payout_splits(prize_pool=10, buy_in=2)
+    assert payouts_5x == [0.75, 0.25, 0.0]
+    bf_5x = compute_bubble_factor(300, 300, 300, payouts_5x)
+    assert bf_5x > 1.0, f"Expected Bubble Factor > 1.0, got {bf_5x}"
+    assert bf_5x == pytest.approx(1.3333, abs=0.01)
+
+
+def test_decision_populates_alt_action_within_0_05_bb():
+    """Verify that when the second best legal action is within 0.05 BB of best, alt_action is populated."""
+    decision_maker = DecisionMaker()
+    state = SimpleNamespace(
+        table_id="table_1",
+        is_valid=True,
+        is_hero_turn=True,
+        street="FLOP",
+        hero_cards=["Ah", "Kd"],
+        available_actions=["CHECK", "BET_30", "ALL_IN"],
+        players={
+            0: SimpleNamespace(seat_id=0, is_active=True, bet=0, stack=300),
+            1: SimpleNamespace(seat_id=1, is_active=True, bet=0, stack=300),
+        },
+        big_blind=20,
+    )
+    # CHECK is best (0.50), BET_30 is 0.47 (diff = 0.03 <= 0.05)
+    candidate_evs = {"CHECK": 0.50, "BET_30": 0.47, "ALL_IN": 0.20}
+    decision = decision_maker.decide(state, candidate_evs, spot="FLOP")
+    assert decision.action == "CHECK"
+    assert decision.alt_action == "BET_30"
+    assert decision.alt_ev_bb == pytest.approx(0.47)
+
 
 
 

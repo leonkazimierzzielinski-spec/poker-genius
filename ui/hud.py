@@ -246,7 +246,7 @@ def format_action_label(
 ) -> str:
     """Format action string into a clean, uniform label with BB multiple and chip amounts."""
     act = str(action or "WAIT").upper()
-    if act == "BET_30":
+    if act in ("BET_30", "BET_SMALL"):
         if sizing_bb is not None and sizing_chips is not None:
             return f"BET {sizing_bb} BB ({sizing_chips})"
         elif sizing_bb is not None:
@@ -254,6 +254,14 @@ def format_action_label(
         elif sizing_chips is not None and sizing_chips > 0:
             return f"BET ({sizing_chips})"
         return "BET 30%"
+    elif act == "BET_MED":
+        if sizing_bb is not None and sizing_chips is not None:
+            return f"BET {sizing_bb} BB ({sizing_chips})"
+        elif sizing_bb is not None:
+            return f"BET {sizing_bb} BB"
+        elif sizing_chips is not None and sizing_chips > 0:
+            return f"BET ({sizing_chips})"
+        return "BET 50%"
     elif act == "MIN_RAISE":
         if sizing_bb is not None and sizing_chips is not None:
             return f"RAISE {sizing_bb} BB ({sizing_chips})"
@@ -2053,10 +2061,23 @@ class HudOverlay(QWidget):
         reason = getattr(decision, "reason", "")
         sizing_bb = getattr(decision, "sizing_bb", None)
         sizing_chips = getattr(decision, "sizing_chips", None)
+        alt_action = getattr(decision, "alt_action", None)
+        alt_ev_bb = getattr(decision, "alt_ev_bb", None)
+        alt_sizing_bb = getattr(decision, "alt_sizing_bb", None)
+        alt_sizing_chips = getattr(decision, "alt_sizing_chips", None)
 
         is_plan = str(reason).startswith("[PLAN]")
         action_label = format_action_label(action, sizing_bb, sizing_chips)
         badge_text = f"PLAN: {action_label}" if is_plan else action_label
+
+        alt_html = ""
+        if alt_action:
+            alt_label = format_action_label(alt_action, alt_sizing_bb, alt_sizing_chips)
+            if alt_ev_bb is not None:
+                alt_ev_text = f" ({alt_ev_bb:+.2f} BB)"
+            else:
+                alt_ev_text = ""
+            alt_html = f'<div style="font-size: 11px; color: #94a3b8; margin-top: 3px;">Alt: {alt_label}{alt_ev_text}</div>'
 
         # Action badge colors & styling
         if is_plan:
@@ -2152,6 +2173,7 @@ class HudOverlay(QWidget):
                     </td>
                 </tr>
             </table>
+            {alt_html}
             {plan_subtitle}
         </div>
         """

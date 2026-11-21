@@ -47,6 +47,10 @@ class Decision:
     reason: str
     sizing_chips: int | None = None
     sizing_bb: int | None = None
+    alt_action: str | None = None
+    alt_ev_bb: float | None = None
+    alt_sizing_bb: int | None = None
+    alt_sizing_chips: int | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)

@@ -1957,6 +1957,42 @@ def test_hero_all_in_stack_zero_returns_wait_not_all_in_zero() -> None:
     assert mock_dm.decide.call_count == 0
 
 
+def test_hud_renders_alt_action_when_present() -> None:
+    """Verify that HudOverlay displays the Alt: action line when decision.alt_action is provided."""
+    from ui.hud import HudOverlay, HudBridge
+    from core.contracts import Decision
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+
+    bridge = HudBridge()
+    hud = HudOverlay(bridge=bridge)
+    hud.show()
+
+    dec = Decision(
+        table_id="table_1",
+        action="CHECK",
+        ev_bb=0.55,
+        confidence=0.95,
+        profile_used="STANDARD_EXPLOIT",
+        reason="Check behind",
+        alt_action="BET_30",
+        alt_ev_bb=0.52,
+        alt_sizing_bb=1,
+        alt_sizing_chips=20,
+    )
+
+    bridge.decision_updated.emit(dec, 14.0)
+    app.processEvents()
+
+    label = hud.table_widgets.get("table_1")
+    assert label is not None
+    html_text = label.text()
+    assert "Alt: BET" in html_text
+    assert "(+0.52 BB)" in html_text
+
+
+
 
 
 

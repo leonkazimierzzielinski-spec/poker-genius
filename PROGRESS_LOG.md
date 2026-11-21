@@ -1,5 +1,47 @@
 # Poker Genius — Dziennik Postępu Prac (Progress Log)
 
+## V15 — Nowy Silnik Strategii (Range-vs-Range + Pełny Preflop 0–15 BB + ICM od 5x), Alternatywa na HUD, Stabilność Ts oraz Zbiorczy Raport Wszystkich Gier (2026-11-21)
+
+### 1. Wdrożone zmiany i nowa architektura
+1. **Nowy moduł postflop `engine/range_engine.py` (Range-vs-Range + MDA):**
+   - **Startowy zakres rywala (`get_preflop_villain_range`):** deterministyczny generator ważonych kombinacji rywala dla pozycji `BTN`, `SB`, `BB` i akcji preflop (`OPEN_RAISE` ~42%, `LIMP` ~55%, `CALL_OPEN` ~55%, `3BET_OR_SHOVE` ~14%), filtrujący karty Hero i boardu.
+   - **Klasyfikator 5 koszyków (`classify_combo`):** kategoryzuje ręce rywala na `MONSTER` (2 pary+), `STRONG` (top pair / overpair), `MEDIUM` (2./3. para, underpair, A-high), `DRAW` (FD / OESD) i `AIR` za pomocą szybkiej biblioteki `phevaluator`.
+   - **Zawężanie zakresu macierzą MDA (`narrow_range_by_postflop_action`):** deterministyczna macierz przejścia populacji mikrostawk (`CHECK` zmniejsza monstery i wzmacnia capped air/medium; `SMALL_BET <= 0.35 pot` utrzymuje szeroki, merged zakres; `BIG_BET / RAISE > 0.70 pot` drastycznie obcina `AIR` do 5% na riverze i premiuje mocne made hands).
+   - **Kalkulator equity `compute_range_vs_hand_equity`:** exact enumeration na Riverze (0% błędu, czas `< 2 ms`), 44-card river runout enumeration na Turnie oraz deterministyczne próbkowanie Monte Carlo na Flopie w budżecie `time_budget_ms=400.0` (limit sprzętowy użytkownika do 3 s, faktyczny czas `< 50 ms` na procesorze Intel Core Ultra 5 225H).
+   - **Dynamiczne fold equity:** fold equity w modelach sizingów nie jest stałą liczbą, lecz wynika z proporcji `air_ratio` w zawężonym zakresie rywala i wskaźnika SPR.
+2. **Twarde reguły bezpieczeństwa i czyszczenie exploitów (`strategy/decision_maker.py`, `strategy/simplifier.py`, `strategy/exploit.py`):**
+   - **Absolutny zakaz FOLD przy darmowym CHECK:** gdy `to_call == 0` lub `CHECK` jest dostępny bez otwartego zakładu, akcja `FOLD` jest bezwzględnie usuwana z kandydatów. Bot nigdy nie spasuje, gdy może za darmo stuknąć w stół.
+   - **Usunięcie fałszywych exploitów:** całkowicie usunięto regułę `evs["ALL_IN"] += 0.10` z `BB_ISO_VS_LIMP` (która powodowała niefortunne shove'y 14.5 BB z Q8s) oraz regułę `Timing Tell: fast check <500ms` (podatną na szum klatek).
+3. **Solverowy Preflop 0–15 BB i moduł ICM (`engine/preflop_nash.py`, `strategy/icm.py`, `data/preflop_tables/nash_3max.json`):**
+   - **6 poziomów stacka (15, 12, 10, 8, 6, 4 BB):** zdefiniowane i zoptymalizowane zakresy dla `BTN_OPEN`, `SB_OPEN` (`SB_BVB`, `HU_SB`), `BB_VS_LIMP` (`BB_ISO_VS_LIMP`), `BB_VS_MR` (szeroka obrona ~55-65%), `BB_VS_SHOVE` oraz `SB_VS_BTN`. Ręce typu `Q8s` przy 14.5 BB w `BB_VS_LIMP` grają wyłącznie `MIN_RAISE` lub `CHECK`.
+   - **Moduł ICM (`strategy/icm.py`):** implementacja modelu Malmuth-Harville dla 3 graczy (`calculate_icm_equities`) oraz czynnika `compute_bubble_factor`. W turniejach 2x/3x (winner-take-all) Bubble Factor wynosi 1.0 (czyste cEV); przy mnożnikach 5x+ (gdzie 2. miejsce otrzymuje 25% puli) Bubble Factor wzrasta do ~1.33, podnosząc wymagane equity dla ryzykownych all-inów i chroniąc turniejowe equity Hero.
+4. **Pokazywanie bliskiej alternatywy na HUD (`core/contracts.py`, `strategy/decision_maker.py`, `main.py`, `ui/hud.py`):**
+   - W kontrakcie `Decision` dodano opcjonalne pola: `alt_action`, `alt_ev_bb`, `alt_sizing_bb`, `alt_sizing_chips`.
+   - Gdy druga najlepsza legalna akcja różni się od głównej i ma `alt_ev_bb >= best_ev_bb - 0.05`, system zapisuje alternatywę.
+   - W `ui/hud.py` pod główną odznaką wyświetlana jest subtelna linijka, np. `Alt: BET 1 BB (20) (+0.52 BB)` w kolorze `#94a3b8`.
+5. **Stabilność kart Ts i ochrona puli nagród (`state/tracker.py`, `state/hand_history.py`):**
+   - **3-klatkowy debounce i blokada postflopu:** w `state/tracker.py` zmiana samych kart Hero przy `len(board_cards) >= 3` bez zmiany dealera i resetu ulicy NIGDY nie wyzwala `NEW_HAND`. Na preflopie wymagane są 3 kolejne klatki z nowymi kartami, co całkowicie usuwa rozcinanie rozdań na kawałki przez 1-klatkowy glitch OCR `Ts`.
+   - **3-klatkowy filtr eliminacji Hero:** brak stacka (`stack is None` i `not is_active`) dla `seat_id == 0` wymaga 3 kolejnych klatek przed oznaczeniem `eliminated = True`.
+   - **Nienaruszona pula nagród:** w `HandHistoryRecorder.record_hand` i `finalize_game` zapisana dodatnia pula nagród (`game["prize_pool"] > 0`) nie jest nadpisywana zerem, eliminując błąd nazewnictwa `prize0.md` i `prize0.zip`.
+6. **Narzędzia: Zbiorczy Raport Wszystkich Gier i Importer GTOpen (`tools/export_games_md.py`, `tools/import_gtopen.py`):**
+   - `tools/export_games_md.py`: automatycznie parsuje wszystkie raporty gier z `hand_histories/` i generuje plik `hand_histories/ALL_GAMES_REPORT.md` z tabelą podsumowującą liczbę gier, rozdań, decyzji Hero, pul nagród i zwycięzców na samej górze.
+   - `tools/import_gtopen.py`: konwerter formatów zakresów GTOpen (np. `AA,KQs:0.5,A5s-A2s,77+`) z automatyczną ekspansją skrótów i walidacją schematu do bazy JSON.
+
+### 2. Wyniki testów jednostkowych (`pytest -v tests/`)
+- Liczba testów: **132 passed in 4.87s (100% sukcesu)**.
+- Nowe testy jednostkowe:
+  1. `tests/test_strategy.py::test_never_fold_when_free_check_available`: potwierdza, że Hero na BB po limpie (`to_call == 0`) nigdy nie otrzymuje akcji `FOLD`.
+  2. `tests/test_strategy.py::test_bb_vs_limp_deep_14bb_q8s_not_all_in`: weryfikuje, że `Q8s` przy 14.5 BB na BB po limpie gra `MIN_RAISE` lub `CHECK`, nigdy `ALL_IN`.
+  3. `tests/test_strategy.py::test_icm_bubble_factor_activates_at_5x_and_above`: potwierdza nieaktywność ICM w 2x/3x (BF=1.0) oraz aktywację w 5x+ (BF=1.33).
+  4. `tests/test_strategy.py::test_decision_populates_alt_action_within_0_05_bb`: weryfikuje poprawne wyliczanie i wypełnianie `alt_action` i `alt_ev_bb` dla akcji różniącej się o `<= 0.05 BB`.
+  5. `tests/test_engine.py::test_range_narrowing_big_river_bet_reduces_air_and_lowers_bluffcatcher_equity`: potwierdza, że duży zakład na riverze obcina AIR i obniża equity bluffcatchera (`7d 6d` z 0.59 na 0.15) z exact enumeration.
+  6. `tests/test_state.py::test_tracker_3_frame_debounce_ignores_single_frame_ts_glitch_on_postflop`: potwierdza ignorowanie 1-klatkowego glitcha `5h Ts` na flopie bez rozcinania rozdania.
+  7. `tests/test_state.py::test_hand_history_preserves_nonzero_prize_pool_on_finalize`: potwierdza zachowanie `$4` przy finalizacji turnieju z `prize_pool=0`.
+  8. `tests/test_state.py::test_export_games_md_combines_multiple_games`: weryfikuje łączenie wielu plików markdown gier w zbiorczy raport `ALL_GAMES_REPORT.md`.
+  9. `tests/test_ui_and_main.py::test_hud_renders_alt_action_when_present`: potwierdza renderowanie linii `Alt: ...` na etykiecie HUD.
+
+---
+
 ## V14.2 — 1 Gra = 1 Paczka .zip + Kopia .md, Czyste Śledzenie Ulic i Historii, Naprawa KONIEC STOŁU oraz Usunięcie Fałszywych Timing Tell (2026-11-21)
 
 ### 1. Wdrożone zmiany i nowa architektura

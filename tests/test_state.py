@@ -1453,6 +1453,155 @@ def test_hand_history_saves_both_zip_and_standalone_md_with_summary(tmp_path) ->
     assert content.count("![snapshots/h001_decision_flop.jpg](snapshots/h001_decision_flop.jpg)") == 1
 
 
+def test_tracker_3_frame_debounce_ignores_single_frame_ts_glitch_on_postflop() -> None:
+    """Verify that a 1-frame OCR card glitch (e.g. 5h 5d -> 5h Ts -> 5h 5d) on postflop does NOT trigger NEW_HAND."""
+    tracker = TableTracker(table_id="t1")
+
+    base_players = {
+        0: PlayerState(seat_id=0, stack=280, current_bet=0, is_dealer=False),
+        1: PlayerState(seat_id=1, stack=280, current_bet=0, is_dealer=True),
+    }
+
+    # Frame 1: Flop with real hero cards [5h, 5d]
+    f1 = TableState(
+        table_id="t1",
+        timestamp_ms=1000,
+        prize_pool=4,
+        small_blind=10,
+        big_blind=20,
+        pot=40,
+        hero_cards=["5h", "5d"],
+        board_cards=["7c", "8d", "2h"],
+        street="FLOP",
+        is_hero_turn=True,
+        available_actions=["CHECK", "BET_30"],
+        players=base_players,
+        is_valid=True,
+    )
+    _, events1 = tracker.update(f1)
+    ev_types1 = [e.event_type for e in events1]
+    assert "NEW_HAND" in ev_types1
+    assert tracker.hand_number == 1
+    assert tracker.current_hand["hero_cards"] == ["5h", "5d"]
+
+    # Frame 2: 1-frame glitch: hero cards misread as [5h, Ts] on FLOP (same dealer, same board)
+    f2 = TableState(
+        table_id="t1",
+        timestamp_ms=1200,
+        prize_pool=4,
+        small_blind=10,
+        big_blind=20,
+        pot=40,
+        hero_cards=["5h", "Ts"],
+        board_cards=["7c", "8d", "2h"],
+        street="FLOP",
+        is_hero_turn=True,
+        available_actions=["CHECK", "BET_30"],
+        players=base_players,
+        is_valid=True,
+    )
+    _, events2 = tracker.update(f2)
+    ev_types2 = [e.event_type for e in events2]
+    assert "NEW_HAND" not in ev_types2, "1-frame Ts glitch on postflop must NOT trigger NEW_HAND"
+    assert tracker.hand_number == 1
+    assert tracker.current_hand["hero_cards"] == ["5h", "5d"]
+
+    # Frame 3: Normal frame again with [5h, 5d]
+    f3 = TableState(
+        table_id="t1",
+        timestamp_ms=1400,
+        prize_pool=4,
+        small_blind=10,
+        big_blind=20,
+        pot=40,
+        hero_cards=["5h", "5d"],
+        board_cards=["7c", "8d", "2h"],
+        street="FLOP",
+        is_hero_turn=True,
+        available_actions=["CHECK", "BET_30"],
+        players=base_players,
+        is_valid=True,
+    )
+    _, events3 = tracker.update(f3)
+    ev_types3 = [e.event_type for e in events3]
+    assert "NEW_HAND" not in ev_types3
+    assert tracker.hand_number == 1
+
+
+def test_hand_history_preserves_nonzero_prize_pool_on_finalize(tmp_path) -> None:
+    """Verify that finalize_game with prize_pool=0 or None preserves existing recorded prize_pool > 0."""
+    from state.hand_history import HandHistoryRecorder
+
+    out_dir = tmp_path / "hh_prize_preserve"
+    rec = HandHistoryRecorder(output_dir=out_dir, save_snapshots=False)
+
+    hand = {
+        "hand_number": 1,
+        "table_id": "table_1",
+        "start_ts_ms": 1700000000000,
+        "blinds": (10, 20),
+        "prize_pool": 4,
+        "hero_cards": ["Ah", "Kd"],
+        "board_cards": ["Jh", "Th", "2c"],
+        "street": "FLOP",
+        "pot": 60,
+        "players": {
+            0: {"seat_id": 0, "name": "Ty (S0)", "stack": 280, "invested_total": 20, "is_dealer": False, "folded": False},
+        },
+        "action_log": [{"time_str": "12:00:00", "street": "PREFLOP", "seat_id": 0, "action": "BLIND", "amount": 20}],
+    }
+    rec.record_hand(hand)
+
+    # Finalize with prize_pool=0 (e.g. from end of tournament frame where prize was obscured or 0)
+    zip_path = rec.finalize_game("table_1", prize_pool=0)
+    assert zip_path is not None
+    assert "_prize4.zip" in zip_path.name, f"Expected _prize4.zip in filename, got {zip_path.name}"
+    assert "_prize0" not in zip_path.name
+
+    md_path = zip_path.with_suffix(".md")
+    assert md_path.exists()
+    assert "_prize4.md" in md_path.name
+    content = md_path.read_text(encoding="utf-8")
+    assert "- **Pula nagród**: $4" in content
+
+
+def test_export_games_md_combines_multiple_games(tmp_path) -> None:
+    """Verify that export_all_games_md reads multiple game .md files and produces ALL_GAMES_REPORT.md."""
+    from tools.export_games_md import export_all_games_md
+
+    hh_dir = tmp_path / "hand_histories"
+    hh_dir.mkdir(parents=True)
+
+    g1_text = """# Rozdanie #1 (12:00:00) — Blinds 10/20 | Prize $4
+## 📊 Podsumowanie gry
+- **Liczba rozdań**: 5
+- **Pula nagród**: $4
+- **Zwycięzca turnieju**: Ty (S0)
+- **Decyzje HUD (Hero)**: 8
+"""
+    g2_text = """# Rozdanie #1 (12:10:00) — Blinds 10/20 | Prize $6
+## 📊 Podsumowanie gry
+- **Liczba rozdań**: 7
+- **Pula nagród**: $6
+- **Zwycięzca turnieju**: Rywal 1 (S1)
+- **Decyzje HUD (Hero)**: 12
+"""
+    (hh_dir / "game_20261121_120000_table_1_prize4.md").write_text(g1_text, encoding="utf-8")
+    (hh_dir / "game_20261121_121000_table_1_prize6.md").write_text(g2_text, encoding="utf-8")
+
+    out_file = export_all_games_md(input_dir=hh_dir)
+    assert out_file.exists()
+    assert out_file.name == "ALL_GAMES_REPORT.md"
+
+    report_text = out_file.read_text(encoding="utf-8")
+    assert "- **Liczba rozegranych gier**: 2" in report_text
+    assert "- **Łączna liczba rozdań**: 12" in report_text
+    assert "- **Łączna liczba decyzji HUD (Hero)**: 20" in report_text
+    assert "game_20261121_120000_table_1_prize4.md" in report_text
+    assert "game_20261121_121000_table_1_prize6.md" in report_text
+
+
+
 
 
 

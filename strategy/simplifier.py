@@ -8,23 +8,29 @@ ALLOWED_ACTIONS: set[str] = {
     "CALL",
     "MIN_RAISE",
     "BET_30",
+    "BET_SMALL",
+    "BET_MED",
     "ALL_IN",
 }
 
 VARIANCE_RANKS_HIGH: dict[str, int] = {
-    "ALL_IN": 6,
-    "MIN_RAISE": 5,
-    "BET_30": 4,
+    "ALL_IN": 8,
+    "MIN_RAISE": 7,
+    "BET_MED": 6,
+    "BET_30": 5,
+    "BET_SMALL": 4,
     "CALL": 3,
     "CHECK": 2,
     "FOLD": 1,
 }
 
 VARIANCE_RANKS_STANDARD: dict[str, int] = {
-    "CHECK": 6,
-    "FOLD": 5,
-    "CALL": 4,
-    "BET_30": 3,
+    "CHECK": 8,
+    "FOLD": 7,
+    "CALL": 6,
+    "BET_SMALL": 5,
+    "BET_30": 4,
+    "BET_MED": 3,
     "MIN_RAISE": 2,
     "ALL_IN": 1,
 }
@@ -35,7 +41,7 @@ def is_action_available(act: str, available_actions: list[str]) -> bool:
     avail_set = set(available_actions)
     if act in avail_set:
         return True
-    if act == "BET_30" and ("BET" in avail_set or "RAISE" in avail_set):
+    if act in ("BET_30", "BET_SMALL", "BET_MED") and ("BET" in avail_set or "RAISE" in avail_set):
         return True
     if act == "MIN_RAISE" and ("RAISE" in avail_set or "BET" in avail_set):
         return True
@@ -106,6 +112,10 @@ class StrategySimplifier:
             }
             if avail_candidates:
                 candidates = avail_candidates
+
+            # Never fold when free check is available
+            if "CHECK" in available_actions and "CALL" not in available_actions:
+                candidates.pop("FOLD", None)
 
         # 2. Pure strategy: deterministic highest-EV selection
         if modifiers.prefer_high_variance_borderline:

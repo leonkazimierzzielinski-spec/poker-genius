@@ -131,29 +131,46 @@ class PreflopNashEngine:
             # Fallback string representation
             stack_key = f"{closest_stack:.0f}"
 
-        spot_tables = self.tables.get(stack_key, {}).get(spot, {})
-        ev_map = self.ev_tables.get(stack_key, {}).get(spot, {})
+        # Resolve spot aliases
+        resolved_spot = spot
+        if spot in ("SB_BVB", "HU_SB") and "SB_OPEN" in self.tables.get(stack_key, {}):
+            resolved_spot = "SB_OPEN" if spot not in self.tables.get(stack_key, {}) else spot
+        elif spot == "BB_VS_LIMP" and "BB_ISO_VS_LIMP" in self.tables.get(stack_key, {}):
+            resolved_spot = "BB_ISO_VS_LIMP" if spot not in self.tables.get(stack_key, {}) else spot
+        elif spot in ("BB_VS_BTN_SHOVE", "BB_VS_SB_SHOVE", "HU_BB_VS_SHOVE") and "BB_VS_SHOVE" in self.tables.get(stack_key, {}):
+            resolved_spot = "BB_VS_SHOVE" if spot not in self.tables.get(stack_key, {}) else spot
+        elif spot in ("BB_VS_BTN_RAISE", "BB_VS_SB_RAISE", "HU_BB_VS_MR") and "BB_VS_MR" in self.tables.get(stack_key, {}):
+            resolved_spot = "BB_VS_MR" if spot not in self.tables.get(stack_key, {}) else spot
+        elif spot == "SB_VS_BTN" and "SB_VS_BTN_SHOVE" in self.tables.get(stack_key, {}):
+            resolved_spot = "SB_VS_BTN_SHOVE" if spot not in self.tables.get(stack_key, {}) else spot
+
+        spot_tables = self.tables.get(stack_key, {}).get(resolved_spot, {})
+        ev_map = self.ev_tables.get(stack_key, {}).get(resolved_spot, {})
 
         # Determine action by spot rules
         action = "FOLD"
         default_ev = 0.0
 
-        if spot in ("BTN_OPEN", "SB_OPEN"):
+        if resolved_spot in ("BTN_OPEN", "SB_OPEN", "SB_BVB", "HU_SB"):
             all_in_set = spot_tables.get("ALL_IN", set())
             min_raise_set = spot_tables.get("MIN_RAISE", set())
+            call_set = spot_tables.get("CALL", set()) | spot_tables.get("LIMP", set())
 
-            # Priority: MIN_RAISE if defined and present, otherwise ALL_IN
+            # Priority: MIN_RAISE if defined and present, otherwise ALL_IN, then CALL/LIMP
             if canonical_hand in min_raise_set:
                 action = "MIN_RAISE"
                 default_ev = 0.50
             elif canonical_hand in all_in_set:
                 action = "ALL_IN"
                 default_ev = 0.45
+            elif canonical_hand in call_set:
+                action = "CALL"
+                default_ev = 0.20
             else:
                 action = "FOLD"
                 default_ev = 0.0
 
-        elif spot in ("SB_VS_BTN_SHOVE", "BB_VS_BTN_SHOVE", "BB_VS_SB_SHOVE"):
+        elif resolved_spot in ("SB_VS_BTN_SHOVE", "BB_VS_BTN_SHOVE", "BB_VS_SB_SHOVE", "BB_VS_SHOVE", "HU_BB_VS_SHOVE", "SB_VS_BTN"):
             call_set = spot_tables.get("CALL", set())
             if canonical_hand in call_set:
                 action = "CALL"
@@ -162,14 +179,35 @@ class PreflopNashEngine:
                 action = "FOLD"
                 default_ev = 0.0
 
-        elif spot == "BB_ISO_VS_LIMP":
+        elif resolved_spot in ("BB_ISO_VS_LIMP", "BB_VS_LIMP"):
             all_in_set = spot_tables.get("ALL_IN", set())
+            min_raise_set = spot_tables.get("MIN_RAISE", set())
             if canonical_hand in all_in_set:
                 action = "ALL_IN"
                 default_ev = 0.45
+            elif canonical_hand in min_raise_set:
+                action = "MIN_RAISE"
+                default_ev = 0.40
             else:
                 action = "CHECK"
                 default_ev = 0.05
+
+        elif resolved_spot in ("BB_VS_MR", "BB_VS_BTN_RAISE", "BB_VS_SB_RAISE", "HU_BB_VS_MR"):
+            all_in_set = spot_tables.get("ALL_IN", set())
+            call_set = spot_tables.get("CALL", set())
+            min_raise_set = spot_tables.get("MIN_RAISE", set())
+            if canonical_hand in all_in_set:
+                action = "ALL_IN"
+                default_ev = 0.45
+            elif canonical_hand in min_raise_set:
+                action = "MIN_RAISE"
+                default_ev = 0.35
+            elif canonical_hand in call_set:
+                action = "CALL"
+                default_ev = 0.25
+            else:
+                action = "FOLD"
+                default_ev = 0.0
 
         else:
             # Generic spot fallback: check actions in order

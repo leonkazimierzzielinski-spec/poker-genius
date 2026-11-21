@@ -33,7 +33,7 @@ def _resolve_real_street(state: TableState) -> str:
 class TableTracker:
     """Tracks state transitions across valid frames, measures reaction times, and produces game events."""
 
-    def __init__(self, table_id: str) -> None:
+    def __init__(self, table_id: str, hero_cards_confirm_frames: int = 3) -> None:
         self.table_id = table_id
         self.prev_state: TableState | None = None
         self.hand_number: int = 0
@@ -41,6 +41,10 @@ class TableTracker:
         self.current_hand: dict[str, Any] = {}
         self.last_completed_hand: dict[str, Any] | None = None
         self._current_real_street: str = "PREFLOP"
+        self._pending_hero_cards: list[str] | None = None
+        self._pending_hero_frames: int = 0
+        self._hero_cards_confirm_frames: int = int(hero_cards_confirm_frames)
+        self._hero_none_stack_frames: int = 0
 
     def _format_time(self, ts_ms: int) -> str:
         if ts_ms >= 100_000_000_000:
@@ -260,7 +264,7 @@ class TableTracker:
 
         # Detect NEW_HAND
         prev_known_hero = self.prev_state.hero_cards or self.current_hand.get("hero_cards") or []
-        hero_cards_changed = (
+        hero_cards_different = (
             bool(prev_known_hero)
             and bool(state.hero_cards)
             and state.hero_cards != prev_known_hero
@@ -280,6 +284,32 @@ class TableTracker:
             prev_real_st in ("FLOP", "TURN", "RIVER")
             and curr_real_st == "PREFLOP"
         )
+
+        # Check hero_cards debounce & postflop board protection
+        hero_cards_changed = False
+        n_board = len(getattr(state, "board_cards", []) or [])
+        if hero_cards_different:
+            # If board is already dealt (>= 3 cards) and neither dealer changed nor street reset:
+            # STRICTLY PROHIBIT NEW_HAND from hero cards change (it's a 1-frame OCR glitch like Ts on postflop!)
+            if n_board >= 3 and not dealer_changed and not street_reset:
+                hero_cards_changed = False
+                self._pending_hero_cards = None
+                self._pending_hero_frames = 0
+            else:
+                # On preflop: require self._hero_cards_confirm_frames consecutive frames
+                if self._pending_hero_cards == state.hero_cards:
+                    self._pending_hero_frames += 1
+                else:
+                    self._pending_hero_cards = list(state.hero_cards)
+                    self._pending_hero_frames = 1
+
+                if self._pending_hero_frames >= self._hero_cards_confirm_frames:
+                    hero_cards_changed = True
+                    self._pending_hero_cards = None
+                    self._pending_hero_frames = 0
+        else:
+            self._pending_hero_cards = None
+            self._pending_hero_frames = 0
 
         is_new_hand = hero_cards_changed or dealer_changed or street_reset
 
@@ -302,7 +332,7 @@ class TableTracker:
             )
 
         # Sync ongoing hand metadata
-        if state.hero_cards:
+        if state.hero_cards and not (n_board >= 3 and hero_cards_different):
             self.current_hand["hero_cards"] = list(state.hero_cards)
         if state.board_cards:
             self.current_hand["board_cards"] = list(state.board_cards)
@@ -411,12 +441,24 @@ class TableTracker:
             curr_p = state.players.get(sid)
             p_dict = self.current_hand["players"].get(sid)
             if curr_p and p_dict and not p_dict.get("eliminated"):
-                if curr_p.stack is None and not getattr(curr_p, "is_active", True):
-                    p_dict["eliminated"] = True
-                    p_dict["folded"] = False
-                    p_dict["status"] = "OUT"
-                    p_dict["last_action"] = "OUT"
-                    continue
+                if sid == 0:
+                    if curr_p.stack is None and not getattr(curr_p, "is_active", True):
+                        self._hero_none_stack_frames += 1
+                        if self._hero_none_stack_frames >= 3:
+                            p_dict["eliminated"] = True
+                            p_dict["folded"] = False
+                            p_dict["status"] = "OUT"
+                            p_dict["last_action"] = "OUT"
+                            continue
+                    else:
+                        self._hero_none_stack_frames = 0
+                else:
+                    if curr_p.stack is None and not getattr(curr_p, "is_active", True):
+                        p_dict["eliminated"] = True
+                        p_dict["folded"] = False
+                        p_dict["status"] = "OUT"
+                        p_dict["last_action"] = "OUT"
+                        continue
                 if not p_dict.get("folded"):
                     if (not getattr(curr_p, "is_active", True)) or getattr(curr_p, "status_text", "") == "FOLDED":
                         p_dict["folded"] = True

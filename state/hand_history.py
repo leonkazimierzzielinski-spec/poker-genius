@@ -54,8 +54,10 @@ class HandHistoryRecorder:
             }
 
         game = self._active_games[table_id]
-        if prize_pool is not None and game.get("prize_pool") is None:
-            game["prize_pool"] = prize_pool
+        if prize_pool is not None:
+            existing = game.get("prize_pool")
+            if existing is None or (existing <= 0 and prize_pool > 0):
+                game["prize_pool"] = prize_pool
         return game
 
     def record_hand(self, hand_summary: dict[str, Any]) -> None:
@@ -81,7 +83,9 @@ class HandHistoryRecorder:
         game["hands_count"] += 1
 
         if prize_pool is not None:
-            game["prize_pool"] = prize_pool
+            existing = game.get("prize_pool")
+            if existing is None or (existing <= 0 and prize_pool > 0):
+                game["prize_pool"] = prize_pool
 
         if hand_summary.get("tournament_result"):
             game["tournament_result"] = hand_summary["tournament_result"]
@@ -325,7 +329,18 @@ class HandHistoryRecorder:
             return None
 
         ts_str = game["ts_str"]
-        prize = prize_pool if prize_pool is not None else game.get("prize_pool")
+        existing_prize = game.get("prize_pool")
+        if existing_prize is not None and existing_prize > 0:
+            if prize_pool is not None and prize_pool > 0:
+                prize = prize_pool
+                game["prize_pool"] = prize_pool
+            else:
+                prize = existing_prize
+        else:
+            prize = prize_pool if prize_pool is not None else existing_prize
+            if prize is not None:
+                game["prize_pool"] = prize
+
         prize_part = f"_prize{prize}" if prize is not None else ""
         zip_name = f"game_{ts_str}_{table_id}{prize_part}.zip"
         zip_path = self.output_dir / zip_name

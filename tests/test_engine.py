@@ -231,3 +231,29 @@ def test_monte_carlo_deterministic_seed() -> None:
     assert eq1 != eq3
 
 
+def test_range_narrowing_big_river_bet_reduces_air_and_lowers_bluffcatcher_equity() -> None:
+    """Verify that big bet on river reduces air and lowers bluffcatcher equity (exact enumeration)."""
+    from engine.range_engine import (
+        get_preflop_villain_range,
+        narrow_range_by_postflop_action,
+        compute_range_vs_hand_equity,
+    )
+
+    hero_bluffcatcher = ["7d", "6d"]  # 2nd pair on Kd 7c 2s Jc 3h
+    board = ["Kd", "7c", "2s", "Jc", "3h"]
+
+    # 1. Wide preflop range against limp/call
+    wide_range = get_preflop_villain_range("BTN", "CALL_OPEN", 12.0, hero_bluffcatcher, board)
+    eq_vs_wide = compute_range_vs_hand_equity(hero_bluffcatcher, board, wide_range)
+
+    # 2. Narrowed range facing big river shove / overbet (> 0.70 pot)
+    narrowed = narrow_range_by_postflop_action(wide_range, board, "ALL_IN", 1.5, "RIVER")
+    eq_vs_big_bet = compute_range_vs_hand_equity(hero_bluffcatcher, board, narrowed)
+
+    # Bluffcatcher has substantial equity vs wide checked range, but very low vs big bet
+    assert eq_vs_wide > 0.45, f"Expected equity vs wide range > 0.45, got {eq_vs_wide}"
+    assert eq_vs_big_bet < 0.25, f"Expected equity vs big bet < 0.25, got {eq_vs_big_bet}"
+    assert eq_vs_wide - eq_vs_big_bet >= 0.25, "Big bet should drop bluffcatcher equity significantly"
+
+
+

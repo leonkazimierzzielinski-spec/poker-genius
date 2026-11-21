@@ -96,6 +96,20 @@ except ImportError:
     DecisionLock = None
     compute_decision_fingerprint = None
 
+# Range engine module
+try:
+    from engine.range_engine import (
+        get_preflop_villain_range,
+        narrow_range_by_postflop_action,
+        compute_range_vs_hand_equity,
+        classify_combo,
+    )
+except ImportError:
+    get_preflop_villain_range = None
+    narrow_range_by_postflop_action = None
+    compute_range_vs_hand_equity = None
+    classify_combo = None
+
 # UI module
 try:
     from PySide6.QtWidgets import QApplication
@@ -415,7 +429,7 @@ def evaluate_candidates(
             except Exception:
                 candidate_evs = None
 
-        # 2. Monte Carlo estimation fallback (< 80 ms) or CALL EV computation when facing bet
+        # 2. Range-vs-Range / Monte Carlo estimation (< 400 ms) or CALL EV computation when facing bet
         if candidate_evs is None:
             if mc_calc is not None and hasattr(mc_calc, "estimate_equity") and len(hero_cards) == 2:
                 try:
@@ -428,17 +442,66 @@ def evaluate_candidates(
                     )
                     num_opps = max(1, min(2, active_opponents))
 
-                    equity = mc_calc.estimate_equity(
-                        hero_cards,
-                        board_cards,
-                        time_budget_ms=80.0,
-                        num_opponents=num_opps,
-                    )
+                    # 1. Range-vs-Range equity & dynamic air ratio
+                    v_range = None
+                    air_ratio = 0.25
+                    if get_preflop_villain_range is not None:
+                        opp_pos = "BTN"
+                        opp_preflop_act = "CALL_OPEN" if facing_bet else "OPEN_RAISE"
+                        v_range = get_preflop_villain_range(
+                            position=opp_pos,
+                            preflop_action=opp_preflop_act,
+                            effective_bb=stack_bb,
+                            hero_cards=hero_cards,
+                            board_cards=board_cards,
+                        )
+                        if narrow_range_by_postflop_action is not None and v_range:
+                            act_type = "BET" if facing_bet else "CHECK"
+                            b_to_p = (to_call_bb / max(1.0, pot_bb)) if facing_bet else 0.0
+                            v_range = narrow_range_by_postflop_action(
+                                villain_range=v_range,
+                                board_cards=board_cards,
+                                action_type=act_type,
+                                bet_to_pot=b_to_p,
+                                street=street,
+                            )
+
+                    # Compute air ratio from villain range if available
+                    if v_range and classify_combo is not None:
+                        air_wt = sum(w for (c1, c2), w in v_range.items() if classify_combo(c1, c2, board_cards) == "AIR")
+                        tot_wt = sum(v_range.values())
+                        air_ratio = (air_wt / tot_wt) if tot_wt > 0 else 0.25
+
+                    # Exact enumeration on river (< 5 ms)
+                    if len(board_cards) == 5 and v_range and compute_range_vs_hand_equity is not None:
+                        equity = compute_range_vs_hand_equity(
+                            hero_cards=hero_cards,
+                            board_cards=board_cards,
+                            villain_range=v_range,
+                            time_budget_ms=400.0,
+                        )
+                    else:
+                        v_combos = list(v_range.keys()) if v_range else None
+                        try:
+                            equity = mc_calc.estimate_equity(
+                                hero_cards,
+                                board_cards,
+                                villain_range=v_combos,
+                                time_budget_ms=400.0,
+                                num_opponents=num_opps,
+                            )
+                        except TypeError:
+                            equity = mc_calc.estimate_equity(
+                                hero_cards,
+                                board_cards,
+                                time_budget_ms=400.0,
+                                num_opponents=num_opps,
+                            )
 
                     if facing_bet:
                         call_equity = max(0.05, equity - 0.08)
                         shove_call_equity = max(0.05, equity - 0.16)
-                        shove_fe = 0.18
+                        shove_fe = min(0.40, max(0.05, air_ratio * 0.7))
                         if num_opps == 2:
                             shove_fe *= 0.65
                         if hasattr(mc_calc, "calculate_ev_bb"):
@@ -463,10 +526,16 @@ def evaluate_candidates(
                         }
                     else:
                         spr = stack_bb / max(1.0, pot_bb)
-                        shove_fe = 0.30 if spr <= 1.5 else (0.22 if spr <= 3.0 else 0.15)
+                        if spr <= 1.5:
+                            spr_mult = 1.0
+                        elif spr <= 3.0:
+                            spr_mult = 0.75
+                        else:
+                            spr_mult = 0.50
+                        shove_fe = min(0.35, max(0.08, air_ratio * spr_mult))
+                        bet_fe = min(0.45, max(0.10, air_ratio * 0.8))
                         shove_call_equity = max(0.05, equity - 0.14)
                         bet_call_equity = max(0.05, equity - 0.06)
-                        bet_fe = 0.25
                         if num_opps == 2:
                             shove_fe *= 0.65
                             bet_fe *= 0.65
@@ -475,13 +544,24 @@ def evaluate_candidates(
                         hero_player = players.get(0)
                         hero_stk = getattr(hero_player, "stack", 0) or 0
                         eff_stk = int(round(stack_bb * bb_val))
-                        target_chips = 0.30 * pot
+
+                        # Sizing 1: Small bet (~33% pot / 1 BB)
+                        target_chips_sm = max(bb_val, 0.33 * pot)
                         if quantize_sizing_to_bb is not None:
-                            mode, bb_mult, _ = quantize_sizing_to_bb(
-                                target_chips, bb_val, hero_stk, eff_stk, min_bb_mult=1
+                            mode_sm, bb_mult_sm, _ = quantize_sizing_to_bb(
+                                target_chips_sm, bb_val, hero_stk, eff_stk, min_bb_mult=1
                             )
                         else:
-                            mode, bb_mult = ("BB_MULT", max(1, int(round(target_chips / bb_val))))
+                            mode_sm, bb_mult_sm = ("BB_MULT", max(1, int(round(target_chips_sm / bb_val))))
+
+                        # Sizing 2: Medium bet (~50% pot)
+                        target_chips_med = 0.50 * pot
+                        if quantize_sizing_to_bb is not None:
+                            mode_med, bb_mult_med, _ = quantize_sizing_to_bb(
+                                target_chips_med, bb_val, hero_stk, eff_stk, min_bb_mult=1
+                            )
+                        else:
+                            mode_med, bb_mult_med = ("BB_MULT", max(1, int(round(target_chips_med / bb_val))))
 
                         if hasattr(mc_calc, "calculate_ev_bb"):
                             check_ev = mc_calc.calculate_ev_bb(
@@ -503,8 +583,8 @@ def evaluate_candidates(
                             "FOLD": 0.0,
                         }
 
-                        if mode == "BB_MULT" and bb_mult is not None:
-                            bet_bb = float(bb_mult)
+                        if mode_sm == "BB_MULT" and bb_mult_sm is not None:
+                            bet_bb = float(bb_mult_sm)
                             if hasattr(mc_calc, "calculate_ev_bb"):
                                 bet_ev = mc_calc.calculate_ev_bb(
                                     bet_call_equity, pot_bb, call_cost_bb=bet_bb, fold_equity=bet_fe
@@ -515,6 +595,21 @@ def evaluate_candidates(
                                     3,
                                 )
                             candidate_evs["BET_30"] = float(bet_ev)
+
+                        if (
+                            mode_med == "BB_MULT"
+                            and bb_mult_med is not None
+                            and (bb_mult_sm is None or bb_mult_med > bb_mult_sm)
+                            and (eff_stk > 0 and (bb_mult_med * bb_val) < 0.65 * eff_stk)
+                        ):
+                            bet_med_bb = float(bb_mult_med)
+                            bet_med_fe = min(0.60, bet_fe + 0.08)
+                            bet_med_call_equity = max(0.05, equity - 0.08)
+                            bet_med_ev = round(
+                                bet_med_fe * pot_bb + (1.0 - bet_med_fe) * (bet_med_call_equity * (pot_bb + bet_med_bb) - (1.0 - bet_med_call_equity) * bet_med_bb),
+                                3,
+                            )
+                            candidate_evs["BET_MED"] = float(bet_med_ev)
                 except Exception:
                     if facing_bet:
                         candidate_evs = {"CALL": 0.0, "ALL_IN": 0.0, "FOLD": 0.0}
@@ -1369,13 +1464,27 @@ def processing_loop(
                             else:
                                 decision.sizing_bb = bb_mult
                                 decision.sizing_chips = chips
-                        elif decision.action == "BET_30":
+                        elif decision.action in ("BET_30", "BET_SMALL"):
                             if quantize_sizing_to_bb is not None:
                                 mode, bb_mult, chips = quantize_sizing_to_bb(
-                                    0.30 * pot_val_chips, bb_val_chips, hero_stk_chips, eff_stk_chips, min_bb_mult=1
+                                    max(bb_val_chips, 0.33 * pot_val_chips), bb_val_chips, hero_stk_chips, eff_stk_chips, min_bb_mult=1
                                 )
                             else:
-                                mode, bb_mult, chips = ("BB_MULT", max(1, int(round(0.30 * pot_val_chips / bb_val_chips))), int(round(0.30 * pot_val_chips)))
+                                mode, bb_mult, chips = ("BB_MULT", max(1, int(round(0.33 * pot_val_chips / bb_val_chips))), int(round(0.33 * pot_val_chips)))
+                            if mode == "ALL_IN":
+                                decision.action = "ALL_IN"
+                                decision.sizing_bb = None
+                                decision.sizing_chips = chips
+                            else:
+                                decision.sizing_bb = bb_mult
+                                decision.sizing_chips = chips
+                        elif decision.action == "BET_MED":
+                            if quantize_sizing_to_bb is not None:
+                                mode, bb_mult, chips = quantize_sizing_to_bb(
+                                    0.50 * pot_val_chips, bb_val_chips, hero_stk_chips, eff_stk_chips, min_bb_mult=1
+                                )
+                            else:
+                                mode, bb_mult, chips = ("BB_MULT", max(1, int(round(0.50 * pot_val_chips / bb_val_chips))), int(round(0.50 * pot_val_chips)))
                             if mode == "ALL_IN":
                                 decision.action = "ALL_IN"
                                 decision.sizing_bb = None
@@ -1392,6 +1501,48 @@ def processing_loop(
                         else:
                             decision.sizing_bb = None
                             decision.sizing_chips = None
+
+                        # Quantize alt_action sizing if present
+                        if getattr(decision, "alt_action", None):
+                            alt_act = decision.alt_action
+                            if alt_act == "MIN_RAISE":
+                                min_legal_chips = max(2 * bb_val_chips, max_opp_bet_chips * 2)
+                                min_mult = max(2, int((min_legal_chips + bb_val_chips - 1) // bb_val_chips))
+                                if quantize_sizing_to_bb is not None:
+                                    alt_mode, alt_bb_mult, alt_chips = quantize_sizing_to_bb(
+                                        min_mult * bb_val_chips, bb_val_chips, hero_stk_chips, eff_stk_chips, min_bb_mult=min_mult
+                                    )
+                                else:
+                                    alt_mode, alt_bb_mult, alt_chips = ("BB_MULT", min_mult, min_mult * bb_val_chips)
+                                decision.alt_sizing_bb = alt_bb_mult if alt_mode != "ALL_IN" else None
+                                decision.alt_sizing_chips = alt_chips
+                            elif alt_act in ("BET_30", "BET_SMALL"):
+                                if quantize_sizing_to_bb is not None:
+                                    alt_mode, alt_bb_mult, alt_chips = quantize_sizing_to_bb(
+                                        max(bb_val_chips, 0.33 * pot_val_chips), bb_val_chips, hero_stk_chips, eff_stk_chips, min_bb_mult=1
+                                    )
+                                else:
+                                    alt_mode, alt_bb_mult, alt_chips = ("BB_MULT", max(1, int(round(0.33 * pot_val_chips / bb_val_chips))), int(round(0.33 * pot_val_chips)))
+                                decision.alt_sizing_bb = alt_bb_mult if alt_mode != "ALL_IN" else None
+                                decision.alt_sizing_chips = alt_chips
+                            elif alt_act == "BET_MED":
+                                if quantize_sizing_to_bb is not None:
+                                    alt_mode, alt_bb_mult, alt_chips = quantize_sizing_to_bb(
+                                        0.50 * pot_val_chips, bb_val_chips, hero_stk_chips, eff_stk_chips, min_bb_mult=1
+                                    )
+                                else:
+                                    alt_mode, alt_bb_mult, alt_chips = ("BB_MULT", max(1, int(round(0.50 * pot_val_chips / bb_val_chips))), int(round(0.50 * pot_val_chips)))
+                                decision.alt_sizing_bb = alt_bb_mult if alt_mode != "ALL_IN" else None
+                                decision.alt_sizing_chips = alt_chips
+                            elif alt_act == "ALL_IN":
+                                decision.alt_sizing_bb = None
+                                decision.alt_sizing_chips = hero_stk_chips
+                            elif alt_act == "CALL":
+                                decision.alt_sizing_bb = None
+                                decision.alt_sizing_chips = max(0, max_opp_bet_chips - hero_bet_chips)
+                            else:
+                                decision.alt_sizing_bb = None
+                                decision.alt_sizing_chips = None
 
                         if lock is not None and fp is not None:
                             lock.lock(fp, decision)
