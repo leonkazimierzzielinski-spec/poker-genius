@@ -1,5 +1,32 @@
 # Poker Genius — Dziennik Postępu Prac (Progress Log)
 
+## V9.1 — Nakładka diagnostyczna na ekran (DebugRoiOverlay + WDA_EXCLUDEFROMCAPTURE) (2026-11-21)
+
+### 1. Wdrożone zmiany i usprawnienia
+1. **Wykluczenie okien nakładek z przechwytywania ekranu (`WDA_EXCLUDEFROMCAPTURE`):**
+   - Dodano funkcję `set_exclude_from_capture(hwnd: int, enabled: bool = True) -> None` w `ui/hud.py`, korzystającą z natywnego Windows API `SetWindowDisplayAffinity(hwnd, 0x00000011)` (`WDA_EXCLUDEFROMCAPTURE = 0x11`).
+   - Zastosowano wykluczenie zarówno w `HudOverlay`, jak i w `DebugRoiOverlay`. Dzięki temu nakładki pozostają w pełni widoczne dla gracza na ekranie, ale są całkowicie niewidoczne dla przechwytywania `dxcam` / `BitBlt` / Desktop Duplication, co zapobiega zakłócaniu detekcji stołu i pól ROI przez elementy interfejsu.
+2. **Pełnoekranowa nakładka diagnostyczna `DebugRoiOverlay` (`ui/hud.py`):**
+   - Zaimplementowano bezramkowe, przezroczyste, pełnoekranowe okno `DebugRoiOverlay(QWidget)` z flagami `FramelessWindowHint | WindowStaysOnTopHint | Tool` oraz `WA_TransparentForMouseEvents` + `set_click_through(hwnd, True)`. Nakładka nigdy nie blokuje klikania myszą w stół pokerowy.
+   - Odbiera dane klatki przez sygnał `HudBridge.debug_overlay_updated = Signal(object)`.
+   - W `paintEvent` przelicza współrzędne fizyczne na logiczne Qt (`/ screen.devicePixelRatio()`) i rysuje:
+     * Wyraźny cyjanowy przerywany obrys stołu `table_rect` z etykietą `TABLE (tx, ty, tw x th)`.
+     * Kolorowe ramki każdego pola ROI (`hero_card_1..2`, `board_card_1..5`, `pot`, `prize_pool`, `blinds`, `seat_0/1/2_stack`, `seat_0/1/2_bet`, `seat_0_timer`, `hero_actions`): zielone gdy pole coś odczytało, czerwone gdy puste/brak detekcji.
+     * Ciemne półprzezroczyste plakietki z wartościami pól (`H1: 10d`, `H2: --`, `Pot: 30`, `S0 stk: 290`, `Turn: YES/NO`, itd.).
+3. **Przełącznik `🎯 Ramki ROI` w panelu `🔍 Szczegóły` i skrót globalny (`ui/hud.py`):**
+   - Po rozwinięciu `🔍 Szczegóły` w HUD pojawia się przycisk `🎯 Ramki ROI`, umożliwiający szybkie włączanie/wyłączanie podglądu na żywo.
+   - Dodano skrót klawiszowy `Ctrl+Shift+O` (działający zarówno lokalnie, jak i globalnie przez Windows `GetAsyncKeyState`).
+   - Zamknięcie HUD automatycznie zamyka także `DebugRoiOverlay`.
+4. **Wyliczanie i emisja współrzędnych ekranowych ROI w `main.py`:**
+   - W `processing_loop` w `main.py` dla każdego stołu wyliczane są fizyczne współrzędne pikselowe wszystkich zdefiniowanych ROI (`tx + rx * tw`, `ty + ry * th`) z uwzględnieniem offsetów i geometrii, powiązane z odczytanymi wartościami ze `state` i przekazywane do HUD przez `hud_bridge.debug_overlay_updated`.
+   - Obsłużono resetowanie overlayu w trybie spoczynku `live` przy braku stołów.
+
+### 2. Wyniki testów jednostkowych (`pytest -v tests/`)
+- Liczba testów: **96 passed in 4.54s (100% sukcesu)**.
+- Nowy test: `tests/test_ui_and_main.py::test_debug_roi_overlay_and_exclude_capture` weryfikujący `set_exclude_from_capture`, zachowanie offscreen `DebugRoiOverlay` (w tym renderowanie `paintEvent`), sterowanie przełącznikiem `toggle_debug_overlay()` i zachowanie widoczności przy `toggle_details()`.
+
+---
+
 ## V9 — Jakość produkcyjna: pełne 10/T, dyskryminacja c/s, strefowe akcje, postflop 3-way i mini-karty w HUD (2026-11-21)
 
 ### 1. Wdrożone zmiany i usprawnienia systemowe

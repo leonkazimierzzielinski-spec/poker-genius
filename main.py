@@ -916,6 +916,11 @@ def processing_loop(
                                 hud_bridge.decision_updated.emit(idle_decision, 0.0, "Szukam stołu Stake...")
                             except Exception:
                                 pass
+                        if hud_bridge is not None and hasattr(hud_bridge, "debug_overlay_updated"):
+                            try:
+                                hud_bridge.debug_overlay_updated.emit({"table_rect": None, "rois": []})
+                            except Exception:
+                                pass
                     continue
 
                 table_jobs = []
@@ -1156,6 +1161,130 @@ def processing_loop(
 
                 if hud_bridge is not None and hasattr(hud_bridge, "decision_updated"):
                     hud_bridge.decision_updated.emit(decision, latency_ms, scan_summary)
+
+                if hud_bridge is not None and hasattr(hud_bridge, "debug_overlay_updated"):
+                    eff_rect = table_rect if table_rect is not None else (
+                        0,
+                        0,
+                        frame.shape[1] if (frame is not None and frame.size > 0) else 1757,
+                        frame.shape[0] if (frame is not None and frame.size > 0) else 997,
+                    )
+                    tx, ty, tw, th = eff_rect
+                    rois_dict = getattr(pipeline, "rois_rel", {}) or (
+                        pipeline.config.get("rois", {}) if getattr(pipeline, "config", None) else {}
+                    )
+
+                    hero_cards = getattr(state, "hero_cards", []) or []
+                    board_cards = getattr(state, "board_cards", []) or []
+                    pot_val = getattr(state, "pot", 0)
+                    prize_val = getattr(state, "prize_pool", None)
+                    sb = getattr(state, "small_blind", 0)
+                    bb = getattr(state, "big_blind", 0)
+                    players = getattr(state, "players", {}) or {}
+                    is_hero_turn = getattr(state, "is_hero_turn", False)
+                    actions = getattr(state, "available_actions", []) or []
+
+                    rois_list = []
+                    for rname, rcoords in rois_dict.items():
+                        if not rcoords or len(rcoords) < 4:
+                            continue
+                        rx, ry, rw, rh = rcoords
+                        px = int(round(tx + rx * tw))
+                        py = int(round(ty + ry * th))
+                        pw = int(round(rw * tw))
+                        ph = int(round(rh * th))
+
+                        val = "--"
+                        color = "#ef4444"
+
+                        if rname == "hero_card_1":
+                            if len(hero_cards) > 0:
+                                val = hero_cards[0]
+                                if val.startswith("T"):
+                                    val = "10" + val[1:]
+                                color = "#22c55e"
+                        elif rname == "hero_card_2":
+                            if len(hero_cards) > 1:
+                                val = hero_cards[1]
+                                if val.startswith("T"):
+                                    val = "10" + val[1:]
+                                color = "#22c55e"
+                        elif rname.startswith("board_card_"):
+                            try:
+                                b_idx = int(rname.split("_")[-1]) - 1
+                                if 0 <= b_idx < len(board_cards):
+                                    val = board_cards[b_idx]
+                                    if val.startswith("T"):
+                                        val = "10" + val[1:]
+                                    color = "#22c55e"
+                            except Exception:
+                                pass
+                        elif rname == "pot":
+                            if pot_val:
+                                val = str(pot_val)
+                                color = "#22c55e"
+                        elif rname == "prize_pool":
+                            if prize_val is not None:
+                                val = f"${prize_val}"
+                                color = "#22c55e"
+                        elif rname == "blinds":
+                            if sb or bb:
+                                val = f"{sb}/{bb}"
+                                color = "#22c55e"
+                        elif rname == "hero_actions":
+                            if actions:
+                                val = ", ".join(actions)
+                                color = "#22c55e"
+                        elif rname == "seat_0_timer":
+                            val = "YES" if is_hero_turn else "NO"
+                            color = "#22c55e" if is_hero_turn else "#ef4444"
+                        elif "_stack" in rname:
+                            for sid in (0, 1, 2):
+                                if f"seat_{sid}_stack" == rname:
+                                    p = players.get(sid)
+                                    stk = getattr(p, "stack", None) if p else None
+                                    if stk is not None:
+                                        val = str(stk)
+                                        color = "#22c55e"
+                                    break
+                        elif "_bet" in rname:
+                            for sid in (0, 1, 2):
+                                if f"seat_{sid}_bet" == rname:
+                                    p = players.get(sid)
+                                    bet = getattr(p, "current_bet", 0) if p else 0
+                                    if bet > 0:
+                                        val = str(bet)
+                                        color = "#22c55e"
+                                    else:
+                                        val = "0"
+                                        color = "#64748b"
+                                    break
+                        elif "_dealer" in rname:
+                            for sid in (0, 1, 2):
+                                if f"seat_{sid}_dealer" == rname:
+                                    p = players.get(sid)
+                                    is_d = getattr(p, "is_dealer", False) if p else False
+                                    if is_d:
+                                        val = "[D]"
+                                        color = "#f1c40f"
+                                    break
+
+                        rois_list.append({
+                            "name": rname,
+                            "rect": (px, py, pw, ph),
+                            "value": val,
+                            "color": color,
+                        })
+
+                    debug_payload = {
+                        "table_id": resolved_tid,
+                        "table_rect": eff_rect,
+                        "rois": rois_list,
+                    }
+                    try:
+                        hud_bridge.debug_overlay_updated.emit(debug_payload)
+                    except Exception:
+                        pass
 
                 if headless:
                     ev_str = f"{decision.ev_bb:+.2f} BB" if decision.ev_bb is not None else "N/A"

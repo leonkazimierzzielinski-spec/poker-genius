@@ -1113,3 +1113,64 @@ def test_hud_overlay_compact_cards_label(qapp) -> None:
     assert "CALL" in card_text
 
 
+def test_debug_roi_overlay_and_exclude_capture(qapp) -> None:
+    """Verify DebugRoiOverlay, toggle_debug_overlay, and set_exclude_from_capture."""
+    pytest.importorskip("PySide6")
+    from PySide6.QtGui import QPixmap
+    from ui.hud import DebugRoiOverlay, HudBridge, HudOverlay, set_exclude_from_capture
+
+    # Test set_exclude_from_capture safety (safe on/off Windows, safe with invalid hwnds)
+    set_exclude_from_capture(0, True)
+    set_exclude_from_capture(1234, False)
+
+    bridge = HudBridge()
+    overlay = DebugRoiOverlay(bridge=bridge)
+    overlay.show()
+
+    # Emit debug payload
+    payload = {
+        "table_rect": (100, 150, 800, 500),
+        "rois": [
+            {"name": "hero_card_1", "rect": (400, 450, 40, 60), "value": "10d", "color": "#22c55e"},
+            {"name": "hero_card_2", "rect": (450, 450, 40, 60), "value": "--", "color": "#ef4444"},
+            {"name": "pot", "rect": (480, 280, 50, 30), "value": "30", "color": "#22c55e"},
+        ],
+    }
+    bridge.debug_overlay_updated.emit(payload)
+    assert overlay._data == payload
+
+    # Test offscreen paintEvent execution
+    pixmap = QPixmap(1000, 700)
+    overlay.render(pixmap)
+    overlay.close()
+
+    # Test HudOverlay integration with toggle button and shortcut
+    hud = HudOverlay(bridge=bridge)
+    hud.show()
+    assert hud.is_debug_overlay_enabled is False
+    assert hud.btn_debug_overlay.isHidden() is True
+
+    # Revealing details reveals the '🎯 Ramki ROI' button
+    hud.toggle_details()
+    assert hud.show_details is True
+    assert hud.btn_debug_overlay.isHidden() is False
+
+    # Toggle debug ROI overlay ON
+    new_state = hud.toggle_debug_overlay()
+    assert new_state is True
+    assert hud.is_debug_overlay_enabled is True
+    assert hud._debug_overlay is not None
+    assert hud._debug_overlay.isVisible() is True
+
+    # Toggle debug ROI overlay OFF
+    new_state_off = hud.toggle_debug_overlay()
+    assert new_state_off is False
+    assert hud.is_debug_overlay_enabled is False
+    assert hud._debug_overlay.isHidden() is True
+
+    # Closing HUD closes debug overlay as well
+    hud.close()
+    assert hud._debug_overlay.isHidden() is True
+
+
+

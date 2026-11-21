@@ -13,8 +13,18 @@ import ctypes
 import sys
 from typing import Any
 
-from PySide6.QtCore import QObject, QPoint, QRect, Qt, Signal, Slot, QTimer
-from PySide6.QtGui import QColor, QFont, QKeySequence, QMouseEvent, QPainter, QPen, QShortcut
+from PySide6.QtCore import QObject, QPoint, QRect, QRectF, Qt, Signal, Slot, QTimer
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QFontMetrics,
+    QKeySequence,
+    QMouseEvent,
+    QPaintEvent,
+    QPainter,
+    QPen,
+    QShortcut,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -53,6 +63,26 @@ def set_click_through(hwnd: int, enabled: bool) -> None:
         else:
             new_style = (style | WS_EX_LAYERED) & ~WS_EX_TRANSPARENT
         user32.SetWindowLongW(hwnd, GWL_EXSTYLE, new_style)
+    except Exception:
+        pass
+
+
+def set_exclude_from_capture(hwnd: int, enabled: bool = True) -> None:
+    """Exclude a window from screen capture (dxcam / BitBlt / Desktop Duplication) on Windows.
+
+    Uses SetWindowDisplayAffinity with WDA_EXCLUDEFROMCAPTURE (0x00000011).
+    Args:
+        hwnd: Native OS window handle.
+        enabled: True to exclude from capture, False to restore normal capture.
+    """
+    if sys.platform != "win32" or not hwnd:
+        return
+
+    try:
+        WDA_EXCLUDEFROMCAPTURE = 0x00000011
+        WDA_NONE = 0x00000000
+        affinity = WDA_EXCLUDEFROMCAPTURE if enabled else WDA_NONE
+        ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, affinity)
     except Exception:
         pass
 
@@ -156,6 +186,7 @@ class HudBridge(QObject):
     decision_updated = _DecisionSignalDescriptor()
     manual_rect_changed = Signal(object)
     table_removed = Signal(str)
+    debug_overlay_updated = Signal(object)
 
 
 class RegionSelectorOverlay(QWidget):
@@ -256,6 +287,181 @@ class RegionSelectorOverlay(QWidget):
         painter.drawText(self.rect().adjusted(0, 30, 0, 0), Qt.AlignmentFlag.AlignHCenter, info_text)
 
 
+class DebugRoiOverlay(QWidget):
+    """Fullscreen semi-transparent click-through overlay drawing table bounds and ROIs."""
+
+    def __init__(
+        self,
+        bridge: HudBridge | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.bridge = bridge
+        self._data: dict[str, Any] | None = None
+        self._tables: dict[str, dict[str, Any]] = {}
+
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+
+        screen = QApplication.primaryScreen()
+        if screen:
+            self.setGeometry(screen.virtualGeometry())
+
+        if self.bridge is not None and hasattr(self.bridge, "debug_overlay_updated"):
+            self.bridge.debug_overlay_updated.connect(self.on_debug_overlay_updated)
+        if self.bridge is not None and hasattr(self.bridge, "table_removed"):
+            self.bridge.table_removed.connect(self.remove_table)
+
+    def showEvent(self, event: Any) -> None:
+        super().showEvent(event)
+        hwnd = int(self.winId()) if self.effectiveWinId() else 0
+        set_click_through(hwnd, True)
+        set_exclude_from_capture(hwnd, True)
+
+    @Slot(object)
+    def on_debug_overlay_updated(self, data: Any) -> None:
+        """Receive updated table & ROI rectangles and redraw."""
+        if isinstance(data, dict):
+            self._data = data
+            tid = str(data.get("table_id") or "default")
+            self._tables[tid] = data
+            if self.isVisible():
+                self.update()
+
+    @Slot(str)
+    def remove_table(self, table_id: str) -> None:
+        """Remove a stale table from debug overlay."""
+        self._tables.pop(table_id, None)
+        if self.isVisible():
+            self.update()
+
+    def paintEvent(self, event: Any) -> None:
+        if not self._data and not self._tables:
+            return
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        screen = self.screen() or QApplication.primaryScreen()
+        dpr = screen.devicePixelRatio() if screen else 1.0
+        dpr = max(0.1, dpr)
+
+        font_tbl = QFont("Arial", 9, QFont.Weight.Bold)
+        fm_tbl = QFontMetrics(font_tbl)
+        font_roi = QFont("Arial", 8, QFont.Weight.Bold)
+        fm_roi = QFontMetrics(font_roi)
+
+        short_map = {
+            "hero_card_1": "H1",
+            "hero_card_2": "H2",
+            "board_card_1": "B1",
+            "board_card_2": "B2",
+            "board_card_3": "B3",
+            "board_card_4": "B4",
+            "board_card_5": "B5",
+            "pot": "Pot",
+            "prize_pool": "Prize",
+            "blinds": "Blinds",
+            "hero_actions": "Acts",
+            "seat_0_timer": "Turn",
+            "seat_0_stack": "S0 stk",
+            "seat_0_bet": "S0 bet",
+            "seat_0_dealer": "S0 [D]",
+            "seat_1_stack": "S1 stk",
+            "seat_1_bet": "S1 bet",
+            "seat_1_dealer": "S1 [D]",
+            "seat_2_stack": "S2 stk",
+            "seat_2_bet": "S2 bet",
+            "seat_2_dealer": "S2 [D]",
+        }
+
+        tables_to_draw = list(self._tables.values()) if self._tables else ([self._data] if self._data else [])
+
+        for tbl_data in tables_to_draw:
+            if not tbl_data:
+                continue
+
+            table_rect = tbl_data.get("table_rect")
+            if table_rect and len(table_rect) >= 4:
+                tx, ty, tw, th = table_rect
+                lx = tx / dpr
+                ly = ty / dpr
+                lw = tw / dpr
+                lh = th / dpr
+
+                # Distinct dashed table outline (cyan)
+                pen = QPen(QColor("#00f0ff"))
+                pen.setWidth(2)
+                pen.setStyle(Qt.PenStyle.DashLine)
+                painter.setPen(pen)
+                painter.setBrush(QColor(0, 240, 255, 12))
+                painter.drawRect(QRectF(lx, ly, lw, lh))
+
+                # Table label
+                tbl_label = f"TABLE ({int(tx)}, {int(ty)}, {int(tw)}x{int(th)})"
+                lbl_w = fm_tbl.horizontalAdvance(tbl_label) + 8
+                lbl_h = fm_tbl.height() + 4
+                lbl_rect = QRectF(lx + 4, max(4.0, ly - lbl_h - 2), lbl_w, lbl_h)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(QColor(15, 23, 42, 220))
+                painter.drawRoundedRect(lbl_rect, 3, 3)
+                painter.setPen(QColor("#00f0ff"))
+                painter.setFont(font_tbl)
+                painter.drawText(lbl_rect, Qt.AlignmentFlag.AlignCenter, tbl_label)
+
+            # Draw ROIs
+            rois = tbl_data.get("rois", [])
+            for roi in rois:
+                rect = roi.get("rect")
+                if not rect or len(rect) < 4:
+                    continue
+                rx, ry, rw, rh = rect
+                if rw <= 0 or rh <= 0:
+                    continue
+
+                rlx = rx / dpr
+                rly = ry / dpr
+                rlw = rw / dpr
+                rlh = rh / dpr
+
+                name = roi.get("name", "")
+                val = str(roi.get("value", "--"))
+                color_str = roi.get("color")
+                if not color_str:
+                    is_detected = val not in ("--", "", "None", "0")
+                    color_str = "#22c55e" if is_detected else "#ef4444"
+
+                roi_color = QColor(color_str)
+                pen = QPen(roi_color)
+                pen.setWidth(1)
+                painter.setPen(pen)
+                fill = QColor(roi_color)
+                fill.setAlpha(20)
+                painter.setBrush(fill)
+                painter.drawRect(QRectF(rlx, rly, rlw, rlh))
+
+                short_name = short_map.get(name, name)
+                lbl_text = f"{short_name}: {val}" if val and val != "--" else f"{short_name}: --"
+
+                tw_txt = fm_roi.horizontalAdvance(lbl_text) + 6
+                th_txt = fm_roi.height() + 2
+                lbl_y = rly - th_txt if rly >= th_txt else rly + 2
+                lbl_bg = QRectF(rlx, lbl_y, tw_txt, th_txt)
+
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(QColor(15, 23, 42, 230))
+                painter.drawRoundedRect(lbl_bg, 2, 2)
+
+                painter.setPen(QColor("#ffffff") if val != "--" else QColor("#94a3b8"))
+                painter.setFont(font_roi)
+                painter.drawText(lbl_bg, Qt.AlignmentFlag.AlignCenter, lbl_text)
+
+
 class HudOverlay(QWidget):
     """Frameless, always-on-top, click-through HUD overlay."""
 
@@ -272,9 +478,14 @@ class HudOverlay(QWidget):
         self.cards_line_by_table: dict[str, str] = {}
         self.is_locked: bool = False
         self.show_details: bool = False
+        self.is_debug_overlay_enabled: bool = False
         self._drag_pos: QPoint | None = None
         self._selector: RegionSelectorOverlay | None = None
+        self._debug_overlay: DebugRoiOverlay | None = None
         self._manual_rect: tuple[int, int, int, int] | None = None
+
+        if QApplication.instance() is not None:
+            self._debug_overlay = DebugRoiOverlay(bridge=self.bridge)
 
         self._init_window()
         self._init_ui()
@@ -338,6 +549,12 @@ class HudOverlay(QWidget):
         self.btn_details.clicked.connect(self.toggle_details)
         header_row.addWidget(self.btn_details)
 
+        self.btn_debug_overlay = QPushButton("🎯 Ramki ROI", self.container)
+        self.btn_debug_overlay.setStyleSheet(btn_style)
+        self.btn_debug_overlay.clicked.connect(self.toggle_debug_overlay)
+        self.btn_debug_overlay.setVisible(self.show_details)
+        header_row.addWidget(self.btn_debug_overlay)
+
         self.btn_select_rect = QPushButton("📐 Obszar", self.container)
         self.btn_select_rect.setStyleSheet(btn_style)
         self.btn_select_rect.clicked.connect(self.start_region_selection)
@@ -368,6 +585,8 @@ class HudOverlay(QWidget):
         self.close_shortcut.activated.connect(self._emergency_close)
         self.details_shortcut = QShortcut(QKeySequence("Ctrl+Shift+D"), self)
         self.details_shortcut.activated.connect(self.toggle_details)
+        self.debug_overlay_shortcut = QShortcut(QKeySequence("Ctrl+Shift+O"), self)
+        self.debug_overlay_shortcut.activated.connect(self.toggle_debug_overlay)
         self.rect_shortcut = QShortcut(QKeySequence("Ctrl+Shift+R"), self)
         self.rect_shortcut.activated.connect(self.start_region_selection)
 
@@ -376,6 +595,7 @@ class HudOverlay(QWidget):
         self._key_q_pressed: bool = False
         self._key_d_pressed: bool = False
         self._key_r_pressed: bool = False
+        self._key_o_pressed: bool = False
         if sys.platform == "win32":
             self._hotkey_timer = QTimer(self)
             self._hotkey_timer.setInterval(50)  # Check every 50 ms
@@ -387,13 +607,14 @@ class HudOverlay(QWidget):
             return
         try:
             user32 = ctypes.windll.user32
-            # VK_CONTROL = 0x11, VK_SHIFT = 0x10, VK_L = 0x4C, VK_Q = 0x51, VK_D = 0x44, VK_R = 0x52
+            # VK_CONTROL = 0x11, VK_SHIFT = 0x10, VK_L = 0x4C, VK_Q = 0x51, VK_D = 0x44, VK_R = 0x52, VK_O = 0x4F
             ctrl_down = bool(user32.GetAsyncKeyState(0x11) & 0x8000)
             shift_down = bool(user32.GetAsyncKeyState(0x10) & 0x8000)
             l_down = bool(user32.GetAsyncKeyState(0x4C) & 0x8000)
             q_down = bool(user32.GetAsyncKeyState(0x51) & 0x8000)
             d_down = bool(user32.GetAsyncKeyState(0x44) & 0x8000)
             r_down = bool(user32.GetAsyncKeyState(0x52) & 0x8000)
+            o_down = bool(user32.GetAsyncKeyState(0x4F) & 0x8000)
 
             # Debounced toggle position lock (Ctrl + Shift + L)
             if ctrl_down and shift_down and l_down:
@@ -426,19 +647,40 @@ class HudOverlay(QWidget):
                     self.start_region_selection()
             else:
                 self._key_r_pressed = False
+
+            # Debounced toggle debug ROI overlay (Ctrl + Shift + O)
+            if ctrl_down and shift_down and o_down:
+                if not self._key_o_pressed:
+                    self._key_o_pressed = True
+                    self.toggle_debug_overlay()
+            else:
+                self._key_o_pressed = False
         except Exception:
             pass
 
     def _emergency_close(self) -> None:
         """Emergency application close handler."""
+        if self._debug_overlay is not None:
+            self._debug_overlay.close()
+        if self._selector is not None:
+            self._selector.close()
         self.close()
         app = QApplication.instance()
         if app:
             app.quit()
 
+    def closeEvent(self, event: Any) -> None:
+        """Window close handler."""
+        if self._debug_overlay is not None:
+            self._debug_overlay.close()
+        if self._selector is not None:
+            self._selector.close()
+        super().closeEvent(event)
+
     def _apply_lock_state(self) -> None:
         hwnd = int(self.winId()) if self.effectiveWinId() else 0
         set_click_through(hwnd, self.is_locked)
+        set_exclude_from_capture(hwnd, True)
 
         if self.is_locked:
             self.status_label.setText("🔒 <b>HUD ZABLOKOWANY</b> (Ctrl+Shift+L odblokuj | Ctrl+Shift+Q zamknij)")
@@ -481,6 +723,7 @@ class HudOverlay(QWidget):
             bool: New show_details state.
         """
         self.show_details = not self.show_details
+        self.btn_debug_overlay.setVisible(self.show_details)
         for tid, detail_lbl in self.details_widgets.items():
             detail_lbl.setVisible(self.show_details and bool(detail_lbl.text()))
         if self.show_details:
@@ -496,6 +739,36 @@ class HudOverlay(QWidget):
             )
         self.adjustSize()
         return self.show_details
+
+    def toggle_debug_overlay(self) -> bool:
+        """Toggle visibility of DebugRoiOverlay.
+
+        Returns:
+            bool: New is_debug_overlay_enabled state.
+        """
+        self.is_debug_overlay_enabled = not self.is_debug_overlay_enabled
+        if self._debug_overlay is not None:
+            if self.is_debug_overlay_enabled:
+                screen = QApplication.primaryScreen()
+                if screen:
+                    self._debug_overlay.setGeometry(screen.virtualGeometry())
+                self._debug_overlay.show()
+            else:
+                self._debug_overlay.hide()
+
+        if self.is_debug_overlay_enabled:
+            self.btn_debug_overlay.setStyleSheet(
+                "background-color: #10b981; color: #ffffff; border: 1px solid #34d399; "
+                "border-radius: 4px; padding: 2px 6px; font-size: 10px; font-weight: bold;"
+            )
+        else:
+            self.btn_debug_overlay.setStyleSheet(
+                "background-color: rgba(255, 255, 255, 0.08); color: #cbd5e1; "
+                "border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 4px; padding: 2px 6px; "
+                "font-size: 10px; font-weight: bold;"
+            )
+        self.adjustSize()
+        return self.is_debug_overlay_enabled
 
     def start_region_selection(self) -> None:
         """Open fullscreen region selector overlay to manually choose table ROI."""
@@ -675,6 +948,8 @@ class HudOverlay(QWidget):
     def remove_table(self, table_id: str) -> None:
         """Remove a stale table widget and details from layout."""
         self.cards_line_by_table.pop(table_id, None)
+        if self._debug_overlay is not None:
+            self._debug_overlay.remove_table(table_id)
         if table_id in self.table_widgets:
             widget = self.table_widgets.pop(table_id)
             self.tables_layout.removeWidget(widget)
