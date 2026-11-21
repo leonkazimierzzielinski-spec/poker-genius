@@ -23,6 +23,10 @@ logs/
 *.log
 hand_histories/
 
+# GTOpen temporary progress
+gtopen_progress.json
+data/flop_db/gtopen_progress.json
+
 # Environment & IDE
 .env
 .venv/

@@ -412,22 +412,32 @@ def evaluate_candidates(
         bet30_bb = max(0.5, 0.3 * pot_bb)
         stack_bb = effective_bb
 
-        # 1. Flop canonical database lookup (FLOP only)
+        # 1. GTOpen 47 clusters / Flop canonical database lookup (FLOP only)
         if (
             street == "FLOP"
             and flop_db is not None
-            and hasattr(flop_db, "lookup")
             and len(board_cards) == 3
             and len(hero_cards) == 2
         ):
-            try:
-                lookup_res = flop_db.lookup(board_cards, hero_cards, effective_bb)
-                if lookup_res is not None:
-                    candidate_evs = {k: float(v) for k, v in lookup_res.items()}
-                    if "FOLD" not in candidate_evs:
-                        candidate_evs["FOLD"] = 0.0
-            except Exception:
-                candidate_evs = None
+            if hasattr(flop_db, "lookup_nearest_flop"):
+                try:
+                    lookup_res = flop_db.lookup_nearest_flop(board_cards, spot, hero_cards)
+                    if lookup_res is not None and isinstance(lookup_res, dict) and any(k in lookup_res for k in ("CHECK", "BET_30", "ALL_IN")):
+                        candidate_evs = {k: float(v) for k, v in lookup_res.items()}
+                        if "FOLD" not in candidate_evs:
+                            candidate_evs["FOLD"] = 0.0
+                except Exception:
+                    candidate_evs = None
+
+            if candidate_evs is None and hasattr(flop_db, "lookup"):
+                try:
+                    lookup_res = flop_db.lookup(board_cards, hero_cards, effective_bb)
+                    if lookup_res is not None and isinstance(lookup_res, dict) and any(k in lookup_res for k in ("CHECK", "BET_30", "ALL_IN")):
+                        candidate_evs = {k: float(v) for k, v in lookup_res.items()}
+                        if "FOLD" not in candidate_evs:
+                            candidate_evs["FOLD"] = 0.0
+                except Exception:
+                    candidate_evs = None
 
         # 2. Range-vs-Range / Monte Carlo estimation (< 400 ms) or CALL EV computation when facing bet
         if candidate_evs is None:

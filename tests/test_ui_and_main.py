@@ -1381,30 +1381,31 @@ def test_action_bar_overlay_positioning(qapp) -> None:
     actions_rect = (900, 200, 300, 60)
     dpr = 1.0
 
-    # 1. FOLD: must be positioned in the left 1/3 (x = 900, w = 100)
+    # 1. FOLD: centered under left 1/3 button (center = 950.0, w = 128 >= 112)
     bx_fold, by_fold, bw_fold, bh_fold = overlay.get_badge_rect_for_action("FOLD", actions_rect, dpr=dpr)
-    assert abs(bx_fold - 900.0) < 0.1
-    assert abs(bw_fold - 100.0) < 0.1
+    assert abs(bx_fold - 886.0) < 0.1
+    assert abs(bw_fold - 128.0) < 0.1
+    assert abs(bh_fold - 38.0) < 0.1
     assert abs(by_fold - 264.0) < 0.1
 
-    # 2. CALL: must be positioned in the middle 1/3 (x = 1000, w = 100)
+    # 2. CALL: centered under middle 1/3 button (center = 1050.0, w = 128)
     bx_call, by_call, bw_call, bh_call = overlay.get_badge_rect_for_action("CALL", actions_rect, dpr=dpr)
-    assert abs(bx_call - 1000.0) < 0.1
-    assert abs(bw_call - 100.0) < 0.1
+    assert abs(bx_call - 986.0) < 0.1
+    assert abs(bw_call - 128.0) < 0.1
 
-    # 3. CHECK: must also be in middle 1/3
+    # 3. CHECK: must also be centered under middle 1/3
     bx_chk, by_chk, bw_chk, bh_chk = overlay.get_badge_rect_for_action("CHECK", actions_rect, dpr=dpr)
-    assert abs(bx_chk - 1000.0) < 0.1
+    assert abs(bx_chk - 986.0) < 0.1
 
-    # 4. BET_30 / RAISE / ALL_IN: must be positioned in the right 1/3 (x = 1100, w = 100)
+    # 4. BET_30 / RAISE / ALL_IN: centered under right 1/3 button (center = 1150.0, w = 128)
     bx_bet, by_bet, bw_bet, bh_bet = overlay.get_badge_rect_for_action("BET_30", actions_rect, dpr=dpr)
-    assert abs(bx_bet - 1100.0) < 0.1
-    assert abs(bw_bet - 100.0) < 0.1
+    assert abs(bx_bet - 1086.0) < 0.1
+    assert abs(bw_bet - 128.0) < 0.1
 
     # Also test bottom-of-screen overflow positioning (flips above actions_rect)
     overflow_rect = (900, 2000, 300, 60)
     _, by_over, _, _ = overlay.get_badge_rect_for_action("BET_30", overflow_rect, dpr=dpr)
-    assert abs(by_over - (2000.0 - 28.0 - 4.0)) < 0.1
+    assert abs(by_over - (2000.0 - 38.0 - 4.0)) < 0.1
 
     # 5. Receive bridge signal with amount chips and execute offscreen render
     payload = {
@@ -1421,6 +1422,31 @@ def test_action_bar_overlay_positioning(qapp) -> None:
     pixmap = QPixmap(1920, 1080)
     overlay.render(pixmap)
     overlay.close()
+
+
+def test_action_bar_enabled_by_default_and_two_line_wider_badges(qapp) -> None:
+    """Verify ActionBarOverlay is enabled by default in HudOverlay, badges are >= 112px wide and centered."""
+    from ui.hud import HudOverlay, HudBridge
+
+    bridge = HudBridge()
+    hud = HudOverlay(bridge=bridge)
+    hud.show()
+
+    # Verify ActionBarOverlay is created and visible by default alongside normal HUD
+    assert hud._action_bar_overlay is not None
+    assert hud._action_bar_overlay.isVisible()
+
+    # Verify wider badge calculation (min 112px) and exact button centering
+    actions_rect = (600, 400, 240, 50)
+    btn_w = 240 / 3.0  # 80.0
+    bx, by, bw, bh = hud._action_bar_overlay.get_badge_rect_for_action("FOLD", actions_rect, dpr=1.0)
+    assert bw >= 112.0
+    assert bh >= 38.0
+    expected_center_x = 600.0 + btn_w / 2.0  # 640.0
+    actual_center_x = bx + bw / 2.0
+    assert abs(actual_center_x - expected_center_x) < 1.0
+
+    hud.close()
 
 
 def test_remove_table_1_when_table_2_exists(qapp) -> None:

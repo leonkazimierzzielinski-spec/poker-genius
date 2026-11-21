@@ -80,12 +80,41 @@ def generate_all_1755_flops() -> list[str]:
     return sorted(unique_flops)
 
 
-class FlopDatabase:
-    """In-memory loader and query engine for precomputed 1,755 canonical flops."""
+def _flop_texture_vector(cards: list[str]) -> tuple[int, int, int, int, int, int]:
+    """Extract a 6-element texture vector for flop clustering."""
+    ranks = sorted([RANK_VAL.get(c[0].upper(), 0) for c in cards], reverse=True)
+    is_paired = 1 if (ranks[0] == ranks[1] or ranks[1] == ranks[2]) else 0
+    suits = [c[1].lower() for c in cards]
+    max_suit = max(suits.count(s) for s in suits) if suits else 0
+    is_monotone = 1 if max_suit == 3 else 0
+    is_two_tone = 1 if max_suit == 2 else 0
+    is_connected = 1 if (ranks[0] - ranks[2] <= 4 and len(set(ranks)) == 3) else 0
+    return (ranks[0], ranks[1], is_paired, is_monotone, is_two_tone, is_connected)
 
-    def __init__(self, db_path: str | Path = "data/postflop_db/flops_1755.json") -> None:
+
+def _texture_distance(t1: tuple, t2: tuple) -> float:
+    """Weighted distance between two flop texture vectors."""
+    d_high = abs(t1[0] - t2[0]) * 2.0
+    d_mid = abs(t1[1] - t2[1]) * 1.5
+    d_pair = abs(t1[2] - t2[2]) * 4.0
+    d_mono = abs(t1[3] - t2[3]) * 5.0
+    d_two_tone = abs(t1[4] - t2[4]) * 3.0
+    d_conn = abs(t1[5] - t2[5]) * 2.0
+    return d_high + d_mid + d_pair + d_mono + d_two_tone + d_conn
+
+
+class FlopDatabase:
+    """In-memory loader and query engine for precomputed 1,755 canonical flops and GTOpen 47 clusters."""
+
+    def __init__(
+        self,
+        db_path: str | Path = "data/postflop_db/flops_1755.json",
+        gtopen_path: str | Path = "data/flop_db/gtopen_47_flops.json",
+    ) -> None:
         self.db_path = Path(db_path)
+        self.gtopen_path = Path(gtopen_path)
         self.db: dict[str, dict] = {}
+        self.gtopen_db: dict[str, dict] = {}
 
         if self.db_path.exists():
             try:
@@ -93,6 +122,94 @@ class FlopDatabase:
                     self.db = json.load(f)
             except Exception:
                 self.db = {}
+
+        if self.gtopen_path.exists():
+            try:
+                with open(self.gtopen_path, "r", encoding="utf-8") as f:
+                    self.gtopen_db = json.load(f)
+            except Exception:
+                self.gtopen_db = {}
+
+    def lookup_nearest_flop(
+        self,
+        board_cards: list[str],
+        spot: str,
+        hero_cards: list[str],
+    ) -> dict[str, float] | None:
+        """Find strategy from GTOpen 47-flop database matching exact or nearest cluster.
+
+        Args:
+            board_cards: 3 board cards (e.g. ["Ah", "7d", "2c"]).
+            spot: Postflop spot name (e.g. "BTN_vs_BB_SRP", "SB_vs_BB_LIMPED").
+            hero_cards: 2 hero hole cards (e.g. ["As", "Kh"]).
+
+        Returns:
+            Dictionary of candidate EVs or action frequencies (e.g. {"CHECK": 0.4, "BET_30": 0.6, "ALL_IN": 0.0})
+            or None if database empty or spot not found.
+        """
+        if not self.gtopen_db or len(board_cards) != 3 or len(hero_cards) != 2:
+            return None
+
+        spot_db = self.gtopen_db.get(spot)
+        if not spot_db or not isinstance(spot_db, dict):
+            return None
+
+        # 1. Exact canonical or direct key match
+        exact_entry = None
+        try:
+            canon_key, _ = canonicalize_flop(board_cards)
+            if canon_key in spot_db:
+                exact_entry = spot_db[canon_key]
+        except Exception:
+            pass
+
+        if exact_entry is None:
+            raw_key1 = "".join([f"{c[0].upper()}{c[1].lower()}" for c in board_cards])
+            raw_key2 = " ".join([f"{c[0].upper()}{c[1].lower()}" for c in board_cards])
+            if raw_key1 in spot_db:
+                exact_entry = spot_db[raw_key1]
+            elif raw_key2 in spot_db:
+                exact_entry = spot_db[raw_key2]
+
+        selected_entry = exact_entry
+        if selected_entry is None:
+            # 2. Nearest cluster by flop texture distance
+            target_tex = _flop_texture_vector(board_cards)
+            best_dist = float("inf")
+            best_key = None
+            for f_key in spot_db.keys():
+                cards = [p.strip() for p in f_key.replace(",", " ").split() if len(p.strip()) == 2]
+                if len(cards) != 3 and len(f_key) == 6:
+                    cards = [f_key[0:2], f_key[2:4], f_key[4:6]]
+                if len(cards) == 3:
+                    cand_tex = _flop_texture_vector(cards)
+                    dist = _texture_distance(target_tex, cand_tex)
+                    if dist < best_dist:
+                        best_dist = dist
+                        best_key = f_key
+            if best_key is not None:
+                selected_entry = spot_db[best_key]
+
+        if not selected_entry or not isinstance(selected_entry, dict):
+            return None
+
+        # Direct hero cards lookup (e.g. "AsKh" or "KhAs")
+        h1 = f"{hero_cards[0][0].upper()}{hero_cards[0][1].lower()}"
+        h2 = f"{hero_cards[1][0].upper()}{hero_cards[1][1].lower()}"
+        for dk in (f"{h1}{h2}", f"{h2}{h1}"):
+            if dk in selected_entry and isinstance(selected_entry[dk], dict):
+                return {k: float(v) for k, v in selected_entry[dk].items()}
+
+        # Hand category classification (MONSTER, STRONG, MEDIUM, DRAW, AIR)
+        from engine.range_engine import classify_combo
+        cat = classify_combo(hero_cards[0], hero_cards[1], board_cards)
+        if cat in selected_entry and isinstance(selected_entry[cat], dict):
+            return {k: float(v) for k, v in selected_entry[cat].items()}
+
+        if all(k in selected_entry for k in ("CHECK", "BET_30", "ALL_IN")):
+            return {k: float(selected_entry[k]) for k in ("CHECK", "BET_30", "ALL_IN")}
+
+        return None
 
     def lookup(
         self,

@@ -1,0 +1,94 @@
+{
+  "BTN_vs_BB_SRP": {
+    "Ah 7d 2c": {
+      "CHECK": 0.4,
+      "BET_30": 0.5,
+      "ALL_IN": 0.1,
+      "MONSTER": {
+        "CHECK": 0.1,
+        "BET_30": 0.6,
+        "ALL_IN": 0.3
+      },
+      "STRONG": {
+        "CHECK": 0.2,
+        "BET_30": 0.7,
+        "ALL_IN": 0.1
+      },
+      "MEDIUM": {
+        "CHECK": 0.55,
+        "BET_30": 0.45,
+        "ALL_IN": 0.0
+      },
+      "DRAW": {
+        "CHECK": 0.4,
+        "BET_30": 0.55,
+        "ALL_IN": 0.05
+      },
+      "AIR": {
+        "CHECK": 0.65,
+        "BET_30": 0.35,
+        "ALL_IN": 0.0
+      }
+    },
+    "Jh Ts 8s": {
+      "CHECK": 0.4,
+      "BET_30": 0.5,
+      "ALL_IN": 0.1,
+      "MONSTER": {
+        "CHECK": 0.1,
+        "BET_30": 0.6,
+        "ALL_IN": 0.3
+      },
+      "STRONG": {
+        "CHECK": 0.2,
+        "BET_30": 0.7,
+        "ALL_IN": 0.1
+      },
+      "MEDIUM": {
+        "CHECK": 0.55,
+        "BET_30": 0.45,
+        "ALL_IN": 0.0
+      },
+      "DRAW": {
+        "CHECK": 0.4,
+        "BET_30": 0.55,
+        "ALL_IN": 0.05
+      },
+      "AIR": {
+        "CHECK": 0.65,
+        "BET_30": 0.35,
+        "ALL_IN": 0.0
+      }
+    },
+    "Kd Kh 4c": {
+      "CHECK": 0.4,
+      "BET_30": 0.5,
+      "ALL_IN": 0.1,
+      "MONSTER": {
+        "CHECK": 0.1,
+        "BET_30": 0.6,
+        "ALL_IN": 0.3
+      },
+      "STRONG": {
+        "CHECK": 0.2,
+        "BET_30": 0.7,
+        "ALL_IN": 0.1
+      },
+      "MEDIUM": {
+        "CHECK": 0.55,
+        "BET_30": 0.45,
+        "ALL_IN": 0.0
+      },
+      "DRAW": {
+        "CHECK": 0.4,
+        "BET_30": 0.55,
+        "ALL_IN": 0.05
+      },
+      "AIR": {
+        "CHECK": 0.65,
+        "BET_30": 0.35,
+        "ALL_IN": 0.0
+      }
+    }
+  }
+}

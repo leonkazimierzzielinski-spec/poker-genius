@@ -256,4 +256,54 @@ def test_range_narrowing_big_river_bet_reduces_air_and_lowers_bluffcatcher_equit
     assert eq_vs_wide - eq_vs_big_bet >= 0.25, "Big bet should drop bluffcatcher equity significantly"
 
 
+def test_flop_db_nearest_cluster_lookup_and_fallback(tmp_path: Path) -> None:
+    """Verify that FlopDatabase maps any flop to the nearest GTOpen cluster, and falls back safely if empty."""
+    import json
+    from engine.flop_db import FlopDatabase
+
+    # 1. Fallback when database file does not exist
+    missing_db = FlopDatabase(db_path=tmp_path / "nonexistent.json", gtopen_path=tmp_path / "gtopen_none.json")
+    res_none = missing_db.lookup_nearest_flop(["Ah", "Kd", "2c"], "BTN_vs_BB_SRP", ["As", "Qs"])
+    assert res_none is None, "Missing database must return None"
+
+    # 2. Database with exact and cluster entries
+    mock_gtopen = {
+        "BTN_vs_BB_SRP": {
+            "Ah 7d 2c": {
+                "MONSTER": {"CHECK": 0.10, "BET_30": 0.60, "ALL_IN": 0.30},
+                "STRONG": {"CHECK": 0.20, "BET_30": 0.70, "ALL_IN": 0.10},
+                "MEDIUM": {"CHECK": 0.50, "BET_30": 0.50, "ALL_IN": 0.00},
+                "DRAW": {"CHECK": 0.40, "BET_30": 0.55, "ALL_IN": 0.05},
+                "AIR": {"CHECK": 0.65, "BET_30": 0.35, "ALL_IN": 0.00},
+            },
+            "Jh Ts 8s": {
+                "MONSTER": {"CHECK": 0.15, "BET_30": 0.55, "ALL_IN": 0.30},
+                "STRONG": {"CHECK": 0.25, "BET_30": 0.65, "ALL_IN": 0.10},
+                "AIR": {"CHECK": 0.75, "BET_30": 0.25, "ALL_IN": 0.00},
+            },
+        }
+    }
+    mock_file = tmp_path / "gtopen_test.json"
+    with open(mock_file, "w", encoding="utf-8") as f:
+        json.dump(mock_gtopen, f)
+
+    db = FlopDatabase(db_path=tmp_path / "nonexistent.json", gtopen_path=mock_file)
+
+    # Exact match: "Ah 7d 2c" with top pair (STRONG: As Kh)
+    res_exact = db.lookup_nearest_flop(["Ah", "7d", "2c"], "BTN_vs_BB_SRP", ["As", "Kh"])
+    assert res_exact is not None
+    assert res_exact["BET_30"] == 0.70
+
+    # Nearest cluster: "Ad 7s 3c" (dry Ace-high, should cluster to "Ah 7d 2c")
+    res_cluster = db.lookup_nearest_flop(["Ad", "7s", "3c"], "BTN_vs_BB_SRP", ["As", "Kh"])
+    assert res_cluster is not None
+    assert res_cluster["BET_30"] == 0.70
+
+    # Wet board: "Jd Td 9d" (should cluster to "Jh Ts 8s" wet monotone connector)
+    res_wet = db.lookup_nearest_flop(["Jd", "Td", "9d"], "BTN_vs_BB_SRP", ["2c", "3c"])  # AIR
+    assert res_wet is not None
+    assert res_wet["CHECK"] == 0.75
+
+
+
 

@@ -596,6 +596,22 @@ def test_decision_populates_alt_action_within_0_05_bb():
     assert decision.alt_ev_bb == pytest.approx(0.47)
 
 
+def test_hu_sb_87o_not_fold_and_a4s_12bb_not_all_in():
+    """Verify that in HU_SB 87o at 9.25 BB does not fold, and A4s at 12 BB plays MIN_RAISE instead of ALL_IN."""
+    from engine.preflop_nash import PreflopNashEngine
+
+    engine = PreflopNashEngine()
+
+    # 1. 7s 8c (87o) at 9.25 BB HU_SB must NOT be FOLD
+    action_87, ev_87 = engine.get_action(["7s", "8c"], 9.25, "HU_SB")
+    assert action_87 != "FOLD", f"Expected 87o at 9.25 BB HU_SB not to fold, got {action_87}"
+
+    # 2. 4d Ad (A4s) at 12 BB HU_SB must be MIN_RAISE, never ALL_IN
+    action_a4, ev_a4 = engine.get_action(["4d", "Ad"], 12.0, "HU_SB")
+    assert action_a4 == "MIN_RAISE", f"Expected A4s at 12 BB HU_SB to play MIN_RAISE, got {action_a4}"
+
+
+
 
 
 

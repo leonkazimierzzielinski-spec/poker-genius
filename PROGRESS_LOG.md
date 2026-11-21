@@ -1,5 +1,39 @@
 # Poker Genius — Dziennik Postępu Prac (Progress Log)
 
+## V16 — Zawsze Włączony 2-Wierszowy Szerszy ActionBar, Korekta HU_SB, Pipeline Solverowy GTOpen i Integracja Nearest-Flop DB (2026-11-22)
+
+### 1. Wdrożone zmiany i nowa architektura
+1. **Zawsze włączony i poszerzony 2-wierszowy `ActionBarOverlay` (`ui/hud.py`, `tests/test_ui_and_main.py`):**
+   - **Domyślna widoczność obok HUD:** `ActionBarOverlay` jest uruchamiany automatycznie przy starcie aplikacji i pozostaje widoczny zarówno w trybie standardowym, jak i w trybie `⚡ Tylko akcja` (który chowa główny HUD, zostawiając same kafelki akcji).
+   - **Szersze i wyższe kafelki:** wymiary plakietek zwiększono do `max(112, int(btn_w * 1.28))` szerokości i `max(38, int(bh * 1.35))` wysokości, wycentrowane dokładnie pod środkami przycisków stołu (`Fold`, `Check-Call`, `Bet-Raise`).
+   - **Czytelny układ 2-wierszowy:** wiersz 1 renderuje nazwę akcji (np. `CHECK`, `BET 1 BB`), wiersz 2 renderuje kwotę w żetonach i oczekiwane EV (np. `(20) +0.76 BB`). Zastosowano dynamiczne skalowanie fontu (`QFontMetrics`), gwarantujące brak ucinania tekstu.
+2. **Korekta zakresów Heads-Up Small Blind (`HU_SB`) (`data/preflop_tables/nash_3max.json`, `tests/test_strategy.py`):**
+   - **Rozszerzenie zakresu otwarcia/limpu:** w heads-up na SB dla 10, 12 i 15 BB rozszerzono zakres rąk grywalnych z ~53% do 81.7% (138 ze 169 kombinacji). Ręce typu `87o`, `97o`, `T7o` grają `CALL` (limp) zamiast pasywnego foldu.
+   - **Racjonalizacja sizingów:** dla głębszych stacków (12 i 15 BB) wyeliminowano niefortunne open-shove z rękami typu `A2s-A6s`, zastępując je standardowym `MIN_RAISE`.
+3. **Automatyczna kompilacja i integracja solvera GTOpen:**
+   - Repozytorium GTOpen sklonowano poza projektem w `c:\Users\leonk\Desktop\porjekty\gtopen`.
+   - Zbudowano natywny binarny serwer CPU w profilu release (`cargo build --release -p server`) z wykorzystaniem łańcucha `stable-x86_64-pc-windows-gnu` i kompilatora MinGW GCC 16.2.0 (UCRT), uzyskując plik wykonywalny `gto-server.exe` (8.59 MB) bez konieczności uprawnień administratora.
+4. **Nocny pipeline obliczeniowy `tools/run_gtopen_overnight.py`:**
+   - **Blokada uśpienia Windows:** wykorzystanie `kernel32.SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)` zapobiega wyłączeniu komputera w trakcie nocnych obliczeń.
+   - **Automatyczny cykl życia:** skrypt samodzielnie uruchamia serwer `gto-server.exe` na porcie 3737, sprawdza gotowość endpointu `/api/status`, komunikuje się przez REST API (`SpotRequest`, `TreeRequest`, `ActionRequest`) i bezpiecznie zamyka proces po zakończeniu.
+   - **Wznawianie po przerwaniu (checkpointing):** postęp zapisywany jest po każdym flopie do pliku `data/flop_db/gtopen_progress.json`, z możliwością wznowienia flagą `--resume`.
+   - **Zmierzone czasy obliczeń (Benchmark):**
+     - Średni czas na 1 flop przy 12 wątkach CPU i dgap 1.00%: **134.02 sekundy** (~2.23 minuty).
+     - Szacowany całkowity czas dla pełnego zestawu 188 flopów (4 spoty × 47 flopów kanonicznych): **~7.0 godzin**.
+5. **Wyszukiwanie najbliższego klastra w bazie flopów (`engine/flop_db.py`, `main.py`, `tests/test_engine.py`):**
+   - Dodano metodę `lookup_nearest_flop(board_cards, spot, hero_cards)` analizującą 6-cechowy wektor tekstury flopa (high card rank, spread, czy sparowany, czy trips, maks. liczba kart w kolorze, liczba kart połączonych).
+   - W przypadku braku dokładnego trafienia w bazie 47 flopów system odnajduje najbliższy geometrycznie flop i pobiera strategię dla danego koszyka ręki Hero (`classify_combo`), z bezpiecznym fallbackiem w razie potrzeby.
+
+### 2. Wyniki testów jednostkowych (`pytest -v tests/`)
+- Liczba testów: **136 passed in 5.07s (100% sukcesu)**.
+- Nowe i zaktualizowane testy:
+  1. `tests/test_ui_and_main.py::test_action_bar_enabled_by_default_and_two_line_wider_badges`: potwierdza domyślną widoczność `ActionBarOverlay`, wymiary `>= 112x38 px` i poprawne pozycjonowanie.
+  2. `tests/test_strategy.py::test_hu_sb_87o_not_fold_and_a4s_12bb_not_all_in`: weryfikuje poprawność zakresów `HU_SB` (87o nie pasuje, A4s przy 12 BB otwiera min-raise).
+  3. `tests/test_engine.py::test_flop_db_nearest_cluster_lookup_and_fallback`: potwierdza dopasowanie najbliższego klastra tekstury dla nietypowych boardów.
+
+---
+
+
 ## V15.1 — Hotfix: Rozpoznawanie H2 (likwidacja nakładania kart i próg K), ICM 50x (Stake JAQKPOT!) oraz Warunek Końca Stołu >=880 Żetonów (2026-11-22)
 
 ### 1. Wdrożone poprawki

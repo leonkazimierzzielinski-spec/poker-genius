@@ -490,26 +490,30 @@ class ActionBarOverlay(QWidget):
         law = aw / dpr
         lah = ah / dpr
 
-        col_w = law / 3.0
-        bar_h = 28.0
+        btn_w = law / 3.0
+        bw = float(max(112, int(btn_w * 1.28)))
+        bh = float(max(38, int(28.0 * 1.35)))
         bar_y = lay + lah + 4.0
 
         screen = self.screen() or QApplication.primaryScreen()
         if screen:
             screen_h = screen.geometry().height()
-            if bar_y + bar_h > screen_h:
-                bar_y = max(4.0, lay - bar_h - 4.0)
+            if bar_y + bh > screen_h:
+                bar_y = max(4.0, lay - bh - 4.0)
 
         # Columns: 0 = Fold, 1 = Check/Call, 2 = Bet/Raise/All-In
         act_upper = action.upper()
         if act_upper == "FOLD":
-            col_x = lax
+            btn_x = lax
         elif act_upper in ("CHECK", "CALL"):
-            col_x = lax + col_w
+            btn_x = lax + btn_w
         else:
-            col_x = lax + 2.0 * col_w
+            btn_x = lax + 2.0 * btn_w
 
-        return (col_x, bar_y, col_w, bar_h)
+        center_x = btn_x + btn_w / 2.0
+        bx = float(int(center_x - bw / 2.0))
+
+        return (bx, bar_y, bw, bh)
 
     def paintEvent(self, event: Any) -> None:
         if not self._action_data:
@@ -521,8 +525,6 @@ class ActionBarOverlay(QWidget):
         screen = self.screen() or QApplication.primaryScreen()
         dpr = screen.devicePixelRatio() if screen else 1.0
         dpr = max(0.1, dpr)
-
-        font_action = QFont("Arial", 11, QFont.Weight.Bold)
 
         for tid, data in self._action_data.items():
             if not data:
@@ -538,10 +540,25 @@ class ActionBarOverlay(QWidget):
             bx, by, bw, bh = self.get_badge_rect_for_action(action, actions_rect, dpr)
             amt = data.get("amount_chips")
             sizing_bb = data.get("sizing_bb")
+            ev_val = data.get("ev_bb")
             is_plan = bool(data.get("is_plan", False))
 
-            label = format_action_label(action, sizing_bb, amt)
-            text = f"▲ PLAN: {label}" if is_plan else f"▲ {label}"
+            # Row 1: Action (e.g. ▲ RAISE 2 BB, ▲ BET 1 BB, ▲ ALL-IN, ▲ CALL, ▲ CHECK, ▲ FOLD)
+            label = format_action_label(action, sizing_bb, None)
+            line1 = f"▲ PLAN: {label}" if is_plan else f"▲ {label}"
+
+            # Row 2: Chips amount and EV (e.g. "(60) • +1.29 BB" or "(280)")
+            line2_parts = []
+            if amt is not None:
+                line2_parts.append(f"({amt})")
+            if ev_val is not None:
+                try:
+                    ev_f = float(ev_val)
+                    ev_sign = "+" if ev_f >= 0 else ""
+                    line2_parts.append(f"{ev_sign}{ev_f:.2f} BB")
+                except (ValueError, TypeError):
+                    pass
+            line2 = " • ".join(line2_parts)
 
             if action in ("ALL_IN", "BET_30", "MIN_RAISE"):
                 bg_color = QColor(39, 174, 96, 200 if is_plan else 245)
@@ -564,9 +581,38 @@ class ActionBarOverlay(QWidget):
             painter.setBrush(bg_color)
             painter.drawRoundedRect(badge_rect, 5, 5)
 
-            painter.setPen(QColor("#ffffff"))
-            painter.setFont(font_action)
-            painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, text)
+            # Auto-scale font for line1 (min 9 px)
+            font1_size = 11
+            font1 = QFont("Arial", font1_size, QFont.Weight.Bold)
+            fm1 = QFontMetrics(font1)
+            while font1_size > 9 and fm1.horizontalAdvance(line1) > (bw - 8):
+                font1_size -= 1
+                font1.setPointSize(font1_size)
+                fm1 = QFontMetrics(font1)
+
+            if line2:
+                font2_size = 10
+                font2 = QFont("Arial", font2_size, QFont.Weight.Normal)
+                fm2 = QFontMetrics(font2)
+                while font2_size > 8 and fm2.horizontalAdvance(line2) > (bw - 8):
+                    font2_size -= 1
+                    font2.setPointSize(font2_size)
+                    fm2 = QFontMetrics(font2)
+
+                top_rect = QRectF(badge_rect.x(), badge_rect.y() + 2, badge_rect.width(), badge_rect.height() * 0.52)
+                bottom_rect = QRectF(badge_rect.x(), badge_rect.y() + badge_rect.height() * 0.48, badge_rect.width(), badge_rect.height() * 0.48 - 2)
+
+                painter.setPen(QColor("#ffffff"))
+                painter.setFont(font1)
+                painter.drawText(top_rect, Qt.AlignmentFlag.AlignCenter, line1)
+
+                painter.setPen(QColor("#e2e8f0"))
+                painter.setFont(font2)
+                painter.drawText(bottom_rect, Qt.AlignmentFlag.AlignCenter, line2)
+            else:
+                painter.setPen(QColor("#ffffff"))
+                painter.setFont(font1)
+                painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, line1)
 
 
 class DebugRoiOverlay(QWidget):
@@ -880,6 +926,10 @@ class HudOverlay(QWidget):
         if QApplication.instance() is not None:
             self._debug_overlay = DebugRoiOverlay(bridge=self.bridge)
             self._action_bar_overlay = ActionBarOverlay(bridge=self.bridge)
+            screen = QApplication.primaryScreen()
+            if screen:
+                self._action_bar_overlay.setGeometry(screen.virtualGeometry())
+            self._action_bar_overlay.show()
 
         self._init_window()
         self._init_ui()
@@ -1454,12 +1504,13 @@ class HudOverlay(QWidget):
     def toggle_action_only_mode(self) -> bool:
         """Toggle Action-Only mode (ActionBarOverlay below game buttons)."""
         self.is_action_only_mode = not self.is_action_only_mode
+        if self._action_bar_overlay is not None:
+            screen = QApplication.primaryScreen()
+            if screen:
+                self._action_bar_overlay.setGeometry(screen.virtualGeometry())
+            self._action_bar_overlay.show()
+
         if self.is_action_only_mode:
-            if self._action_bar_overlay is not None:
-                screen = QApplication.primaryScreen()
-                if screen:
-                    self._action_bar_overlay.setGeometry(screen.virtualGeometry())
-                self._action_bar_overlay.show()
             if hasattr(self, "normal_hud_widget"):
                 self.normal_hud_widget.setVisible(False)
             if hasattr(self, "action_only_pill"):
@@ -1470,8 +1521,6 @@ class HudOverlay(QWidget):
                     "border-radius: 4px; padding: 2px 6px; font-size: 10px; font-weight: bold;"
                 )
         else:
-            if self._action_bar_overlay is not None:
-                self._action_bar_overlay.hide()
             if hasattr(self, "action_only_pill"):
                 self.action_only_pill.setVisible(False)
             if hasattr(self, "normal_hud_widget"):
