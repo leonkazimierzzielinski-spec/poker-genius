@@ -1,5 +1,63 @@
 # Poker Genius — Dziennik Postępu Prac (Progress Log)
 
+## V12 — Pancerna geometria stołu (4 czyste łuki złotej obwódki jako numer 1, Anti-Jitter, usuwanie dowolnego stołu i kompaktowy HUD) (2026-11-21)
+
+### 1. Wdrożone zmiany i nowa architektura
+1. **Detektor 4 czystych łuków złotej obwódki (`vision/anchor.py`, `vision/pipeline.py`, `config.json`):**
+   - Zaimplementowano 2-etapowy algorytm `find_golden_rim(frame, search_rect=None)`:
+     * **Etap A (Niebieskie sukno):** wykrywa obszar stołu w HSV (`H: 90..135, S: 40..255, V: 30..255`) z zamknięciem morfologicznym (`MORPH_CLOSE` 25x25), odrzucając artefakty o powierzchni `< 15000 px` lub proporcjach spoza `1.45..2.25`.
+     * **Etap B (4 czyste łuki):** mierzy złotą obwódkę (`H: 12..35, S: 50..255, V: 90..255`) w strefach odpornych na zasłanianie:
+       - *Lewy łuk:* pas środkowy `y ∈ [0.38*fh, 0.62*fh]`, `x ∈ [fx - 0.04*fw, fx + 0.04*fw]`, 15. percentyl `x`.
+       - *Prawy łuk:* pas środkowy `y ∈ [0.38*fh, 0.62*fh]`, `x ∈ [fx + fw - 0.04*fw, fx + fw + 0.04*fw]`, 85. percentyl `x`.
+       - *Górny łuk:* pas między awatarami S1 i S2 `x ∈ [0.44*fw, 0.56*fw]`, powyżej Prize Pool `y ∈ [fy - 0.08*fh, fy + 0.12*fh]`, 15. percentyl `y`.
+       - *Dolny łuk:* dwa pasy po bokach kart Hero `x ∈ [0.22*fw, 0.36*fw]` i `x ∈ [0.64*fw, 0.78*fw]`, powyżej przycisków gry, 15. percentyl `y`.
+     * Twarda weryfikacja pewności: min. 15 punktów w każdym z 4 pasów, proporcje stadionu `1.55 <= ow/oh <= 2.15`, dominacja niebieskiego sukna w centrum `>= 40%`.
+   - Zmierzono i skalibrowano uniwersalne współrzędne względne obwódki: `"golden_rim_rel": [0.1802, 0.2075, 0.6402, 0.5630]` (dokładność `±1 px` na każdym nagraniu).
+2. **Odwrócenie priorytetu kotwiczenia na rzecz złotej obwódki (`main.py`, `vision/pipeline.py`):**
+   - Złota obwódka 4 łuków stała się metodą **NUMER 1** (`anchor_source = "RIM"`). Szablon `find_anchor` z paska ikon stanowi bezpieczny fallback NUMER 2 (`anchor_source = "ICON"`), a zdefiniowany region – NUMER 3 (`anchor_source = "MANUAL"`).
+   - Całkowicie wyeliminowano podatność na marginesy przeglądarki, panel Bet Slip i sztywne listy skal — algorytm działa w dowolnej skali ciągłej od `0.5x` do `2.0x`.
+3. **Stabilizacja czasowa Anti-Jitter (`vision/anchor.py`, `main.py`):**
+   - Dodano funkcję `apply_anti_jitter(new_rect, last_stable_rect, deadband_px=3)`.
+   - Mikro-przesunięcia `<= 3 px` między klatkami są zamrażane do poprzedniej pozycji, co eliminuje drganie ramek ROI. Rzeczywisty ruch okna (`> 3 px`) natychmiast uaktualnia współrzędne.
+4. **Usuwanie dowolnego stołu i natychmiastowe czyszczenie nakładek (`ui/hud.py`):**
+   - Przycisk `✕ Usuń` jest dostępny dla każdego stołu (w tym `table_1`), gdy liczba monitorowanych stołów `> 1`.
+   - Usunięcie stołu natychmiast czyści jego obrysy z `DebugRoiOverlay` i `ActionBarOverlay` oraz emituje `table_removed_by_user`. Dodano `_removed_table_ids`, co zapobiega samoczynnemu odradzaniu się usuniętych stołów z opóźnionych klatek.
+5. **Kompaktowy HUD mieszczący się w ekranie (`ui/hud.py`):**
+   - Ustawiono `setMaximumWidth(440)`. Pasek kalibracji rozbito na 2 rzędy przycisków, zapobiegając rozpychaniu okna.
+   - Zaimplementowano `_clamp_to_screen()`, która pilnuje, by okno HUD nigdy nie wyszło poza prawą ani dolną krawędź monitora.
+   - W panelu `🔍 Szczegóły` dodano linię `Kotwica: RIM (2027x1150 @ 207,335)` jednoznacznie informującą o źródle detekcji.
+6. **Poprawa rozdzielania stykających się cyfr na małych oknach (`vision/ocr.py`):**
+   - W `_split_wide_box` obniżono próg podziału z `1.20 * h` na `1.05 * h` z zakresem poszukiwania doliny `0.25..0.75 * w`, co pozwala bezbłędnie separować ukośnik i cyfrę blindów (np. `/20`) w skali `0.75x`.
+
+### 2. Wyniki weryfikacji na nagraniach testowych, symulacji Bet Slip i małego okna (0.75x)
+
+| Nagranie / Scenariusz | Klatka | Rozdzielczość | Źródło kotwicy | Wykryte `table_rect` | Karty Hero | Karty Board | Pot | Blinds | Status |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `2026-11-19 211257` | `1827` | `1858x1248` | **RIM** | `(-199, 7, 2253x1278)` | `Kh 2s` | `--` | `70` | `10/20` | **VALID (100%)** |
+| `2026-11-19 211257` | `2604` | `1858x1248` | **RIM** | `(-199, 7, 2253x1278)` | `Kh 2s` | `7d Td Th 2h` | `218` | `10/20` | **VALID (100%)** |
+| `2026-11-19 211257` | `3643` | `1858x1248` | **RIM** | `(-199, 7, 2253x1278)` | `Jc 4d` | `--` | `30` | `10/20` | **VALID (100%)** |
+| `2026-11-19 211257` | `3880` | `1858x1248` | **RIM** | `(-199, 7, 2253x1278)` | `Jc 4d` | `--` | `206` | `10/20` | **VALID (100%)** |
+| `2026-11-19 211257` | `4757` | `1858x1248` | **RIM** | `(-199, 7, 2253x1278)` | `7s 7d` | `Qc 7c 7h` | `682` | `15/30` | **VALID (100%)** |
+| `2026-11-18 224127` | `0` | `1772x1126` | **RIM** | `(16, 31, 1766x1002)` | `2s Tc` | `--` | `80` | `10/20` | **VALID (100%)** |
+| `2026-11-18 224127` | `765` | `1772x1126` | **RIM** | `(16, 31, 1766x1002)` | `Kd 3c` | `--` | `30` | `10/20` | **VALID (100%)** |
+| `2026-11-18 224127` | `2370` | `1772x1126` | **RIM** | `(16, 31, 1766x1002)` | `7c 5s` | `--` | `90` | `15/30` | **VALID (100%)** |
+| `2026-11-18 224127` | `4950` | `1772x1126` | **RIM** | `(16, 31, 1766x1002)` | `5h Jh` | `Jd 2s 9h` | `60` | `15/30` | **VALID (100%)** |
+| `2 gry na raz` | `1383` | `1706x1022` | **RIM** | `(-19, -10, 1766x1002)` | `Ks 9s` | `3s Ac Ah` | `80` | `10/20` | **VALID (100%)** |
+| `2 gry na raz` | `1627` | `1706x1022` | **RIM** | `(-19, -10, 1766x1002)` | `Ks 9s` | `3s Ac Ah` | `240` | `10/20` | **VALID (100%)** |
+| `2 gry na raz` | `2418` | `1706x1022` | **RIM** | `(-19, -10, 1766x1002)` | `4d Qs` | `--` | `50` | `10/20` | **VALID (100%)** |
+| `2 gry na raz` | `2605` | `1706x1022` | **RIM** | `(-19, -10, 1766x1002)` | `4d Qs` | `5d 8c Jh` | `50` | `10/20` | **VALID (100%)** |
+| **Symulacja Bet Slip (+800px)** | `211257 f2604` | `2658x1248` | **RIM** | `(-199, 7, 2253x1278)` | `Kh 2s` | `7d Td Th 2h` | `218` | `10/20` | **VALID (100%)** |
+| **Symulacja małego okna (0.75x)** | `224127 f765` | `1329x844` | **RIM** | `(12, 23, 1324x751)` | `Kd 3c` | `--` | `30` | `10/20` | **VALID (100%)** |
+
+### 3. Wyniki testów jednostkowych (`pytest -v tests/`)
+- Liczba testów: **106 passed in 3.62s (100% sukcesu)**.
+- Nowe testy:
+  1. `tests/test_vision.py::test_find_golden_rim_4arcs_ignores_occluded_avatars`: potwierdza, że 4-łukowy detektor złotej obwódki poprawnie lokalizuje stół z błędem `<= 2 px` nawet przy silnym zasłonięciu awatarami S1/S2 i kartami/przyciskami Hero.
+  2. `tests/test_ui_and_main.py::test_remove_table_1_when_table_2_exists`: potwierdza, że usunięcie `table_1` przy istniejącym `table_2` jest dozwolone i natychmiast usuwa stół z obu nakładek ekranowych (`DebugRoiOverlay`, `ActionBarOverlay`).
+  3. `tests/test_ui_and_main.py::test_anti_jitter_deadband`: weryfikuje zamrażanie mikro-drgań `<= 3 px` i natychmiastową aktualizację dla przesunięć `> 3 px`.
+
+---
+
 ## V11 — Kotwiczenie o Złotą Obwódkę Stołu, Jawne Zarządzanie Stołami, Kalibracja z Zatwierdzaniem, Buy-in Live i Pasek „Tylko Akcja” (2026-11-21)
 
 ### 1. Wdrożone zmiany i nowa architektura

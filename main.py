@@ -26,6 +26,7 @@ except ImportError:
 # Vision module
 try:
     from vision.anchor import (
+        apply_anti_jitter,
         compute_table_rect,
         compute_table_rect_from_rim,
         compute_unclipped_table_rect,
@@ -42,6 +43,7 @@ try:
     )
     from vision.pipeline import VisionPipeline
 except ImportError:
+    apply_anti_jitter = None  # type: ignore[assignment]
     find_all_anchors = None  # type: ignore[assignment]
     find_anchor = None  # type: ignore[assignment]
     find_golden_rim = None  # type: ignore[assignment]
@@ -748,6 +750,7 @@ def processing_loop(
             "search_region": None,
             "adjust": (0, 0, 1.0, 1.0),
             "last_opponents_sig": None,
+            "last_stable_rect": None,
         }
     }
     last_idle_emit: float = 0.0
@@ -755,12 +758,14 @@ def processing_loop(
     def _on_manual_rect(rect: Any) -> None:
         if "table_1" in managed_tables:
             managed_tables["table_1"]["search_region"] = rect
+            managed_tables["table_1"]["last_stable_rect"] = None
 
     def _on_table_added(tid: str, search_region: Any) -> None:
         managed_tables[tid] = {
             "search_region": search_region,
             "adjust": (0, 0, 1.0, 1.0),
             "last_opponents_sig": None,
+            "last_stable_rect": None,
         }
 
     def _on_table_removed_by_user(tid: str) -> None:
@@ -889,15 +894,29 @@ def processing_loop(
                 except Exception:
                     pass
 
-            # Detect tables using golden rim (first) or anchor fallback per managed table slot
-            table_jobs: list[tuple[str, Any, bool, tuple[Any, ...]]] = []
+            # Detect tables using 4-arc golden rim (NUMER 1), anchor fallback (NUMER 2), or manual ROI (NUMER 3)
+            table_jobs: list[tuple[str, Any, bool, tuple[Any, ...], str]] = []
             for tid, slot_info in list(managed_tables.items()):
                 search_region = slot_info.get("search_region")
                 table_rect = None
                 has_anchor = False
+                anchor_source = "MANUAL"
 
-                # 1. Primary anchor template matching (dual-anchor unclipped rect)
-                if frame is not None and frame.size > 0:
+                # 1. NUMER 1: 4-arc Golden Rim primary anchor (continuous scale, unclipped rect)
+                if find_golden_rim is not None and compute_table_rect_from_rim is not None and frame is not None and frame.size > 0:
+                    try:
+                        rim = find_golden_rim(frame, search_rect=search_region)
+                        if rim is not None:
+                            canonical_sz = getattr(pipeline, "canonical_table_size", (1757, 997))
+                            rim_rel = getattr(pipeline, "golden_rim_rel", [0.1802, 0.2075, 0.6402, 0.5630])
+                            table_rect = compute_table_rect_from_rim(rim, rim_rel=rim_rel, canonical_size=canonical_sz)
+                            has_anchor = True
+                            anchor_source = "RIM"
+                    except Exception:
+                        table_rect = None
+
+                # 2. NUMER 2: Fallback template anchor matching (dual-anchor unclipped rect)
+                if table_rect is None and frame is not None and frame.size > 0:
                     if search_region is not None:
                         mx, my, mw, mh = search_region
                         sub_frame = frame[max(0, my) : max(0, my + mh), max(0, mx) : max(0, mx + mw)]
@@ -916,12 +935,16 @@ def processing_loop(
                                         right_anchor = find_right_anchor(frame, pipeline.right_anchor_template, full_anchor, canonical_size=canonical_sz, left_template_size=(tpl_w, tpl_h))
                                     table_rect = compute_unclipped_table_rect(full_anchor, table_offset, canonical_size=canonical_sz, template_size=(tpl_w, tpl_h), frame_shape=frame.shape, right_anchor=right_anchor)
                                     has_anchor = True
+                                    anchor_source = "ICON"
                                 else:
                                     table_rect = search_region
+                                    anchor_source = "MANUAL"
                             except Exception:
                                 table_rect = search_region
+                                anchor_source = "MANUAL"
                         else:
                             table_rect = search_region
+                            anchor_source = "MANUAL"
                     else:
                         if getattr(pipeline, "anchor_template", None) is not None and find_anchor is not None:
                             try:
@@ -937,23 +960,23 @@ def processing_loop(
                                         right_anchor = find_right_anchor(frame, pipeline.right_anchor_template, anchor, canonical_size=canonical_sz, left_template_size=(tpl_w, tpl_h))
                                     table_rect = compute_unclipped_table_rect(anchor, table_offset, canonical_size=canonical_sz, template_size=(tpl_w, tpl_h), frame_shape=frame.shape, right_anchor=right_anchor)
                                     has_anchor = True
+                                    anchor_source = "ICON"
                             except Exception:
                                 anchor = None
 
-                # 2. Golden rim detection fallback (when anchor is scrolled out of view or hidden)
-                if table_rect is None and find_golden_rim is not None and compute_table_rect_from_rim is not None and frame is not None and frame.size > 0:
-                    try:
-                        rim = find_golden_rim(frame, search_rect=search_region)
-                        if rim is not None:
-                            canonical_sz = getattr(pipeline, "canonical_table_size", (1757, 997))
-                            rim_rel = getattr(pipeline, "golden_rim_rel", [0.1816, 0.0963, 0.6460, 0.6780])
-                            table_rect = compute_table_rect_from_rim(rim, rim_rel=rim_rel, canonical_size=canonical_sz)
-                            has_anchor = True
-                    except Exception:
-                        table_rect = None
+                # 3. NUMER 3: Fallback to raw search region if set
+                if table_rect is None and search_region is not None:
+                    table_rect = search_region
+                    anchor_source = "MANUAL"
+
+                # Temporal stabilization (Anti-Jitter deadband <= 3 px)
+                if table_rect is not None and apply_anti_jitter is not None:
+                    last_stable = slot_info.get("last_stable_rect")
+                    table_rect = apply_anti_jitter(table_rect, last_stable, deadband_px=3)
+                    slot_info["last_stable_rect"] = table_rect
 
                 adj = slot_info.get("adjust", (0, 0, 1.0, 1.0))
-                table_jobs.append((tid, table_rect, has_anchor, adj))
+                table_jobs.append((tid, table_rect, has_anchor, adj, anchor_source))
 
             if is_live and all(t[1] is None for t in table_jobs):
                 now_sec = time.perf_counter()
@@ -979,7 +1002,7 @@ def processing_loop(
                             pass
                 continue
 
-            for table_id, orig_table_rect, has_anchor, adj in table_jobs:
+            for table_id, orig_table_rect, has_anchor, adj, anchor_source in table_jobs:
                 table_rect = orig_table_rect
                 if table_rect is not None:
                     if len(adj) == 4:
@@ -1180,8 +1203,15 @@ def processing_loop(
                 actions_str = ", ".join(getattr(state, "available_actions", [])) or "--"
                 spot_str = spot or "--"
 
+                if orig_table_rect is not None:
+                    tx_o, ty_o, tw_o, th_o = orig_table_rect
+                    anchor_line = f"Kotwica: {anchor_source} ({tw_o}x{th_o} @ {tx_o},{ty_o})"
+                else:
+                    anchor_line = f"Kotwica: {anchor_source}"
+
                 scan_summary = (
                     f"Status: {val_status}\n"
+                    f"{anchor_line}\n"
                     f"Blinds: {blinds_str} | Prize: {prize_str} | Pot: {pot_str}\n"
                     f"Hero: {hero_cards_str} | Board: {board_cards_str}\n"
                     f"Gracze: {players_line}\n"

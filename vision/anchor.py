@@ -359,19 +359,42 @@ def crop_rois(
     return crops
 
 
+def apply_anti_jitter(
+    new_rect: tuple[int, int, int, int] | None,
+    last_stable_rect: tuple[int, int, int, int] | None,
+    deadband_px: int = 3,
+) -> tuple[int, int, int, int] | None:
+    """Stabilize table rect against micro-jitter <= deadband_px."""
+    if new_rect is None:
+        return None
+    if last_stable_rect is None:
+        return new_rect
+    if max(abs(a - b) for a, b in zip(new_rect, last_stable_rect)) <= deadband_px:
+        return last_stable_rect
+    return new_rect
+
+
 def find_golden_rim(
     frame: np.ndarray,
     search_rect: tuple[int, int, int, int] | None = None,
 ) -> tuple[int, int, int, int] | None:
-    """Detect the golden/orange elliptical table rim on Stake poker felt.
+    """Detect the golden table rim on Stake poker felt using 4 unoccluded arcs.
 
-    Performs strict 4-arc confidence verification:
-    1. Finds candidate blue felt interior ellipse (HSV 90..135, area >= 20000, aspect 1.45..2.25).
-    2. Detects golden rim boundary (HSV H: 12..35, S: 50..255, V: 90..255) around all 4 sides (left, right, top, bottom).
-    3. Strict size (ow >= 300, oh >= 160) and aspect ratio checks (1.55 <= ow/oh <= 2.15).
-    4. Verified blue interior felt dominance (>= 50% blue pixels in center).
+    2-stage 4-clean-arc algorithm:
+    Stage A: Detect blue felt interior (HSV H: 90..135, S: 40..255, V: 30..255)
+             with morphological closing to bridge text and cards.
+             Accepts largest component with area >= 15000 and aspect ratio 1.45..2.25.
+    Stage B: Measure 4 clean arcs of the golden rim (HSV H: 12..35, S: 50..255, V: 90..255)
+             in zones never occluded by avatars, hero cards, or action buttons:
+             - Left arc: y in [0.38*fh, 0.62*fh], x around fx (15th percentile of x)
+             - Right arc: y in [0.38*fh, 0.62*fh], x around fx + fw (85th percentile of x)
+             - Top arc: x in [0.44*fw, 0.56*fw] (between S1 and S2), y around fy (15th percentile of y)
+             - Bottom arc: x in [0.22*fw, 0.36*fw] and [0.64*fw, 0.78*fw] (flanking hero cards),
+               y around fy + fh (15th percentile of y captures the top edge of the rim line)
 
-    Returns (ox, oy, ow, oh) in full frame coordinates or None if not 100% confident.
+    Verifies that all 4 arcs have >= 15 golden points, aspect ratio is 1.55..2.15,
+    and center 40% felt has >= 40% blue pixels.
+    Returns (left_x + sx_offset, top_y + sy_offset, rim_w, rim_h) in frame coordinates, or None.
     """
     if frame is None or frame.size == 0:
         return None
@@ -391,21 +414,23 @@ def find_golden_rim(
         sx_offset, sy_offset = x1, y1
 
     H, W = work_frame.shape[:2]
-    if W < 300 or H < 160:
+    if W < 250 or H < 130:
         return None
 
     hsv = cv2.cvtColor(work_frame, cv2.COLOR_BGR2HSV)
 
     # 1. Detect blue felt candidate
     blue_mask = cv2.inRange(hsv, (90, 40, 30), (135, 255, 255))
-    contours, _ = cv2.findContours(blue_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (25, 25))
+    blue_closed = cv2.morphologyEx(blue_mask, cv2.MORPH_CLOSE, kernel)
+    contours, _ = cv2.findContours(blue_closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
         return None
 
     candidates = []
     for c in contours:
         area = cv2.contourArea(c)
-        if area >= 20000:
+        if area >= 15000:
             bx, by, bw, bh = cv2.boundingRect(c)
             if bh > 0:
                 asp = bw / bh
@@ -418,42 +443,48 @@ def find_golden_rim(
     candidates.sort(reverse=True)
     _, fx, fy, fw, fh = candidates[0]
 
-    # 2. Golden rim boundary around felt
+    # 2. Golden rim boundary around felt (4 clean arcs)
     golden_mask = cv2.inRange(hsv, (12, 50, 90), (35, 255, 255))
 
-    # Left band:
-    left_band = golden_mask[int(fy + 0.25 * fh) : int(fy + 0.75 * fh), max(0, fx - 50) : fx + 50]
-    left_pts = np.where(left_band > 0)
-    if len(left_pts[1]) < 20:
+    # Left arc: vertical mid-band, horizontal search around left felt edge
+    y1_l, y2_l = int(fy + 0.38 * fh), int(fy + 0.62 * fh)
+    x1_l, x2_l = max(0, fx - int(0.04 * fw)), min(W, fx + int(0.04 * fw))
+    l_pts = np.where(golden_mask[y1_l:y2_l, x1_l:x2_l] > 0)
+    if len(l_pts[1]) < 15:
         return None
-    rim_x1 = max(0, fx - 50) + int(np.min(left_pts[1]))
+    left_x = x1_l + int(np.percentile(l_pts[1], 15))
 
-    # Right band:
-    right_band = golden_mask[int(fy + 0.25 * fh) : int(fy + 0.75 * fh), fx + fw - 50 : min(W, fx + fw + 50)]
-    right_pts = np.where(right_band > 0)
-    if len(right_pts[1]) < 20:
+    # Right arc: vertical mid-band, horizontal search around right felt edge
+    x1_r, x2_r = max(0, fx + fw - int(0.04 * fw)), min(W, fx + fw + int(0.04 * fw))
+    r_pts = np.where(golden_mask[y1_l:y2_l, x1_r:x2_r] > 0)
+    if len(r_pts[1]) < 15:
         return None
-    rim_x2 = (fx + fw - 50) + int(np.max(right_pts[1]))
+    right_x = x1_r + int(np.percentile(r_pts[1], 85))
 
-    # Top band:
-    top_band = golden_mask[max(0, fy - 50) : fy + 100, int(fx + 0.25 * fw) : int(fx + 0.75 * fw)]
-    top_pts = np.where(top_band > 0)
-    if len(top_pts[0]) < 20:
+    # Top arc: horizontal band between S1 and S2 avatars, above Prize Pool text
+    x1_t, x2_t = int(fx + 0.44 * fw), int(fx + 0.56 * fw)
+    y1_t, y2_t = max(0, fy - int(0.08 * fh)), min(H, fy + int(0.12 * fh))
+    t_pts = np.where(golden_mask[y1_t:y2_t, x1_t:x2_t] > 0)
+    if len(t_pts[0]) < 15:
         return None
-    rim_y1 = max(0, fy - 50) + int(np.min(top_pts[0]))
+    top_y = y1_t + int(np.percentile(t_pts[0], 15))
 
-    # Bottom band:
-    bot_band = golden_mask[fy + fh - 100 : min(H, fy + fh + 50), int(fx + 0.25 * fw) : int(fx + 0.75 * fw)]
-    bot_pts = np.where(bot_band > 0)
-    if len(bot_pts[0]) < 20:
+    # Bottom arc: two horizontal bands flanking hero cards, above action buttons
+    x1_b1, x2_b1 = int(fx + 0.22 * fw), int(fx + 0.36 * fw)
+    x1_b2, x2_b2 = int(fx + 0.64 * fw), int(fx + 0.78 * fw)
+    y1_b, y2_b = int(fy + 0.85 * fh), min(H, fy + int(1.15 * fh))
+    b1_pts = np.where(golden_mask[y1_b:y2_b, x1_b1:x2_b1] > 0)
+    b2_pts = np.where(golden_mask[y1_b:y2_b, x1_b2:x2_b2] > 0)
+    all_b_y = list(b1_pts[0]) + list(b2_pts[0])
+    if len(all_b_y) < 15:
         return None
-    rim_y2 = (fy + fh - 100) + int(np.max(bot_pts[0]))
+    bot_y = y1_b + int(np.percentile(all_b_y, 15))
 
-    rim_w = rim_x2 - rim_x1
-    rim_h = rim_y2 - rim_y1
+    rim_w = right_x - left_x
+    rim_h = bot_y - top_y
 
     # 3. Hard size and aspect ratio checks
-    if rim_w < 300 or rim_h < 160:
+    if rim_w < 250 or rim_h < 130:
         return None
 
     aspect = rim_w / rim_h
@@ -461,20 +492,20 @@ def find_golden_rim(
         return None
 
     # 4. Verified blue interior felt dominance in center 40% box
-    c_y1 = int(rim_y1 + 0.30 * rim_h)
-    c_y2 = int(rim_y1 + 0.70 * rim_h)
-    c_x1 = int(rim_x1 + 0.30 * rim_w)
-    c_x2 = int(rim_x1 + 0.70 * rim_w)
+    c_y1 = int(top_y + 0.30 * rim_h)
+    c_y2 = int(top_y + 0.70 * rim_h)
+    c_x1 = int(left_x + 0.30 * rim_w)
+    c_x2 = int(left_x + 0.70 * rim_w)
     if c_y2 <= c_y1 or c_x2 <= c_x1:
         return None
 
     center_roi = hsv[c_y1:c_y2, c_x1:c_x2]
     blue_center_mask = (center_roi[:, :, 0] >= 90) & (center_roi[:, :, 0] <= 135) & (center_roi[:, :, 1] >= 40)
     blue_ratio = np.count_nonzero(blue_center_mask) / (center_roi.shape[0] * center_roi.shape[1])
-    if blue_ratio < 0.50:
+    if blue_ratio < 0.40:
         return None
 
-    return (rim_x1 + sx_offset, rim_y1 + sy_offset, rim_w, rim_h)
+    return (left_x + sx_offset, top_y + sy_offset, rim_w, rim_h)
 
 
 def compute_table_rect_from_rim(
@@ -484,7 +515,7 @@ def compute_table_rect_from_rim(
 ) -> tuple[int, int, int, int]:
     """Compute table rect (tx, ty, tw, th) from detected golden rim rect and relative offset."""
     if rim_rel is None or len(rim_rel) < 4:
-        rim_rel = [0.1816, 0.0963, 0.6460, 0.6780]
+        rim_rel = [0.1802, 0.2075, 0.6402, 0.5630]
     ox, oy, ow, oh = rim_rect
     rx, ry, rw, rh = rim_rel[:4]
     scale = ow / (canonical_size[0] * rw)

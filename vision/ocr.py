@@ -103,12 +103,12 @@ class DigitOCR:
     ) -> list[tuple[int, int, int, int]]:
         """Split horizontally touching digit bounding boxes based on column density valleys."""
         x, y, w, h = box
-        if w <= 1.20 * h:
+        if w <= 1.05 * h:
             return [box]
         crop = bin_img[y : y + h, x : x + w]
         col_sums = np.sum(crop, axis=0)
-        mid_start = int(w * 0.35)
-        mid_end = int(w * 0.65)
+        mid_start = int(w * 0.25)
+        mid_end = int(w * 0.75)
         if mid_end <= mid_start:
             return [box]
         split_x = mid_start + int(np.argmin(col_sums[mid_start:mid_end]))

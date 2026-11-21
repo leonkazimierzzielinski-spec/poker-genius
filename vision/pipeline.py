@@ -47,7 +47,7 @@ class VisionPipeline:
             "table_offset_rel", [0.0, 0.0, 1.0, 1.0]
         )
         self.golden_rim_rel: list[float] = self.anchor_config.get(
-            "golden_rim_rel", [0.1816, 0.0963, 0.6460, 0.6780]
+            "golden_rim_rel", [0.1802, 0.2075, 0.6402, 0.5630]
         )
         self.canonical_table_size: tuple[int, int] = tuple(
             self.config.get("canonical_table_size", [1757, 997])
@@ -251,8 +251,19 @@ class VisionPipeline:
 
         # Detect table bounds or fallback to full frame
         if table_rect is None:
-            # 1. Primary anchor template matching (dual-anchor unclipped rect)
-            if self.anchor_template is not None:
+            # 1. Primary golden rim detection (4 clean arcs, continuous scale, any window aspect)
+            rim = find_golden_rim(frame)
+            if rim is not None:
+                anchor_found = True
+                unclipped_rect = compute_table_rect_from_rim(
+                    rim,
+                    rim_rel=self.golden_rim_rel,
+                    canonical_size=self.canonical_table_size,
+                )
+                table_image = self._warp_to_canonical(frame, unclipped_rect)
+                effective_rect = (0, 0, CW, CH)
+            elif self.anchor_template is not None:
+                # 2. Dual-anchor unclipped rect fallback
                 anchor = find_anchor(
                     frame,
                     self.anchor_template,
@@ -284,36 +295,13 @@ class VisionPipeline:
                     table_image = self._warp_to_canonical(frame, unclipped_rect)
                     effective_rect = (0, 0, CW, CH)
                 else:
-                    # 2. Golden rim detection fallback (precision 1-2px when anchor is hidden/scrolled)
-                    rim = find_golden_rim(frame)
-                    if rim is not None:
-                        anchor_found = True
-                        unclipped_rect = compute_table_rect_from_rim(
-                            rim,
-                            rim_rel=self.golden_rim_rel,
-                            canonical_size=self.canonical_table_size,
-                        )
-                        table_image = self._warp_to_canonical(frame, unclipped_rect)
-                        effective_rect = (0, 0, CW, CH)
-                    else:
-                        table_rect = (0, 0, frame.shape[1], frame.shape[0])
-                        table_image = frame
-                        effective_rect = table_rect
-            else:
-                rim = find_golden_rim(frame)
-                if rim is not None:
-                    anchor_found = True
-                    unclipped_rect = compute_table_rect_from_rim(
-                        rim,
-                        rim_rel=self.golden_rim_rel,
-                        canonical_size=self.canonical_table_size,
-                    )
-                    table_image = self._warp_to_canonical(frame, unclipped_rect)
-                    effective_rect = (0, 0, CW, CH)
-                else:
                     table_rect = (0, 0, frame.shape[1], frame.shape[0])
                     table_image = frame
                     effective_rect = table_rect
+            else:
+                table_rect = (0, 0, frame.shape[1], frame.shape[0])
+                table_image = frame
+                effective_rect = table_rect
         else:
             # Provided table_rect (from main.py unclipped rect or manual ROI)
             anchor_found = has_anchor if has_anchor is not None else True

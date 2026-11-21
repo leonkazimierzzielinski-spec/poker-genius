@@ -1421,5 +1421,87 @@ def test_action_bar_overlay_positioning(qapp) -> None:
     overlay.close()
 
 
+def test_remove_table_1_when_table_2_exists(qapp) -> None:
+    """Verify table_1 can be removed when table_2 exists, clearing debug and action bar overlays immediately."""
+    from ui.hud import HudOverlay, HudBridge
+    from core.contracts import Decision
+
+    bridge = HudBridge()
+    hud = HudOverlay(bridge=bridge)
+    hud.show()
+
+    # Populate table_1 with decision and debug overlay data
+    d1 = Decision(table_id="table_1", action="FOLD", ev_bb=0.0, confidence=1.0, profile_used="STANDARD_EXPLOIT", reason="Fold")
+    hud.on_decision_updated(d1, 2.5, "Status: VALID\nKotwica: RIM")
+    hud._debug_overlay.on_debug_overlay_updated({"table_id": "table_1", "table_rect": (0, 0, 1000, 600), "rois": []})
+    hud._action_bar_overlay.on_action_bar_updated({"table_id": "table_1", "actions_rect": (100, 100, 300, 60), "action": "FOLD"})
+
+    assert "table_1" in hud.managed_tables
+    assert "table_1" in hud._debug_overlay._tables
+    assert "table_1" in hud._action_bar_overlay._action_data
+
+    # Add table_2
+    hud.add_table("table_2", search_region=(200, 200, 800, 500))
+    d2 = Decision(table_id="table_2", action="CALL", ev_bb=0.5, confidence=1.0, profile_used="STANDARD_EXPLOIT", reason="Call")
+    hud.on_decision_updated(d2, 3.0, "Status: VALID\nKotwica: RIM")
+    hud._debug_overlay.on_debug_overlay_updated({"table_id": "table_2", "table_rect": (200, 200, 800, 500), "rois": []})
+    hud._action_bar_overlay.on_action_bar_updated({"table_id": "table_2", "actions_rect": (200, 200, 300, 60), "action": "CALL"})
+
+    assert len(hud.managed_tables) == 2
+    assert "table_2" in hud.managed_tables
+
+    # User removes table_1 (should succeed because table_2 exists)
+    removed_signals = []
+    bridge.table_removed_by_user.connect(lambda tid: removed_signals.append(tid))
+
+    hud.remove_table_by_user("table_1")
+    assert "table_1" not in hud.managed_tables
+    assert "table_2" in hud.managed_tables
+    assert len(hud.managed_tables) == 1
+    assert removed_signals == ["table_1"]
+
+    # Both overlays must have immediately purged table_1
+    assert "table_1" not in hud._debug_overlay._tables
+    assert (hud._debug_overlay._data is None or str(hud._debug_overlay._data.get("table_id")) != "table_1")
+    assert "table_1" not in hud._action_bar_overlay._action_data
+    assert "table_2" in hud._debug_overlay._tables
+    assert "table_2" in hud._action_bar_overlay._action_data
+
+    # Cannot remove last remaining table_2
+    hud.remove_table_by_user("table_2")
+    assert "table_2" in hud.managed_tables
+    assert len(hud.managed_tables) == 1
+
+    hud.close()
+
+
+def test_anti_jitter_deadband() -> None:
+    """Verify anti-jitter maintains stable table rect for micro-shifts <= 3px and updates for > 3px."""
+    from vision.anchor import apply_anti_jitter
+
+    stable_rect = (200, 250, 1400, 700)
+
+    # Initial rect with no prior stable rect
+    r0 = apply_anti_jitter(stable_rect, None, deadband_px=3)
+    assert r0 == stable_rect
+
+    # Micro-shifts within 3 px tolerance (e.g. 1px, 2px, 3px differences)
+    r_micro1 = (202, 249, 1401, 703)  # dx=+2, dy=-1, dw=+1, dh=+3 -> max diff = 3
+    res1 = apply_anti_jitter(r_micro1, stable_rect, deadband_px=3)
+    assert res1 == stable_rect, "Micro-shifts <= 3px must be frozen to stable_rect"
+
+    r_micro2 = (199, 252, 1398, 698)  # max diff = 2
+    res2 = apply_anti_jitter(r_micro2, stable_rect, deadband_px=3)
+    assert res2 == stable_rect
+
+    # Meaningful shift > 3 px (e.g. window moved by 5 px)
+    r_macro = (205, 250, 1400, 700)  # dx=+5
+    res3 = apply_anti_jitter(r_macro, stable_rect, deadband_px=3)
+    assert res3 == r_macro, "Shifts > 3px must immediately update table_rect"
+
+    # None input
+    assert apply_anti_jitter(None, stable_rect, deadband_px=3) is None
+
+
 
 

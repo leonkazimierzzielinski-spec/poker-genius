@@ -577,6 +577,8 @@ class DebugRoiOverlay(QWidget):
     def remove_table(self, table_id: str) -> None:
         """Remove a stale table from debug overlay."""
         self._tables.pop(table_id, None)
+        if self._data and str(self._data.get("table_id")) == table_id:
+            self._data = None
         if self.isVisible():
             self.update()
 
@@ -802,6 +804,7 @@ class HudOverlay(QWidget):
         self.managed_tables: dict[str, dict[str, Any]] = {
             "table_1": {"search_region": None, "adjust": (0, 0, 1.0, 1.0)}
         }
+        self._removed_table_ids: set[str] = set()
         self.editing_table_id: str | None = None
         self._pre_edit_adjust: tuple[int, int, float, float] = (0, 0, 1.0, 1.0)
 
@@ -846,7 +849,8 @@ class HudOverlay(QWidget):
             | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.setMinimumWidth(430)
+        self.setMinimumWidth(380)
+        self.setMaximumWidth(440)
 
     def _init_ui(self) -> None:
         self.root_layout = QVBoxLayout(self)
@@ -1059,36 +1063,6 @@ class HudOverlay(QWidget):
         self.btn_adj_splus.clicked.connect(lambda: self.adjust_table_scale(0.01))
         controls_row1.addWidget(self.btn_adj_splus)
 
-        self.btn_adj_wminus = QPushButton("Szer ↔ -", self.calibration_panel)
-        self.btn_adj_wminus.setStyleSheet(adj_btn_style)
-        self.btn_adj_wminus.setToolTip("Zmniejsz szerokość stołu o 1%")
-        self.btn_adj_wminus.clicked.connect(lambda: self.adjust_table_stretch_x(-0.01))
-        controls_row1.addWidget(self.btn_adj_wminus)
-
-        self.btn_adj_wplus = QPushButton("Szer ↔ +", self.calibration_panel)
-        self.btn_adj_wplus.setStyleSheet(adj_btn_style)
-        self.btn_adj_wplus.setToolTip("Zwiększ szerokość stołu o 1%")
-        self.btn_adj_wplus.clicked.connect(lambda: self.adjust_table_stretch_x(0.01))
-        controls_row1.addWidget(self.btn_adj_wplus)
-
-        self.btn_adj_hminus = QPushButton("Wys ↕ -", self.calibration_panel)
-        self.btn_adj_hminus.setStyleSheet(adj_btn_style)
-        self.btn_adj_hminus.setToolTip("Zmniejsz wysokość stołu o 1%")
-        self.btn_adj_hminus.clicked.connect(lambda: self.adjust_table_stretch_y(-0.01))
-        controls_row1.addWidget(self.btn_adj_hminus)
-
-        self.btn_adj_hplus = QPushButton("Wys ↕ +", self.calibration_panel)
-        self.btn_adj_hplus.setStyleSheet(adj_btn_style)
-        self.btn_adj_hplus.setToolTip("Zwiększ wysokość stołu o 1%")
-        self.btn_adj_hplus.clicked.connect(lambda: self.adjust_table_stretch_y(0.01))
-        controls_row1.addWidget(self.btn_adj_hplus)
-
-        self.btn_adj_drag = QPushButton("✋ Przesuń", self.calibration_panel)
-        self.btn_adj_drag.setStyleSheet(adj_btn_style)
-        self.btn_adj_drag.setToolTip("Tryb przeciągania ramki stołu myszą")
-        self.btn_adj_drag.clicked.connect(self.toggle_drag_mode)
-        controls_row1.addWidget(self.btn_adj_drag)
-
         self.btn_adj_reset = QPushButton("↺", self.calibration_panel)
         self.btn_adj_reset.setStyleSheet(adj_btn_style)
         self.btn_adj_reset.setToolTip("Resetuj przesunięcie i skalę")
@@ -1096,6 +1070,41 @@ class HudOverlay(QWidget):
         controls_row1.addWidget(self.btn_adj_reset)
 
         calib_layout.addLayout(controls_row1)
+
+        controls_row2 = QHBoxLayout()
+        controls_row2.setSpacing(4)
+
+        self.btn_adj_wminus = QPushButton("Szer ↔ -", self.calibration_panel)
+        self.btn_adj_wminus.setStyleSheet(adj_btn_style)
+        self.btn_adj_wminus.setToolTip("Zmniejsz szerokość stołu o 1%")
+        self.btn_adj_wminus.clicked.connect(lambda: self.adjust_table_stretch_x(-0.01))
+        controls_row2.addWidget(self.btn_adj_wminus)
+
+        self.btn_adj_wplus = QPushButton("Szer ↔ +", self.calibration_panel)
+        self.btn_adj_wplus.setStyleSheet(adj_btn_style)
+        self.btn_adj_wplus.setToolTip("Zwiększ szerokość stołu o 1%")
+        self.btn_adj_wplus.clicked.connect(lambda: self.adjust_table_stretch_x(0.01))
+        controls_row2.addWidget(self.btn_adj_wplus)
+
+        self.btn_adj_hminus = QPushButton("Wys ↕ -", self.calibration_panel)
+        self.btn_adj_hminus.setStyleSheet(adj_btn_style)
+        self.btn_adj_hminus.setToolTip("Zmniejsz wysokość stołu o 1%")
+        self.btn_adj_hminus.clicked.connect(lambda: self.adjust_table_stretch_y(-0.01))
+        controls_row2.addWidget(self.btn_adj_hminus)
+
+        self.btn_adj_hplus = QPushButton("Wys ↕ +", self.calibration_panel)
+        self.btn_adj_hplus.setStyleSheet(adj_btn_style)
+        self.btn_adj_hplus.setToolTip("Zwiększ wysokość stołu o 1%")
+        self.btn_adj_hplus.clicked.connect(lambda: self.adjust_table_stretch_y(0.01))
+        controls_row2.addWidget(self.btn_adj_hplus)
+
+        self.btn_adj_drag = QPushButton("✋ Przesuń", self.calibration_panel)
+        self.btn_adj_drag.setStyleSheet(adj_btn_style)
+        self.btn_adj_drag.setToolTip("Tryb przeciągania ramki stołu myszą")
+        self.btn_adj_drag.clicked.connect(self.toggle_drag_mode)
+        controls_row2.addWidget(self.btn_adj_drag)
+
+        calib_layout.addLayout(controls_row2)
 
         # Confirm & Cancel row
         confirm_row = QHBoxLayout()
@@ -1420,6 +1429,7 @@ class HudOverlay(QWidget):
 
     def add_table(self, table_id: str, search_region: Any = None) -> None:
         """Add a managed table explicitly."""
+        self._removed_table_ids.discard(table_id)
         self.managed_tables[table_id] = {
             "search_region": search_region,
             "adjust": (0, 0, 1.0, 1.0),
@@ -1433,12 +1443,16 @@ class HudOverlay(QWidget):
         """Remove a managed table by user action."""
         if len(self.managed_tables) <= 1:
             return
+        if self.editing_table_id == table_id:
+            self.cancel_table_calibration()
+        self._removed_table_ids.add(table_id)
         self.managed_tables.pop(table_id, None)
         self.remove_table(table_id)
         self._update_table_delete_buttons_visibility()
         if self.bridge is not None and hasattr(self.bridge, "table_removed_by_user"):
             self.bridge.table_removed_by_user.emit(table_id)
         self.adjustSize()
+        self._clamp_to_screen()
 
     def _update_table_delete_buttons_visibility(self) -> None:
         can_delete = len(self.managed_tables) > 1
@@ -1693,9 +1707,36 @@ class HudOverlay(QWidget):
             self.table_scale_y = sy
         self._update_adjust_label()
 
+    def _clamp_to_screen(self) -> None:
+        """Prevent HUD from overflowing outside screen boundaries."""
+        screen = self.screen() or QApplication.primaryScreen()
+        if not screen:
+            return
+        geo = screen.availableGeometry()
+        curr_geo = self.geometry()
+        new_x = curr_geo.x()
+        new_y = curr_geo.y()
+        max_x = geo.right() - curr_geo.width()
+        max_y = geo.bottom() - curr_geo.height()
+        if new_x > max_x:
+            new_x = max(geo.left(), max_x)
+        if new_x < geo.left():
+            new_x = geo.left()
+        if new_y > max_y:
+            new_y = max(geo.top(), max_y)
+        if new_y < geo.top():
+            new_y = geo.top()
+        if new_x != curr_geo.x() or new_y != curr_geo.y():
+            self.move(new_x, new_y)
+
     def showEvent(self, event: Any) -> None:
         super().showEvent(event)
         self._apply_lock_state()
+        self._clamp_to_screen()
+
+    def resizeEvent(self, event: Any) -> None:
+        super().resizeEvent(event)
+        self._clamp_to_screen()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if not self.is_locked and event.button() == Qt.MouseButton.LeftButton:
@@ -1729,6 +1770,14 @@ class HudOverlay(QWidget):
     ) -> None:
         """Update or insert decision card for the corresponding table."""
         table_id = getattr(decision, "table_id", "table_1")
+        if table_id in self._removed_table_ids:
+            return
+        if table_id not in self.managed_tables:
+            self.managed_tables[table_id] = {
+                "search_region": None,
+                "adjust": (0, 0, 1.0, 1.0),
+            }
+            self._update_table_delete_buttons_visibility()
         action = getattr(decision, "action", "WAIT")
         ev_bb = getattr(decision, "ev_bb", None)
         profile_used = getattr(decision, "profile_used", "STANDARD_EXPLOIT")
@@ -1916,6 +1965,7 @@ class HudOverlay(QWidget):
             self.details_widgets[table_id].setVisible(self.show_details and bool(scan_summary))
 
         self.adjustSize()
+        self._clamp_to_screen()
 
     @Slot(str)
     def remove_table(self, table_id: str) -> None:
@@ -1939,3 +1989,4 @@ class HudOverlay(QWidget):
             self.tables_layout.removeWidget(dw)
             dw.deleteLater()
         self.adjustSize()
+        self._clamp_to_screen()

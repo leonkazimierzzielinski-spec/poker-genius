@@ -949,17 +949,29 @@ def test_compute_unclipped_table_rect_wide_monitor_with_right_panel() -> None:
 
 def test_find_golden_rim_and_table_rect() -> None:
     """Verify detection of Stake golden rim ellipse, rejection of false positives, and unclipped rect calculation."""
-    # 1. Synthesize frame with valid golden rim ellipse and blue felt interior
+    # 1. Synthesize frame with valid golden rim table (stadium shape) and blue felt interior
     frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
     frame[:] = (20, 20, 20)
 
-    # Blue felt interior: center (960, 500), axes (550, 280), angle 0
-    # In HSV: blue felt has H in [90, 135], S in [40, 255], V in [30, 255] -> BGR (140, 80, 30)
-    cv2.ellipse(frame, (960, 500), (550, 280), 0, 0, 360, (140, 80, 30), -1)
+    center = (960, 500)
+    w_tbl, h_tbl = 1100, 560
+    cx, cy = center
+    r = h_tbl // 2
+    x1, x2 = cx - w_tbl // 2, cx + w_tbl // 2
+    y1, y2 = cy - r, cy + r
 
-    # Golden rim: outer border drawn with thickness 10
+    # Blue felt interior: center (960, 500), axes (550, 280)
+    # In HSV: blue felt has H in [90, 135], S in [40, 255], V in [30, 255] -> BGR (140, 80, 30)
+    cv2.circle(frame, (x1 + r, cy), r, (140, 80, 30), -1)
+    cv2.circle(frame, (x2 - r, cy), r, (140, 80, 30), -1)
+    cv2.rectangle(frame, (x1 + r, y1), (x2 - r, y2), (140, 80, 30), -1)
+
+    # Golden rim: outer border drawn with thickness 8
     # In HSV: golden/orange has H in [12, 35], S in [50, 255], V in [90, 255] -> BGR (30, 140, 210)
-    cv2.ellipse(frame, (960, 500), (550, 280), 0, 0, 360, (30, 140, 210), 10)
+    cv2.ellipse(frame, (x1 + r, cy), (r, r), 0, 90, 270, (30, 140, 210), 8)
+    cv2.ellipse(frame, (x2 - r, cy), (r, r), 0, -90, 90, (30, 140, 210), 8)
+    cv2.line(frame, (x1 + r, y1), (x2 - r, y1), (30, 140, 210), 8)
+    cv2.line(frame, (x1 + r, y2), (x2 - r, y2), (30, 140, 210), 8)
 
     rim = find_golden_rim(frame)
     assert rim is not None, "Valid golden rim ellipse with blue felt interior must be detected"
@@ -971,7 +983,7 @@ def test_find_golden_rim_and_table_rect() -> None:
 
     # Compute unclipped table rect from rim
     canonical_size = (1757, 997)
-    golden_rim_rel = [0.1816, 0.0963, 0.6460, 0.6780]
+    golden_rim_rel = [0.1802, 0.2075, 0.6402, 0.5630]
     table_rect = compute_table_rect_from_rim(rim, rim_rel=golden_rim_rel, canonical_size=canonical_size)
     tx, ty, tw, th = table_rect
     assert tw > 1600 and tw < 1800
@@ -987,6 +999,44 @@ def test_find_golden_rim_and_table_rect() -> None:
     cv2.ellipse(frame_circle, (960, 500), (350, 350), 0, 0, 360, (140, 80, 30), -1)
     cv2.ellipse(frame_circle, (960, 500), (350, 350), 0, 0, 360, (30, 140, 210), 10)
     assert find_golden_rim(frame_circle) is None, "Circular element (ratio 1.0) must be rejected"
+
+
+def test_find_golden_rim_4arcs_ignores_occluded_avatars() -> None:
+    """Verify 4-arc golden rim detector correctly measures table bounds when avatars & cards occlude felt."""
+    frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
+    center = (960, 500)
+    w_tbl, h_tbl = 1130, 562
+    cx, cy = center
+    r = h_tbl // 2
+    x1, x2 = cx - w_tbl // 2, cx + w_tbl // 2
+    y1, y2 = cy - r, cy + r
+
+    # Blue felt (stadium shape)
+    cv2.circle(frame, (x1 + r, cy), r, (140, 80, 30), -1)
+    cv2.circle(frame, (x2 - r, cy), r, (140, 80, 30), -1)
+    cv2.rectangle(frame, (x1 + r, y1), (x2 - r, y2), (140, 80, 30), -1)
+
+    # Golden rim (8 px thickness)
+    cv2.ellipse(frame, (x1 + r, cy), (r, r), 0, 90, 270, (30, 140, 210), 8)
+    cv2.ellipse(frame, (x2 - r, cy), (r, r), 0, -90, 90, (30, 140, 210), 8)
+    cv2.line(frame, (x1 + r, y1), (x2 - r, y1), (30, 140, 210), 8)
+    cv2.line(frame, (x1 + r, y2), (x2 - r, y2), (30, 140, 210), 8)
+
+    # Severe occlusions: Avatars S1 and S2 at top
+    cv2.rectangle(frame, (cx - 320, cy - 300), (cx - 180, cy - 180), (60, 60, 60), -1)
+    cv2.rectangle(frame, (cx + 180, cy - 300), (cx + 320, cy - 180), (60, 60, 60), -1)
+
+    # Hero cards and large Action Buttons at bottom
+    cv2.rectangle(frame, (cx - 120, cy + 180), (cx + 120, cy + 350), (240, 240, 240), -1)
+    cv2.rectangle(frame, (cx + 150, cy + 200), (cx + 400, cy + 350), (40, 180, 40), -1)
+
+    rim = find_golden_rim(frame)
+    assert rim is not None, "Golden rim must be detected despite occluded avatars and hero cards"
+    rx, ry, rw, rh = rim
+    assert abs(rx - (cx - w_tbl // 2)) <= 2
+    assert abs(ry - (cy - h_tbl // 2)) <= 4
+    assert abs(rw - w_tbl) <= 4
+    assert abs(rh - h_tbl) <= 4
 
 
 def test_opponents_signature_same_vs_different(tmp_path: Path) -> None:
