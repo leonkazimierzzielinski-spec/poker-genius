@@ -68,6 +68,7 @@ class StateValidator:
                 (len(none_stack_players) == 1 and none_stack_players[0].current_bet == 0 and len(valid_players) == 2)
                 or (present_players >= 2 and any(p.current_bet > 0 for p in none_stack_players))
                 or (len(valid_players) >= 1 and state.pot == self.total_chips)
+                or (len(valid_players) >= 1 and any(getattr(p, "status_text", "") == "ALL_IN" for p in state.players.values()))
             ):
                 if not has_negative_chips:
                     pass

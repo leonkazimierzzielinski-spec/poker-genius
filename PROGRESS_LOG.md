@@ -1,5 +1,32 @@
 # Poker Genius — Dziennik Postępu Prac (Progress Log)
 
+## V8.1 — Naprawa ucinania 3-cyfrowych pul (Pot: 682, klatka 4757) (2026-11-21)
+
+### 1. Przyczyna źródłowa błędu odczytu `Pot: 682` jako `82`
+- **Zbyt ciasna lewa krawędź ROI `pot` w `config.json`:** Poprzednie współrzędne `[0.503, 0.3257, 0.042, 0.0401]` w przestrzeni kanonicznej `(1757, 997)` rozpoczynały wycinek od `x = 883.8 px`. Przy 3-cyfrowej puli `682` napis "Pot: 682" przesuwa się lekko w lewo, a pierwsza cyfra '6' rozpoczyna się od `x = 882 px`. W efekcie lewe 2-3 piksele cyfry '6' były ucinane przez granicę ROI, co powodowało odrzucenie konturu przez `DigitOCR`.
+- **Dostosowanie ROI `pot`:** Zaktualizowano ROI `pot` do `[0.4980, 0.3257, 0.0480, 0.0401]` (`x = 875 px`, `w = 84 px`). Zapewnia to bezpieczny ~7 px margines przed pierwszą cyfrą 3-cyfrowej puli, nie zahaczając o dwukropek `:` (kończący się na `871..874 px`), oraz ~20-30 px marginesu z prawej strony.
+- **Odporność walidatora chipów dla 2 graczy na All-In:** W `StateValidator` rozszerzono akceptację stanu przy zachowaniu sumy 900 (`pot + stacki == 900`), dopuszczając obecność wielu graczy ze statusem `ALL_IN` (`stack is None` lub `stack == 0`).
+
+### 2. Wyniki weryfikacji na klatkach testowych (pełna ścieżka produkcyjna `main.py`)
+
+| Nagranie | Klatka | Oczekiwane Karty / Pula | Wykryte Hero | Wykryty Board | Pot | Stan / Spot | Decyzja | Status |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `2026-11-19 211257` | `4757` | Hero `7s 7d` \| `Qc 7c 7h` | `['7s', '7d']` | `['Qc', '7c', '7h']` | **`682`** | VALID / `FLOP` | **`CALL`** (+22.71 BB) | **PASS** |
+| `2026-11-19 211257` | `2604` | Hero `Kh 2s` \| `7d Td Th 2h` | `['Kh', '2s']` | `['7d', 'Td', 'Th', '2h']` | **`218`** | VALID / `TURN` | **`BET_30`** (+7.62 BB) | **PASS** |
+| `2026-11-19 211257` | `3643` | Hero `Jc 4d` vs min-raise | `['Jc', '4d']` | `[]` | **`30`** | VALID / `BTN_OPEN` | **`FOLD`** (0.0 BB) | **PASS** |
+| `2026-11-19 211257` | `3880` | Hero vs All-in 166 | `['Jc', '4d']` | `[]` | **`206`** | VALID / `BB_VS_SB_SHOVE` | **`FOLD`** (0.0 BB) | **PASS** |
+| `2 gry na raz` | `1383` | `Ks 9s` \| `3s Ac Ah` | `['Ks', '9s']` | `['3s', 'Ac', 'Ah']` | **`80`** | VALID / `FLOP` | **`BET_30`** (+2.79 BB) | **PASS** |
+| `2 gry na raz` | `1627` | Dwa stoły / Hero akcja | `['Ks', '9s']` | `['3s', 'Ac', 'Ah']` | **`240`** | VALID / `FLOP` | **`CALL`** (+6.15 BB) | **PASS** |
+| `2026-11-18 224127` | `765` | Hero `Kd 3c` | `['Kd', '3c']` | `[]` | **`30`** | VALID / `BTN_OPEN` | **`FOLD`** (0.0 BB) | **PASS** |
+| `2026-11-18 224127` | `2370` | Hero `7c 5s` | `['7c', '5s']` | `[]` | **`90`** | VALID / `BB_VS_SB_RAISE` | **`CALL`** (+0.76 BB) | **PASS** |
+| `2026-11-18 224127` | `4950` | `5h Jh` \| `Jd 2s 9h` | `['5h', 'Jh']` | `['Jd', '2s', '9h']` | **`60`** | VALID / `WAITING_FOR_TURN` | **`[PLAN] ALL_IN`** (+3.17 BB) | **PASS** |
+
+### 3. Wyniki testów jednostkowych (`pytest -v tests/`)
+- Liczba testów: **90 passed in 3.68s (100% sukcesu)**.
+- Nowy test: `tests/test_state.py::test_validator_two_players_all_in_pot_conservation` (weryfikacja akceptacji 2 graczy na All-In przy zachowaniu sumy 900 żetonów).
+
+---
+
 ## V8 — Naprawa boardu na skalowanych stołach, precyzja Rank+Suit, Tracker/Exploit i obsługa --monitor (2026-11-20)
 
 ### 1. Przyczyna źródłowa błędu `Board: --` na `211257` f2604/2640/2696

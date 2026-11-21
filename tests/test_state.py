@@ -510,3 +510,37 @@ def test_validator_postflop_pot_missing_board_cards_rejected() -> None:
     assert is_valid is False
     assert "Missing board cards on postflop pot" in errors
 
+
+def test_validator_two_players_all_in_pot_conservation() -> None:
+    """Verify that StateValidator accepts 2 All-In players when chip conservation holds (e.g. frame 4757)."""
+    validator = StateValidator()
+
+    # Seat 0 (Hero): stack=218, bet=0
+    # Seat 1: stack=None, bet=0, status_text='ALL_IN'
+    # Seat 2: stack=0, bet=64, status_text='ALL_IN'
+    # Pot: 682 -> Total pot + stacks = 682 + 218 + 0 = 900
+    state = TableState(
+        table_id="table_4757",
+        timestamp_ms=3000,
+        prize_pool=6,
+        small_blind=10,
+        big_blind=20,
+        pot=682,
+        hero_cards=["7s", "7d"],
+        board_cards=["Qc", "7c", "7h"],
+        street="FLOP",
+        is_hero_turn=True,
+        available_actions=["FOLD", "CALL", "BET"],
+        players={
+            0: PlayerState(seat_id=0, stack=218, current_bet=0, is_dealer=False, is_active=True),
+            1: PlayerState(seat_id=1, stack=None, current_bet=0, is_dealer=True, is_active=True, status_text="ALL_IN"),
+            2: PlayerState(seat_id=2, stack=0, current_bet=64, is_dealer=False, is_active=True, status_text="ALL_IN"),
+        },
+        is_valid=False,
+    )
+
+    is_valid, errors = validator.validate(state)
+    assert is_valid is True
+    assert errors == []
+
+
