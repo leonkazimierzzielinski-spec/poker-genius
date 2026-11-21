@@ -562,34 +562,22 @@ class TableTracker:
                     elif not is_new_hand and curr_p.last_reaction_ms is None and prev_p.last_reaction_ms is not None:
                         curr_p.last_reaction_ms = prev_p.last_reaction_ms
 
-        # Check tournament winner
+        # Check tournament winner: strictly requires pot == 0 and winner stack >= 880
         pot_val = int(getattr(state, "pot", 0) or 0)
-        eliminated_count = sum(
-            1 for sid in (0, 1, 2)
-            if self.current_hand.get("players", {}).get(sid, {}).get("eliminated", False)
-        )
         big_stack_p = [
             sid for sid in (0, 1, 2)
             if sid in state.players and (getattr(state.players[sid], "stack", None) or 0) >= 880
         ]
-        if pot_val == 0 and (len(big_stack_p) == 1 or eliminated_count == 2):
-            if len(big_stack_p) == 1:
-                win_sid = big_stack_p[0]
-            else:
-                alive_sids = [
-                    sid for sid, p in state.players.items()
-                    if not self.current_hand.get("players", {}).get(sid, {}).get("eliminated", False)
-                    and (getattr(p, "stack", None) or 0) > 0
-                ]
-                win_sid = alive_sids[0] if alive_sids else 0
-
+        if pot_val == 0 and len(big_stack_p) == 1:
+            win_sid = big_stack_p[0]
             win_p = state.players.get(win_sid)
             win_name = self.current_hand.get("players", {}).get(win_sid, {}).get("name", f"S{win_sid}")
+            final_stk = getattr(win_p, "stack", 900) if win_p else 900
             self.current_hand["tournament_result"] = {
                 "winner_seat": win_sid,
                 "winner_name": win_name,
                 "prize_pool": getattr(state, "prize_pool", None),
-                "final_stack": getattr(win_p, "stack", 900) if win_p else 900,
+                "final_stack": final_stk,
             }
         else:
             self.current_hand.pop("tournament_result", None)

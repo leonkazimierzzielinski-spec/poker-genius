@@ -1,5 +1,27 @@
 # Poker Genius — Dziennik Postępu Prac (Progress Log)
 
+## V15.1 — Hotfix: Rozpoznawanie H2 (likwidacja nakładania kart i próg K), ICM 50x (Stake JAQKPOT!) oraz Warunek Końca Stołu >=880 Żetonów (2026-11-22)
+
+### 1. Wdrożone poprawki
+1. **Likwidacja nakładania się kart Hero i poprawa rozpoznawania `H2` (`config.json`, `vision/card_recognizer.py`):**
+   - **Brak kolizji krawędzi:** w `config.json` przesunięto lewą krawędź `hero_card_2` z `0.4950` na `0.4985` oraz szerokość z `0.0420` na `0.0415` (`[0.4985, 0.6744, 0.0415, 0.0880]`). Usunięto 4-pikselowe nakładanie się z prawą krawędzią `hero_card_1` (`0.4585 + 0.0405 = 0.4990`), dzięki czemu ciemna ramka lewej karty nie zaburza segmentacji znaków na prawej karcie (np. pochylone `K♦`).
+   - **Adaptacyjny próg akceptacji kart Hero:** w `vision/card_recognizer.py` dla kart gracza (`is_hero == True`), gdy wykryto jednoznaczną grupę koloru (`RED`/`BLACK`) i `s_score >= 0.60`, obniżono efektywny próg akceptacji `eff_thresh` z `0.70` na `0.64`, zapewniając stabilne czytanie trudniejszych rang (np. `K`) bez fałszywych dopasowań.
+2. **Korekta progu aktywacji ICM ze strukturą wypłat Stake JAQKPOT! (`strategy/icm.py`, `tests/test_strategy.py`):**
+   - W Stake Spin&Go (JAQKPOT!) mnożniki `2x, 3x, 5x, 10x` to format Winner-Takes-All (100% puli dla 1. miejsca = czyste cEV). 3 miejsca płatne (80% / 10% / 10%) obowiązują dopiero od mnożnika `50x`.
+   - W `strategy/icm.py` próg `is_icm_active` podniesiono z `5.0 * buy_in` na `50.0 * buy_in`, a podział wypłat w `get_payout_splits` dla `50x+` ustawiono na `[0.80, 0.10, 0.10]`. Zapobiega to nadmiernemu, błędnemu zawężaniu zakresów i pasowaniu w turniejach 5x i 10x.
+3. **Pancerny warunek końca stołu `>= 880` żetonów (`state/tracker.py`, `tests/test_state.py`):**
+   - W `state/tracker.py` wyeliminowano przedwczesny komunikat `🏆 KONIEC STOŁU` wyzwalany, gdy rywal miał status `OUT`, ale ocalały gracz posiadał jedynie część żetonów (np. 620).
+   - Wprowadzono twardy warunek `final_stack >= 880` (przy `pot == 0` i braku aktywnych rywali), gwarantujący, że turniej kończy się wyłącznie po realnej konsolidacji 900 żetonów.
+
+### 2. Wyniki testów jednostkowych (`pytest -v tests/`)
+- Liczba testów: **133 passed in 7.84s (100% sukcesu)**.
+- Nowe i zaktualizowane testy:
+  1. `tests/test_strategy.py::test_icm_bubble_factor_activates_at_5x_and_above`: potwierdza brak ICM dla mnożników `2x, 3x, 5x, 10x` (czyste cEV) oraz poprawną aktywację (`BF > 1.0`, split `[0.80, 0.10, 0.10]`) przy `50x` (`prize_pool=100, buy_in=2`).
+  2. `tests/test_state.py::test_tracker_no_false_tournament_end_below_880_stack`: weryfikuje brak przedwczesnego `tournament_result` przy stacku 620 żetonów i puli 0.
+- Weryfikacja nagrań testowych: potwierdzona wysoka skuteczność i brak regresji na klatkach z nagrań (`211257`, `224127`, `2 gry na raz`).
+
+---
+
 ## V15 — Nowy Silnik Strategii (Range-vs-Range + Pełny Preflop 0–15 BB + ICM od 5x), Alternatywa na HUD, Stabilność Ts oraz Zbiorczy Raport Wszystkich Gier (2026-11-21)
 
 ### 1. Wdrożone zmiany i nowa architektura

@@ -106,15 +106,15 @@ def compute_bubble_factor(
 
 
 def is_icm_active(num_alive: int, prize_pool: float | int, buy_in: float | int) -> bool:
-    """Check if ICM model is active for the current tournament situation."""
+    """Check if ICM model is active for the current tournament situation (50x+)."""
     if num_alive != 3:
         return False
     bi = float(buy_in) if buy_in and buy_in > 0 else 2.0
-    return float(prize_pool) >= 5.0 * bi
+    return float(prize_pool) >= 50.0 * bi
 
 
 def get_payout_splits(prize_pool: float | int, buy_in: float | int) -> list[float]:
     """Return payout shares [1st, 2nd, 3rd] based on prize multiplier."""
     if is_icm_active(3, prize_pool, buy_in):
-        return [0.75, 0.25, 0.0]
+        return [0.80, 0.10, 0.10]
     return [1.0, 0.0, 0.0]

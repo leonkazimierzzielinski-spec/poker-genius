@@ -551,23 +551,25 @@ def test_bb_vs_limp_deep_14bb_q8s_not_all_in():
 
 
 def test_icm_bubble_factor_activates_at_5x_and_above():
-    """Verify ICM Bubble Factor is 1.0 (inactive) in 2x/3x, and > 1.0 in 5x+ with 3 players alive."""
+    """Verify ICM Bubble Factor is 1.0 (inactive) in 2x/3x/5x/10x, and > 1.0 in 50x+ with 3 players alive."""
     from strategy.icm import compute_bubble_factor, is_icm_active, get_payout_splits
-    # 2x / 3x prize pool: winner take all
+    # 2x, 3x, 5x, 10x prize pool: winner take all (clean cEV)
     assert not is_icm_active(num_alive=3, prize_pool=4, buy_in=2)
     assert not is_icm_active(num_alive=3, prize_pool=6, buy_in=2)
-    payouts_2x = get_payout_splits(prize_pool=4, buy_in=2)
-    assert payouts_2x == [1.0, 0.0, 0.0]
-    bf_2x = compute_bubble_factor(300, 300, 300, payouts_2x)
-    assert bf_2x == pytest.approx(1.0)
+    assert not is_icm_active(num_alive=3, prize_pool=10, buy_in=2)
+    assert not is_icm_active(num_alive=3, prize_pool=20, buy_in=2)
+    payouts_10x = get_payout_splits(prize_pool=20, buy_in=2)
+    assert payouts_10x == [1.0, 0.0, 0.0]
+    bf_10x = compute_bubble_factor(300, 300, 300, payouts_10x)
+    assert bf_10x == pytest.approx(1.0)
 
-    # 5x+ prize pool: 2nd place pays (e.g. 75% / 25%)
-    assert is_icm_active(num_alive=3, prize_pool=10, buy_in=2)
-    payouts_5x = get_payout_splits(prize_pool=10, buy_in=2)
-    assert payouts_5x == [0.75, 0.25, 0.0]
-    bf_5x = compute_bubble_factor(300, 300, 300, payouts_5x)
-    assert bf_5x > 1.0, f"Expected Bubble Factor > 1.0, got {bf_5x}"
-    assert bf_5x == pytest.approx(1.3333, abs=0.01)
+    # 50x+ prize pool: 3 places pay [0.80, 0.10, 0.10]
+    assert is_icm_active(num_alive=3, prize_pool=100, buy_in=2)
+    payouts_50x = get_payout_splits(prize_pool=100, buy_in=2)
+    assert payouts_50x == [0.80, 0.10, 0.10]
+    bf_50x = compute_bubble_factor(300, 300, 300, payouts_50x)
+    assert bf_50x > 1.0, f"Expected Bubble Factor > 1.0, got {bf_50x}"
+    assert bf_50x == pytest.approx(1.4286, abs=0.01)
 
 
 def test_decision_populates_alt_action_within_0_05_bb():

@@ -278,11 +278,15 @@ class CardRecognizer:
         for r_name, r_score in rank_scores.items():
             for s_name, s_score in suit_scores.items():
                 comb = 0.65 * r_score + 0.35 * s_score
-                candidates_list.append((r_name + s_name, comb))
+                if is_hero and color_group in ("RED", "BLACK") and s_score >= 0.60:
+                    cand_thresh = min(self.threshold, 0.64)
+                else:
+                    cand_thresh = min(self.threshold, 0.70)
+                if comb >= cand_thresh:
+                    candidates_list.append((r_name + s_name, comb))
 
         candidates_list.sort(key=lambda x: x[1], reverse=True)
-        eff_thresh = min(self.threshold, 0.70)
-        return [(c, s) for c, s in candidates_list if s >= eff_thresh][:top_k]
+        return candidates_list[:top_k]
 
     def recognize_candidates(
         self,

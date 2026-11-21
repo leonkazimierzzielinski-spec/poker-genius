@@ -1601,6 +1601,39 @@ def test_export_games_md_combines_multiple_games(tmp_path) -> None:
     assert "game_20261121_121000_table_1_prize6.md" in report_text
 
 
+def test_tracker_no_false_tournament_end_below_880_stack() -> None:
+    """Verify that S0=620, pot=0 with temporary S2=0/OUT does NOT set tournament_result when stack < 880."""
+    tracker = TableTracker("table_1")
+
+    # Hand #18 scenario: S1 was eliminated earlier (stack 0, inactive),
+    # S2 lost an all-in and temporarily shows stack=0 / OUT,
+    # but Hero S0 only has stack=620 (not >= 880), opponent S2 still has chips (280) in reality.
+    st = TableState(
+        table_id="table_1",
+        timestamp_ms=1000,
+        prize_pool=6,
+        small_blind=10,
+        big_blind=20,
+        pot=0,
+        hero_cards=["Kh", "Qh"],
+        board_cards=["Ah", "7c", "2d", "8s", "Jh"],
+        street="RIVER",
+        is_hero_turn=False,
+        available_actions=[],
+        players={
+            0: PlayerState(seat_id=0, stack=620, current_bet=0, is_dealer=True, is_active=True),
+            1: PlayerState(seat_id=1, stack=0, current_bet=0, is_dealer=False, is_active=False),
+            2: PlayerState(seat_id=2, stack=0, current_bet=0, is_dealer=False, is_active=False),
+        },
+        is_valid=True,
+    )
+    tracker.update(st)
+
+    # Winner MUST have stack >= 880, so 620 does NOT trigger tournament_result
+    assert tracker.current_hand.get("tournament_result") is None
+
+
+
 
 
 
