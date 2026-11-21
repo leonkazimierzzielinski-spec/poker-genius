@@ -323,6 +323,7 @@ class HudBridge(QObject):
     buy_in_changed = Signal(float)
     action_bar_updated = Signal(object)
     hand_summary_updated = Signal(str, object)
+    snapshots_toggled = Signal(bool)
 
 
 class RegionSelectorOverlay(QWidget):
@@ -860,6 +861,7 @@ class HudOverlay(QWidget):
         self.table_scale_y: float = 1.0
 
         self.is_drag_mode: bool = False
+        self.snapshots_enabled: bool = True
         self._drag_pos: QPoint | None = None
         self._selector: RegionSelectorOverlay | None = None
         self._debug_overlay: DebugRoiOverlay | None = None
@@ -1011,6 +1013,13 @@ class HudOverlay(QWidget):
         self.btn_debug_overlay.setVisible(self.show_details)
         buy_in_layout.addWidget(self.btn_debug_overlay)
 
+        self.btn_snapshots = QPushButton("📷", self.buy_in_panel)
+        self.btn_snapshots.setStyleSheet(btn_style)
+        self.btn_snapshots.setToolTip("Włącz / wyłącz zapis zdjęć (snapshots)")
+        self.btn_snapshots.clicked.connect(self.toggle_snapshots)
+        self.btn_snapshots.setVisible(self.show_details)
+        buy_in_layout.addWidget(self.btn_snapshots)
+
         # Legacy backward-compat buttons
         self.btn_select_rect = QPushButton("📐 Obszar", self.buy_in_panel)
         self.btn_select_rect.setStyleSheet(btn_style)
@@ -1027,6 +1036,7 @@ class HudOverlay(QWidget):
         self.buy_in_panel.setVisible(self.show_details)
         self.normal_hud_layout.addWidget(self.buy_in_panel)
         self._update_buy_in_buttons_ui()
+        self._update_snapshots_button_ui()
 
         # Calibration Panel (DEFAULT HIDDEN! Opens via '✎ Kalibruj')
         self.calibration_panel = QFrame(self.normal_hud_widget)
@@ -1355,6 +1365,8 @@ class HudOverlay(QWidget):
             self.buy_in_panel.setVisible(self.show_details)
         if hasattr(self, "btn_debug_overlay"):
             self.btn_debug_overlay.setVisible(self.show_details)
+        if hasattr(self, "btn_snapshots"):
+            self.btn_snapshots.setVisible(self.show_details)
         # Never automatically open calibration panel when toggling details
         if not self.show_details and self.editing_table_id is None:
             if hasattr(self, "calibration_panel"):
@@ -1378,6 +1390,31 @@ class HudOverlay(QWidget):
             )
         self.adjustSize()
         return self.show_details
+
+    def toggle_snapshots(self) -> bool:
+        """Toggle lightweight snapshot recording."""
+        self.snapshots_enabled = not self.snapshots_enabled
+        self._update_snapshots_button_ui()
+        if self.bridge is not None and hasattr(self.bridge, "snapshots_toggled"):
+            self.bridge.snapshots_toggled.emit(self.snapshots_enabled)
+        return self.snapshots_enabled
+
+    def _update_snapshots_button_ui(self) -> None:
+        """Update snapshot button appearance based on current toggle state."""
+        if not hasattr(self, "btn_snapshots"):
+            return
+        if self.snapshots_enabled:
+            self.btn_snapshots.setStyleSheet(
+                "background-color: #0284c7; color: #ffffff; border: 1px solid #38bdf8; "
+                "border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: bold;"
+            )
+            self.btn_snapshots.setToolTip("Zapis zrzutów: WŁĄCZONY (kliknij aby wyłączyć)")
+        else:
+            self.btn_snapshots.setStyleSheet(
+                "background-color: #1e293b; color: #64748b; border: 1px solid #334155; "
+                "border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: bold;"
+            )
+            self.btn_snapshots.setToolTip("Zapis zrzutów: WYŁĄCZONY (kliknij aby włączyć)")
 
     def toggle_debug_overlay(self) -> bool:
         """Toggle visibility of DebugRoiOverlay."""

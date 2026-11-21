@@ -422,4 +422,101 @@ def test_quantize_sizing_to_bb_and_all_in() -> None:
     assert chips == 0
 
 
+def test_decision_lock_confirms_and_freezes_until_state_change() -> None:
+    """Verify DecisionLock 2-frame confirmation, caching until change, and reset."""
+    from strategy.decision_lock import DecisionLock, compute_decision_fingerprint
+    from core.contracts import TableState, PlayerState, Decision
+
+    lock = DecisionLock(confirm_frames=2)
+
+    s1 = TableState(
+        table_id="t1",
+        timestamp_ms=1000,
+        prize_pool=4,
+        small_blind=10,
+        big_blind=20,
+        pot=30,
+        hero_cards=["Ah", "Kd"],
+        board_cards=[],
+        street="PREFLOP",
+        is_hero_turn=True,
+        available_actions=["FOLD", "ALL_IN"],
+        players={
+            0: PlayerState(seat_id=0, stack=290, current_bet=10),
+            1: PlayerState(seat_id=1, stack=280, current_bet=20),
+        },
+        is_valid=True,
+    )
+    fp1 = compute_decision_fingerprint(s1)
+
+    assert lock.get_locked(fp1) is None
+    # 1st observation: not confirmed yet
+    assert lock.observe_and_should_compute(fp1) is False
+    assert lock.get_locked(fp1) is None
+
+    # 2nd observation: confirmed!
+    assert lock.observe_and_should_compute(fp1) is True
+
+    dec1 = Decision(
+        table_id="t1",
+        action="ALL_IN",
+        ev_bb=2.5,
+        confidence=0.95,
+        profile_used="STANDARD",
+        reason="Test",
+    )
+    lock.lock(fp1, dec1)
+
+    # Now fp1 is locked
+    assert lock.get_locked(fp1) is dec1
+    # Subsequent observations of the same fp return False
+    assert lock.observe_and_should_compute(fp1) is False
+    assert lock.get_locked(fp1) is dec1
+
+    # State changes to flop (fp2)
+    s2 = TableState(
+        table_id="t1",
+        timestamp_ms=2000,
+        prize_pool=4,
+        small_blind=10,
+        big_blind=20,
+        pot=70,
+        hero_cards=["Ah", "Kd"],
+        board_cards=["7c", "8d", "2h"],
+        street="FLOP",
+        is_hero_turn=True,
+        available_actions=["CHECK", "BET_30"],
+        players={
+            0: PlayerState(seat_id=0, stack=270, current_bet=0),
+            1: PlayerState(seat_id=1, stack=260, current_bet=0),
+        },
+        is_valid=True,
+    )
+    fp2 = compute_decision_fingerprint(s2)
+    assert fp2 != fp1
+
+    # Locked decision for fp2 does not exist
+    assert lock.get_locked(fp2) is None
+    # 1st observation of fp2: pending
+    assert lock.observe_and_should_compute(fp2) is False
+    # 2nd observation of fp2: confirmed!
+    assert lock.observe_and_should_compute(fp2) is True
+
+    dec2 = Decision(
+        table_id="t1",
+        action="BET_30",
+        ev_bb=1.2,
+        confidence=0.90,
+        profile_used="STANDARD",
+        reason="Flop bet",
+    )
+    lock.lock(fp2, dec2)
+    assert lock.get_locked(fp2) is dec2
+
+    # Reset clears all locks
+    lock.reset()
+    assert lock.get_locked(fp2) is None
+
+
+
 

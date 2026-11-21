@@ -89,9 +89,12 @@ except ImportError:
 try:
     from strategy.decision_maker import DecisionMaker
     from strategy.simplifier import quantize_sizing_to_bb
+    from strategy.decision_lock import DecisionLock, compute_decision_fingerprint
 except ImportError:
     DecisionMaker = None
     quantize_sizing_to_bb = None
+    DecisionLock = None
+    compute_decision_fingerprint = None
 
 # UI module
 try:
@@ -778,6 +781,8 @@ def processing_loop(
         }
     }
     last_idle_emit: float = 0.0
+    decision_locks: dict[str, Any] = {}
+    last_active_decisions: dict[str, Any] = {}
 
     def _on_manual_rect(rect: Any) -> None:
         if "table_1" in managed_tables:
@@ -796,7 +801,15 @@ def processing_loop(
         managed_tables.pop(tid, None)
         if validator is not None:
             validator.reset_table(tid)
+        if hand_recorder is not None and tid in trackers:
+            try:
+                hand_recorder.record_hand(trackers[tid].get_hand_summary())
+                hand_recorder.finalize_game(tid)
+            except Exception:
+                pass
         trackers.pop(tid, None)
+        decision_locks.pop(tid, None)
+        last_active_decisions.pop(tid, None)
 
     def _on_table_adjust_5arg(tid: str, dx: int, dy: int, sx: float, sy: float) -> None:
         if tid in managed_tables:
@@ -1070,7 +1083,15 @@ def processing_loop(
                                 if match_score < 0.85:
                                     if validator is not None:
                                         validator.reset_table(table_id)
+                                    if hand_recorder is not None and table_id in trackers:
+                                        try:
+                                            hand_recorder.record_hand(trackers[table_id].get_hand_summary())
+                                            hand_recorder.finalize_game(table_id)
+                                        except Exception:
+                                            pass
                                     trackers.pop(table_id, None)
+                                    decision_locks.pop(table_id, None)
+                                    last_active_decisions.pop(table_id, None)
                             managed_tables[table_id]["last_opponents_sig"] = opp_sig
                     except Exception:
                         pass
@@ -1080,7 +1101,15 @@ def processing_loop(
                     pipeline.last_evicted_table_id = None
                     if validator is not None:
                         validator.reset_table(resolved_tid)
+                    if hand_recorder is not None and resolved_tid in trackers:
+                        try:
+                            hand_recorder.record_hand(trackers[resolved_tid].get_hand_summary())
+                            hand_recorder.finalize_game(resolved_tid)
+                        except Exception:
+                            pass
                     trackers.pop(resolved_tid, None)
+                    decision_locks.pop(resolved_tid, None)
+                    last_active_decisions.pop(resolved_tid, None)
 
                 validation_errors: list[str] = []
                 if validator is not None:
@@ -1100,7 +1129,15 @@ def processing_loop(
                         ]
                         if sb == 10 and bb == 20 and len(stacks) >= 2 and all(200 <= s <= 400 for s in stacks):
                             validator.reset_table(resolved_tid)
+                            if hand_recorder is not None and resolved_tid in trackers:
+                                try:
+                                    hand_recorder.record_hand(trackers[resolved_tid].get_hand_summary())
+                                    hand_recorder.finalize_game(resolved_tid)
+                                except Exception:
+                                    pass
                             trackers.pop(resolved_tid, None)
+                            decision_locks.pop(resolved_tid, None)
+                            last_active_decisions.pop(resolved_tid, None)
                             is_valid, validation_errors = validator.validate(state)
                     state.is_valid = is_valid
                 else:
@@ -1111,10 +1148,39 @@ def processing_loop(
                     if resolved_tid not in trackers:
                         trackers[resolved_tid] = TableTracker(resolved_tid)
                     state, events = trackers[resolved_tid].update(state)
-                    if any(getattr(e, "event_type", "") == "NEW_HAND" for e in events) and getattr(trackers[resolved_tid], "last_completed_hand", None):
+                    if any(getattr(e, "event_type", "") == "NEW_HAND" for e in events):
+                        if resolved_tid in decision_locks:
+                            decision_locks[resolved_tid].reset()
+                        last_active_decisions.pop(resolved_tid, None)
+                        if getattr(trackers[resolved_tid], "last_completed_hand", None):
+                            if hand_recorder is not None:
+                                try:
+                                    prev_h_num = getattr(trackers[resolved_tid].last_completed_hand, "get", lambda k, d=1: 1)("hand_number", 1)
+                                    snap_rel = hand_recorder.save_snapshot(
+                                        frame, table_rect, resolved_tid, prev_h_num, "showdown"
+                                    )
+                                    if snap_rel:
+                                        trackers[resolved_tid].last_completed_hand.setdefault("snapshots", []).append(snap_rel)
+                                    hand_recorder.record_hand(trackers[resolved_tid].last_completed_hand)
+                                except Exception:
+                                    pass
+                    if any(getattr(e, "event_type", "") == "STREET_CHANGE" for e in events) and hand_recorder is not None:
+                        to_st = getattr(state, "street", "").lower()
+                        if to_st in ("flop", "turn", "river"):
+                            try:
+                                snap_rel = hand_recorder.save_snapshot(
+                                    frame, table_rect, resolved_tid, trackers[resolved_tid].hand_number, f"street_{to_st}"
+                                )
+                                if snap_rel and trackers[resolved_tid].current_hand:
+                                    trackers[resolved_tid].current_hand.setdefault("snapshots", []).append(snap_rel)
+                            except Exception:
+                                pass
+                    if trackers[resolved_tid].current_hand.get("tournament_result") and not trackers[resolved_tid].current_hand.get("_game_finalized"):
+                        trackers[resolved_tid].current_hand["_game_finalized"] = True
                         if hand_recorder is not None:
                             try:
-                                hand_recorder.record_hand(trackers[resolved_tid].last_completed_hand)
+                                hand_recorder.record_hand(trackers[resolved_tid].current_hand)
+                                hand_recorder.finalize_game(resolved_tid, prize_pool=state.prize_pool)
                             except Exception:
                                 pass
 
@@ -1124,137 +1190,169 @@ def processing_loop(
                 is_hero_turn = getattr(state, "is_hero_turn", False)
                 hero_cards = getattr(state, "hero_cards", [])
                 is_preview_candidate = is_valid and len(hero_cards) == 2 and not is_hero_turn
+                just_locked_decision = False
 
-                if is_preview_candidate:
-                    # Preview mode: pre-compute recommendation before Hero's turn starts
-                    board_cards = getattr(state, "board_cards", [])
-                    if len(board_cards) == 0:
-                        preview_street = "PREFLOP"
-                    elif len(board_cards) == 3:
-                        preview_street = "FLOP"
-                    elif len(board_cards) == 4:
-                        preview_street = "TURN"
-                    elif len(board_cards) >= 5:
-                        preview_street = "RIVER"
-                    else:
-                        preview_street = "PREFLOP"
+                if is_valid and len(hero_cards) == 2 and (is_hero_turn or is_preview_candidate):
+                    if is_preview_candidate:
+                        # Preview mode: pre-compute recommendation before Hero's turn starts
+                        board_cards = getattr(state, "board_cards", [])
+                        if len(board_cards) == 0:
+                            preview_street = "PREFLOP"
+                        elif len(board_cards) == 3:
+                            preview_street = "FLOP"
+                        elif len(board_cards) == 4:
+                            preview_street = "TURN"
+                        elif len(board_cards) >= 5:
+                            preview_street = "RIVER"
+                        else:
+                            preview_street = "PREFLOP"
 
-                    players = getattr(state, "players", {})
-                    hero_player = players.get(0)
-                    hero_bet = getattr(hero_player, "current_bet", 0) if hero_player else 0
-                    max_opp_bet = max(
-                        (getattr(p, "current_bet", 0) for sid, p in players.items() if sid != 0),
-                        default=0,
-                    )
-                    if max_opp_bet > hero_bet:
-                        preview_actions = ["FOLD", "CALL", "RAISE", "ALL_IN"]
-                    else:
-                        preview_actions = ["CHECK", "BET_30", "ALL_IN"]
-
-                    sim_state = copy(state)
-                    sim_state.street = preview_street
-                    sim_state.available_actions = preview_actions
-                    sim_state.is_hero_turn = True
-
-                    candidate_evs, spot = evaluate_candidates(
-                        sim_state, preflop_engine, flop_db, mc_calc
-                    )
-                    if decision_maker is not None and hasattr(decision_maker, "decide"):
-                        decision = decision_maker.decide(
-                            sim_state, candidate_evs, spot=spot, allow_preview=True
+                        players = getattr(state, "players", {})
+                        hero_player = players.get(0)
+                        hero_bet = getattr(hero_player, "current_bet", 0) if hero_player else 0
+                        max_opp_bet = max(
+                            (getattr(p, "current_bet", 0) for sid, p in players.items() if sid != 0),
+                            default=0,
                         )
+                        if max_opp_bet > hero_bet:
+                            preview_actions = ["FOLD", "CALL", "RAISE", "ALL_IN"]
+                        else:
+                            preview_actions = ["CHECK", "BET_30", "ALL_IN"]
+
+                        sim_state = copy(state)
+                        sim_state.street = preview_street
+                        sim_state.available_actions = preview_actions
+                        sim_state.is_hero_turn = True
+                        eval_state = sim_state
                     else:
-                        best_act = max(candidate_evs, key=candidate_evs.get) if candidate_evs else "FOLD"
-                        decision = Decision(
-                            table_id=resolved_tid,
-                            action=best_act,
-                            ev_bb=candidate_evs.get(best_act, 0.0),
-                            confidence=0.95,
-                            profile_used="STANDARD_EXPLOIT",
-                            reason=f"[PLAN] Preview plan ({spot})",
-                        )
-                else:
-                    candidate_evs, spot = evaluate_candidates(
-                        state, preflop_engine, flop_db, mc_calc
-                    )
-                    if decision_maker is not None and hasattr(decision_maker, "decide"):
-                        decision = decision_maker.decide(
-                            state, candidate_evs, spot=spot, allow_preview=False
-                        )
+                        eval_state = state
+
+                    confirm_count = 2 if is_live else 1
+                    if DecisionLock is not None and compute_decision_fingerprint is not None:
+                        fp = compute_decision_fingerprint(eval_state, is_preview=is_preview_candidate)
+                        lock = decision_locks.setdefault(resolved_tid, DecisionLock(confirm_frames=confirm_count))
+                        cached_decision = lock.get_locked(fp)
                     else:
-                        if (
-                            not getattr(state, "is_valid", False)
-                            or not is_hero_turn
-                            or getattr(state, "street", "") == "WAITING_FOR_TURN"
-                        ):
-                            decision = Decision(
-                                table_id=resolved_tid,
-                                action="WAIT",
-                                ev_bb=None,
-                                confidence=1.0,
-                                profile_used="STANDARD_EXPLOIT",
-                                reason="Waiting for Hero turn",
+                        fp = None
+                        lock = None
+                        cached_decision = None
+
+                    if cached_decision is not None:
+                        decision = cached_decision
+                    elif lock is None or lock.observe_and_should_compute(fp):
+                        candidate_evs, spot = evaluate_candidates(
+                            eval_state, preflop_engine, flop_db, mc_calc
+                        )
+                        if decision_maker is not None and hasattr(decision_maker, "decide"):
+                            decision = decision_maker.decide(
+                                eval_state, candidate_evs, spot=spot, allow_preview=is_preview_candidate
                             )
                         else:
                             best_act = max(candidate_evs, key=candidate_evs.get) if candidate_evs else "FOLD"
                             best_ev = candidate_evs.get(best_act, 0.0) if candidate_evs else 0.0
+                            pfx = "[PLAN] Preview plan" if is_preview_candidate else "Candidate EV"
                             decision = Decision(
                                 table_id=resolved_tid,
                                 action=best_act,
                                 ev_bb=best_ev,
                                 confidence=0.95,
                                 profile_used="STANDARD_EXPLOIT",
-                                reason=f"Candidate EV ({spot})",
+                                reason=f"{pfx} ({spot})",
                             )
 
-                # Sizing quantization in multiples of BB or ALL-IN
-                hero_p_chips = getattr(state, "players", {}).get(0)
-                hero_stk_chips = getattr(hero_p_chips, "stack", 0) or 0
-                hero_bet_chips = getattr(hero_p_chips, "current_bet", 0) or 0
-                bb_val_chips = getattr(state, "big_blind", 20) or 20
-                pot_val_chips = getattr(state, "pot", 0) or 0
-                eff_stk_chips = int(round(effective_bb * bb_val_chips)) if "effective_bb" in locals() and effective_bb is not None else hero_stk_chips
-                max_opp_bet_chips = max(
-                    (getattr(p, "current_bet", 0) or 0 for sid, p in getattr(state, "players", {}).items() if sid != 0),
-                    default=0,
-                )
+                        # Sizing quantization in multiples of BB or ALL-IN
+                        hero_p_chips = getattr(state, "players", {}).get(0)
+                        hero_stk_chips = getattr(hero_p_chips, "stack", 0) or 0
+                        hero_bet_chips = getattr(hero_p_chips, "current_bet", 0) or 0
+                        bb_val_chips = getattr(state, "big_blind", 20) or 20
+                        pot_val_chips = getattr(state, "pot", 0) or 0
+                        eff_stk_chips = int(round(effective_bb * bb_val_chips)) if "effective_bb" in locals() and effective_bb is not None else hero_stk_chips
+                        max_opp_bet_chips = max(
+                            (getattr(p, "current_bet", 0) or 0 for sid, p in getattr(state, "players", {}).items() if sid != 0),
+                            default=0,
+                        )
 
-                if decision.action == "MIN_RAISE":
-                    min_legal_chips = max(2 * bb_val_chips, max_opp_bet_chips * 2)
-                    min_mult = max(2, int((min_legal_chips + bb_val_chips - 1) // bb_val_chips))
-                    if quantize_sizing_to_bb is not None:
-                        mode, bb_mult, chips = quantize_sizing_to_bb(
-                            min_mult * bb_val_chips, bb_val_chips, hero_stk_chips, eff_stk_chips, min_bb_mult=min_mult
+                        if decision.action == "MIN_RAISE":
+                            min_legal_chips = max(2 * bb_val_chips, max_opp_bet_chips * 2)
+                            min_mult = max(2, int((min_legal_chips + bb_val_chips - 1) // bb_val_chips))
+                            if quantize_sizing_to_bb is not None:
+                                mode, bb_mult, chips = quantize_sizing_to_bb(
+                                    min_mult * bb_val_chips, bb_val_chips, hero_stk_chips, eff_stk_chips, min_bb_mult=min_mult
+                                )
+                            else:
+                                mode, bb_mult, chips = ("BB_MULT", min_mult, min_mult * bb_val_chips)
+                            if mode == "ALL_IN":
+                                decision.action = "ALL_IN"
+                                decision.sizing_bb = None
+                                decision.sizing_chips = chips
+                            else:
+                                decision.sizing_bb = bb_mult
+                                decision.sizing_chips = chips
+                        elif decision.action == "BET_30":
+                            if quantize_sizing_to_bb is not None:
+                                mode, bb_mult, chips = quantize_sizing_to_bb(
+                                    0.30 * pot_val_chips, bb_val_chips, hero_stk_chips, eff_stk_chips, min_bb_mult=1
+                                )
+                            else:
+                                mode, bb_mult, chips = ("BB_MULT", max(1, int(round(0.30 * pot_val_chips / bb_val_chips))), int(round(0.30 * pot_val_chips)))
+                            if mode == "ALL_IN":
+                                decision.action = "ALL_IN"
+                                decision.sizing_bb = None
+                                decision.sizing_chips = chips
+                            else:
+                                decision.sizing_bb = bb_mult
+                                decision.sizing_chips = chips
+                        elif decision.action == "ALL_IN":
+                            decision.sizing_bb = None
+                            decision.sizing_chips = hero_stk_chips
+                        elif decision.action == "CALL":
+                            decision.sizing_bb = None
+                            decision.sizing_chips = max(0, max_opp_bet_chips - hero_bet_chips)
+                        else:
+                            decision.sizing_bb = None
+                            decision.sizing_chips = None
+
+                        if lock is not None and fp is not None:
+                            lock.lock(fp, decision)
+                        just_locked_decision = True
+                        last_active_decisions[resolved_tid] = decision
+                    else:
+                        prev_dec = last_active_decisions.get(resolved_tid)
+                        if prev_dec is not None:
+                            decision = prev_dec
+                        else:
+                            decision = Decision(
+                                table_id=resolved_tid,
+                                action="WAIT",
+                                ev_bb=None,
+                                confidence=1.0,
+                                profile_used="STANDARD_EXPLOIT",
+                                reason="Skanowanie sytuacji...",
+                            )
+                else:
+                    decision = Decision(
+                        table_id=resolved_tid,
+                        action="WAIT",
+                        ev_bb=None,
+                        confidence=1.0,
+                        profile_used="STANDARD_EXPLOIT",
+                        reason="Waiting for Hero turn",
+                    )
+                    if resolved_tid in decision_locks:
+                        decision_locks[resolved_tid].reset()
+                    last_active_decisions.pop(resolved_tid, None)
+
+                # Save decision snapshot on locked decision during hero turn
+                if just_locked_decision and is_hero_turn and hand_recorder is not None:
+                    try:
+                        cur_h_num = getattr(trackers.get(resolved_tid), "hand_number", 1)
+                        snap_rel = hand_recorder.save_snapshot(
+                            frame, table_rect, resolved_tid, cur_h_num, f"decision_{getattr(state, 'street', 'flop').lower()}"
                         )
-                    else:
-                        mode, bb_mult, chips = ("BB_MULT", min_mult, min_mult * bb_val_chips)
-                    if mode == "ALL_IN":
-                        decision.action = "ALL_IN"
-                        decision.sizing_bb = None
-                        decision.sizing_chips = chips
-                    else:
-                        decision.sizing_bb = bb_mult
-                        decision.sizing_chips = chips
-                elif decision.action == "BET_30":
-                    if quantize_sizing_to_bb is not None:
-                        mode, bb_mult, chips = quantize_sizing_to_bb(
-                            0.30 * pot_val_chips, bb_val_chips, hero_stk_chips, eff_stk_chips, min_bb_mult=1
-                        )
-                    else:
-                        mode, bb_mult, chips = ("BB_MULT", max(1, int(round(0.30 * pot_val_chips / bb_val_chips))), int(round(0.30 * pot_val_chips)))
-                    if mode == "ALL_IN":
-                        decision.action = "ALL_IN"
-                        decision.sizing_bb = None
-                        decision.sizing_chips = chips
-                    else:
-                        decision.sizing_bb = bb_mult
-                        decision.sizing_chips = chips
-                elif decision.action == "ALL_IN":
-                    decision.sizing_bb = None
-                    decision.sizing_chips = hero_stk_chips
-                elif decision.action == "CALL":
-                    decision.sizing_bb = None
-                    decision.sizing_chips = max(0, max_opp_bet_chips - hero_bet_chips)
+                        if snap_rel and getattr(trackers.get(resolved_tid), "current_hand", None):
+                            trackers[resolved_tid].current_hand.setdefault("snapshots", []).append(snap_rel)
+                    except Exception:
+                        pass
                 else:
                     decision.sizing_bb = None
                     decision.sizing_chips = None
@@ -1567,6 +1665,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=0,
         help="Monitor index for live dxcam capture (0 = primary, 1 = secondary)",
     )
+    parser.add_argument(
+        "--save-snapshots",
+        action="store_true",
+        default=None,
+        dest="save_snapshots",
+        help="Enable saving lightweight JPEG snapshots to game zip",
+    )
+    parser.add_argument(
+        "--no-snapshots",
+        action="store_false",
+        dest="save_snapshots",
+        help="Disable saving lightweight JPEG snapshots",
+    )
     return parser
 
 
@@ -1637,10 +1748,15 @@ def main(argv: list[str] | None = None) -> int:
         total = getattr(source, "total_frames", 0)
         playback = OfflinePlaybackController(total_frames=total)
 
+    cfg_snaps = True
+    if pipeline is not None and getattr(pipeline, "config", None):
+        cfg_snaps = pipeline.config.get("recording", {}).get("save_snapshots", True)
+    save_snapshots_flag = args.save_snapshots if args.save_snapshots is not None else cfg_snaps
+
     hand_recorder = None
     if HandHistoryRecorder is not None and is_live:
         try:
-            hand_recorder = HandHistoryRecorder()
+            hand_recorder = HandHistoryRecorder(save_snapshots=save_snapshots_flag)
         except Exception:
             pass
 
@@ -1694,6 +1810,10 @@ def main(argv: list[str] | None = None) -> int:
 
     hud_bridge = HudBridge()
     hud_overlay = HudOverlay(bridge=hud_bridge)
+    hud_overlay.snapshots_enabled = save_snapshots_flag
+    hud_overlay._update_snapshots_button_ui()
+    if hand_recorder is not None:
+        hud_bridge.snapshots_toggled.connect(lambda en: setattr(hand_recorder, "save_snapshots", en))
     hud_overlay.show()
 
     cap_thread = threading.Thread(

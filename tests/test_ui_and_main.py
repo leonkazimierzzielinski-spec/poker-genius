@@ -1658,6 +1658,47 @@ def test_hud_details_shows_table_with_grayed_fold_and_keeps_calibration_hidden(q
     assert hud.editing_table_id is None
 
 
+def test_hud_snapshots_toggle_button_in_details() -> None:
+    """Verify snapshot toggle button 📷 is hidden in minimalist mode, visible in details, and emits signal."""
+    from ui.hud import HudOverlay, HudBridge
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+
+    bridge = HudBridge()
+    hud = HudOverlay(bridge=bridge)
+    hud.show()
+
+    captured_events: list[bool] = []
+    bridge.snapshots_toggled.connect(lambda enabled: captured_events.append(enabled))
+
+    # 1. In minimalist mode, snapshots button is hidden
+    assert hud.show_details is False
+    assert hud.btn_snapshots.isHidden() is True
+    assert hud.snapshots_enabled is True
+
+    # 2. Toggle details ON -> button becomes visible
+    hud.toggle_details()
+    assert hud.show_details is True
+    assert hud.btn_snapshots.isHidden() is False
+
+    # 3. Clicking button toggles state to False and emits signal
+    hud.btn_snapshots.click()
+    assert hud.snapshots_enabled is False
+    assert captured_events == [False]
+
+    # 4. Clicking again toggles back to True
+    hud.btn_snapshots.click()
+    assert hud.snapshots_enabled is True
+    assert captured_events == [False, True]
+
+    # 5. Toggle details OFF -> button hidden again
+    hud.toggle_details()
+    assert hud.show_details is False
+    assert hud.btn_snapshots.isHidden() is True
+
+
+
 
 
 

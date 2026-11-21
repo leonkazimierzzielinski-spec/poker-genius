@@ -160,6 +160,11 @@
       20
     ]
   },
+  "recording": {
+    "save_snapshots": true,
+    "snapshot_width": 640,
+    "snapshot_jpeg_quality": 65
+  },
   "tables": [
     {
       "table_id": "table_1",

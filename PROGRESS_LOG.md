@@ -1,5 +1,58 @@
 # Poker Genius — Dziennik Postępu Prac (Progress Log)
 
+## V14 — Stabilizacja i Zatwierdzanie Decyzji (DecisionLock), Naprawa Historii Rozdań + Zwycięzca Stołu oraz Osobne Paczki .zip dla Każdej Gry z Lekkim Zapisem Zdjęć (2026-11-21)
+
+### 1. Wdrożone zmiany i nowa architektura
+1. **Deterministyczny silnik Monte Carlo (`engine/monte_carlo.py`):**
+   - Dodano opcjonalny parametr `seed: int | None = None` do `MonteCarloCalculator.estimate_equity(...)`.
+   - W przypadku `seed is None` seed jest wyliczany w sposób deterministyczny za pomocą `zlib.crc32` z klucza `(sorted(hero_cards), list(board_cards), num_opponents, len(villain_range))`.
+   - Użycie lokalnego generatora `rng = random.Random(seed)` zamiast globalnego modułu `random` całkowicie eliminuje losowy szum ±2% equity między klatkami — dla tej samej ręki i sytuacji na boardzie wynik jest w 100% powtarzalny (co do `1e-9`).
+2. **Mechanizm zatwierdzania i zamrażania decyzji (`strategy/decision_lock.py`, `main.py`):**
+   - Utworzono moduł `strategy/decision_lock.py` z funkcją `compute_decision_fingerprint(state, is_preview)` oraz klasą `DecisionLock(confirm_frames=2)`.
+   - Fingerprint obejmuje karty Hero, karty boardu, ulicę, turę Hero, tryb preview, dostępne akcje, pulę, blindy oraz sygnatury graczy (stack, bet, status aktywności i pozycja dealera).
+   - W `main.py` decyzja jest liczona tylko raz (z precyzyjnym budżetem `time_budget_ms=80.0`) po potwierdzeniu przez 2 kolejne zgodne klatki (`confirm_frames=1` w testach/offline), po czym zostaje zatwierdzona (`lock`) i serwowana natychmiast z pamięci podręcznej aż do realnej zmiany sytuacji na stole.
+   - Eliminacja migotania rekomendacji HUD (10–20 razy/s) i radykalny spadek zużycia CPU (`< 5 ms` na zatwierdzonej decyzji).
+3. **Naprawa 5 błędów śledzenia rozdań i wykrywanie zwycięzców (`state/tracker.py`, `main.py`):**
+   - **Brak fałszywego `NEW_HAND`:** naprawiono `hero_cards_changed` (`bool(prev_known_hero) and bool(state.hero_cards) and state.hero_cards != prev_known_hero`), dzięki czemu pojawienie się kart Hero po fazie `WAITING_FOR_TURN` nie przecina i nie ucina rozdania.
+   - **Status `OUT` zamiast `FOLD`:** gracze z `stack is None` i `not is_active` otrzymują status `OUT` (`eliminated=True`), bez błędnego dopisywania akcji `FOLD` do `action_log`.
+   - **Blindy vs Bety i dołączenie w trakcie rozdania:** w fazie preflop / `WAITING_FOR_TURN` zakłady równe SB lub BB są oznaczane jako `BLIND` z `decision_sec=None`. Wejście do monitorowania w trakcie rozdania (widoczny board lub zakłady > BB) oznacza akcje jako `BET` na bieżącej ulicy (`mid_hand_join=True`).
+   - **Śledzenie akcji Hero:** rejestrowane są wszystkie rzeczywiste akcje Hero (`seat_id == 0`), w tym `CHECK` (po zakończeniu tury bez podbicia przy braku zakładu do sprawdzenia).
+   - **Wyliczanie zwycięzcy rozdania i całego stołu:**
+     * Zwycięzca rozdania jest wyliczany przy zamknięciu rozdania z delty stacków powiększonej o zwrot puli (`result = {"winner_seat", "winner_name", "net_delta", "deltas"}`).
+     * Zwycięzca stołu (`tournament_result`) jest automatycznie wykrywany, gdy 1 gracz osiągnie `stack >= 880` lub pozostali dwaj rywale zostaną wyeliminowani (`OUT`).
+4. **Osobne paczki `.zip` dla każdej gry i lekki zapis zrzutów ekranu (`config.json`, `state/hand_history.py`, `main.py`, `ui/hud.py`):**
+   - Zmiana architektury zapisu w `HandHistoryRecorder`: każda gra gromadzi dane w osobnym podfolderze roboczym `hand_histories/_active/game_<YYYYMMDD_HHMMSS>_<table_id>/`.
+   - Po zakończeniu turnieju, wykryciu nowych przeciwników, usunięciu stołu lub zamknięciu aplikacji moduł automatycznie pakuje grę do osobnego archiwum `.zip` (`zipfile.ZIP_DEFLATED`) o nazwie `game_<YYYYMMDD_HHMMSS>_<table_id>_prize<prize>.zip` zawierającego `history.jsonl`, czytelny `history.md` (z tabelą graczy, sekcją `Podjęte decyzje: HUD vs Hero`, `Wynik rozdania`, zrzutami i banerem `🏆 KONIEC STOŁU`) oraz opcjonalny podfolder `snapshots/`. Po spakowaniu katalog roboczy jest usuwany.
+   - Zrzuty ekranu: wycinany `table_rect` przeskalowany proporcjonalnie do `640 px` szerokości w formacie JPEG (`quality=65`, rozmiar ~25–35 KB/szt.) zapisywany maksymalnie 3–4 razy na rozdanie (`LOCKED_DECISION`, `STREET_CHANGE`, `HAND_END`).
+   - Opcja zapisu zdjęć jest w pełni wyłączalna: sekcja `recording.save_snapshots` w `config.json`, flagi CLI `--save-snapshots` / `--no-snapshots` oraz dyskretny przycisk `📷` w panelu `Szczegóły` HUD (`HudBridge.snapshots_toggled`).
+
+### 2. Wyniki weryfikacji na nagraniach testowych
+
+| Nagranie | Klatka | Rozdzielczość | Źródło kotwicy | Karty Hero | Karty Board | Pot | Blinds | Status |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `2026-11-19 211257` | `1827` | `1858x1248` | **RIM** | `Kh 2s` | `--` | `70` | `10/20` | **VALID (100%)** |
+| `2026-11-19 211257` | `2604` | `1858x1248` | **RIM** | `Kh 2s` | `7d Td Th 2h` | `218` | `10/20` | **VALID (100%)** |
+| `2026-11-19 211257` | `3880` | `1858x1248` | **RIM** | `Jc 4d` | `--` | `206` | `10/20` | **VALID (100%)** |
+| `2026-11-19 211257` | `4757` | `1858x1248` | **RIM** | `7s 7d` | `Qc 7c 7h` | `682` | `15/30` | **VALID (100%)** |
+| `2026-11-18 224127` | `0` | `1772x1126` | **RIM** | `2s Tc` | `--` | `80` | `10/20` | **VALID (100%)** |
+| `2026-11-18 224127` | `765` | `1772x1126` | **RIM** | `Kd 3c` | `--` | `30` | `10/20` | **VALID (100%)** |
+| `2026-11-18 224127` | `2370` | `1772x1126` | **RIM** | `7c 5s` | `--` | `90` | `15/30` | **VALID (100%)** |
+| `2 gry na raz` | `1383` | `1706x1022` | **RIM** | `Ks 9s` | `3s Ac Ah` | `80` | `10/20` | **VALID (100%)** |
+| `2 gry na raz` | `1627` | `1706x1022` | **RIM** | `Ks 9s` | `3s Ac Ah` | `240` | `10/20` | **VALID (100%)** |
+| `2 gry na raz` | `2605` | `1706x1022` | **RIM** | `4d Qs` | `5d 8c Jh` | `50` | `10/20` | **VALID (100%)** |
+
+### 3. Wyniki testów jednostkowych (`pytest -v tests/`)
+- Liczba testów: **117 passed in 5.13s (100% sukcesu)**.
+- Nowe testy jednostkowe:
+  1. `tests/test_engine.py::test_monte_carlo_deterministic_seed`: weryfikuje determinizm generatora Monte Carlo z powtarzalnością equity co do `1e-9`.
+  2. `tests/test_strategy.py::test_decision_lock_confirms_and_freezes_until_state_change`: weryfikuje 2-klatkową konfirmację, zamrożenie decyzji przy identycznym stanie i odblokowanie po zmianie parametrów stołu.
+  3. `tests/test_state.py::test_tracker_no_false_new_hand_on_waiting_to_preflop_and_blinds_not_bets`: odtwarza scenariusz z sesji live (brak fałszywego `NEW_HAND`, blindy jako `BLIND`, status `OUT` dla gracza wyeliminowanego).
+  4. `tests/test_state.py::test_tracker_winner_delta_and_tournament_winner`: weryfikuje obliczanie zwycięzcy rozdania z delty stacków oraz `tournament_result` po uzyskaniu stacka `>= 880`.
+  5. `tests/test_state.py::test_hand_history_per_game_zip_with_and_without_snapshots`: weryfikuje tworzenie 2 oddzielnych paczek `.zip` dla 2 gier (z zachowaniem rozmiaru zdjęć 640px < 60 KB w grze ze zrzutami i brakiem zdjęć w grze bez zrzutów) oraz posprzątanie folderu `_active/`.
+  6. `tests/test_ui_and_main.py::test_hud_snapshots_toggle_button_in_details`: weryfikuje ukrycie przycisku `📷` w widoku minimalistycznym, jego widoczność w `Szczegółach` oraz emisję sygnału przełączania.
+
+---
+
 ## V13 — Mikro-kalibracja ROI, Minimalistyczny HUD z Wizualnymi Kartami i Tabelą Zagrań, Sizing w Wielokrotnościach BB oraz Rejestrator Historii Rozdań (2026-11-21)
 
 ### 1. Wdrożone zmiany i nowa architektura

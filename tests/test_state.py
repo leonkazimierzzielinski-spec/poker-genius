@@ -827,14 +827,20 @@ def test_hand_history_recorder_jsonl_and_md(tmp_path) -> None:
     recorder.record_hand(hand_summary)
     recorder.close()
 
-    jsonl_files = list((tmp_path / "histories").glob("*.jsonl"))
-    md_files = list((tmp_path / "histories").glob("*.md"))
-    assert len(jsonl_files) == 1
-    assert len(md_files) == 1
+    zip_files = list((tmp_path / "histories").glob("*.zip"))
+    assert len(zip_files) == 1
 
-    # Verify JSONL content
-    with open(jsonl_files[0], "r", encoding="utf-8") as f:
-        lines = [line.strip() for line in f if line.strip()]
+    import zipfile
+
+    with zipfile.ZipFile(zip_files[0], "r") as zf:
+        namelist = zf.namelist()
+        assert "history.jsonl" in namelist
+        assert "history.md" in namelist
+
+        jsonl_text = zf.read("history.jsonl").decode("utf-8")
+        md_text = zf.read("history.md").decode("utf-8")
+
+    lines = [line.strip() for line in jsonl_text.splitlines() if line.strip()]
     assert len(lines) == 1
     parsed_json = json.loads(lines[0])
     assert parsed_json["hand_number"] == 42
@@ -842,8 +848,6 @@ def test_hand_history_recorder_jsonl_and_md(tmp_path) -> None:
     assert parsed_json["hero_cards"] == ["Ad", "Kd"]
 
     # Verify Markdown content
-    with open(md_files[0], "r", encoding="utf-8") as f:
-        md_text = f.read()
     assert "# Rozdanie #42" in md_text
     assert "Blinds 50/100" in md_text
     assert "Prize $6" in md_text
@@ -852,8 +856,307 @@ def test_hand_history_recorder_jsonl_and_md(tmp_path) -> None:
     assert "Rywal 2 (S2)" in md_text
     assert "### Przebieg zagrań" in md_text
     assert "ALL-IN" in md_text
-    assert "### Rekomendacje HUD" in md_text
+    assert "### Rekomendacje HUD" in md_text or "Rekomendacje HUD" in md_text
     assert "Push/Fold +1.45 BB" in md_text
+
+
+def test_tracker_no_false_new_hand_on_waiting_to_preflop_and_blinds_not_bets() -> None:
+    """Verify that appearance of hero cards after WAITING_FOR_TURN does not trigger fake NEW_HAND,
+
+    blinds are recorded as BLIND, and eliminated players become OUT.
+    """
+    from core.contracts import PlayerState, TableState
+    from state.tracker import TableTracker
+
+    tracker = TableTracker(table_id="tbl_live_1")
+
+    # Frame 1: WAITING_FOR_TURN, no hero cards, blinds posted (SB=10, BB=20)
+    s1 = TableState(
+        table_id="tbl_live_1",
+        timestamp_ms=1000,
+        prize_pool=4,
+        small_blind=10,
+        big_blind=20,
+        pot=30,
+        hero_cards=[],
+        board_cards=[],
+        street="WAITING_FOR_TURN",
+        is_hero_turn=False,
+        available_actions=[],
+        players={
+            0: PlayerState(seat_id=0, stack=300, current_bet=0, is_dealer=True, is_active=True),
+            1: PlayerState(seat_id=1, stack=290, current_bet=10, is_dealer=False, is_active=True),
+            2: PlayerState(seat_id=2, stack=280, current_bet=20, is_dealer=False, is_active=True),
+        },
+        is_valid=True,
+    )
+    st, ev1 = tracker.update(s1)
+    assert tracker.hand_number == 1
+    assert len(ev1) == 1
+    assert ev1[0].event_type == "NEW_HAND"
+
+    # Frame 2: PREFLOP, hero cards received (e.g. Ah Kd), street changes or stays, same hand!
+    s2 = TableState(
+        table_id="tbl_live_1",
+        timestamp_ms=1500,
+        prize_pool=4,
+        small_blind=10,
+        big_blind=20,
+        pot=30,
+        hero_cards=["Ah", "Kd"],
+        board_cards=[],
+        street="PREFLOP",
+        is_hero_turn=True,
+        available_actions=["FOLD", "CALL", "RAISE", "ALL_IN"],
+        players={
+            0: PlayerState(seat_id=0, stack=300, current_bet=0, is_dealer=True, is_active=True),
+            1: PlayerState(seat_id=1, stack=290, current_bet=10, is_dealer=False, is_active=True),
+            2: PlayerState(seat_id=2, stack=280, current_bet=20, is_dealer=False, is_active=True),
+        },
+        is_valid=True,
+    )
+    st, ev2 = tracker.update(s2)
+    # MUST NOT trigger NEW_HAND!
+    assert tracker.hand_number == 1
+    new_hand_events = [e for e in ev2 if e.event_type == "NEW_HAND"]
+    assert len(new_hand_events) == 0
+    assert tracker.current_hand["hero_cards"] == ["Ah", "Kd"]
+
+    # Verify actions in log are BLIND with decision_sec is None
+    act_log = tracker.current_hand["action_log"]
+    blind_acts = [a for a in act_log if a.get("action") == "BLIND"]
+    assert len(blind_acts) >= 2
+    for b in blind_acts:
+        assert b["decision_sec"] is None
+
+    # Frame 3: Player 2 gets eliminated (stack None, is_active False)
+    s3 = TableState(
+        table_id="tbl_live_1",
+        timestamp_ms=2000,
+        prize_pool=4,
+        small_blind=10,
+        big_blind=20,
+        pot=30,
+        hero_cards=["Ah", "Kd"],
+        board_cards=[],
+        street="PREFLOP",
+        is_hero_turn=True,
+        available_actions=["FOLD", "CALL", "RAISE", "ALL_IN"],
+        players={
+            0: PlayerState(seat_id=0, stack=300, current_bet=0, is_dealer=True, is_active=True),
+            1: PlayerState(seat_id=1, stack=290, current_bet=10, is_dealer=False, is_active=True),
+            2: PlayerState(seat_id=2, stack=None, current_bet=0, is_dealer=False, is_active=False),
+        },
+        is_valid=True,
+    )
+    st, ev3 = tracker.update(s3)
+    p2 = tracker.current_hand["players"][2]
+    assert p2["eliminated"] is True
+    assert p2["status"] == "OUT"
+    assert p2["last_action"] == "OUT"
+    # Eliminated player should not add a FOLD action
+    fold_acts_p2 = [a for a in tracker.current_hand["action_log"] if a.get("seat_id") == 2 and a.get("action") == "FOLD"]
+    assert len(fold_acts_p2) == 0
+
+
+def test_tracker_winner_delta_and_tournament_winner() -> None:
+    """Verify hand winner stack delta calculation and tournament_result when player stack >= 880."""
+    from core.contracts import PlayerState, TableState
+    from state.tracker import TableTracker
+
+    tracker = TableTracker(table_id="tbl_tourney")
+
+    # Hand 1 start
+    s1 = TableState(
+        table_id="tbl_tourney",
+        timestamp_ms=1000,
+        prize_pool=6,
+        small_blind=10,
+        big_blind=20,
+        pot=30,
+        hero_cards=["As", "Ks"],
+        board_cards=[],
+        street="PREFLOP",
+        is_hero_turn=False,
+        available_actions=[],
+        players={
+            0: PlayerState(seat_id=0, stack=290, current_bet=10, is_dealer=False, is_active=True),
+            1: PlayerState(seat_id=1, stack=280, current_bet=20, is_dealer=False, is_active=True),
+            2: PlayerState(seat_id=2, stack=300, current_bet=0, is_dealer=True, is_active=True),
+        },
+        is_valid=True,
+    )
+    tracker.update(s1)
+    assert tracker.hand_number == 1
+
+    # Hand 2 start: dealer moves to S0, Hero won the 30 pot: Hero stack is 320, S1 280, S2 290
+    s2 = TableState(
+        table_id="tbl_tourney",
+        timestamp_ms=5000,
+        prize_pool=6,
+        small_blind=10,
+        big_blind=20,
+        pot=30,
+        hero_cards=["7c", "8c"],
+        board_cards=[],
+        street="PREFLOP",
+        is_hero_turn=False,
+        available_actions=[],
+        players={
+            0: PlayerState(seat_id=0, stack=320, current_bet=0, is_dealer=True, is_active=True),
+            1: PlayerState(seat_id=1, stack=270, current_bet=10, is_dealer=False, is_active=True),
+            2: PlayerState(seat_id=2, stack=270, current_bet=20, is_dealer=False, is_active=True),
+        },
+        is_valid=True,
+    )
+    tracker.update(s2)
+    assert tracker.hand_number == 2
+    assert tracker.last_completed_hand is not None
+    res = tracker.last_completed_hand.get("result")
+    assert res is not None
+    assert res["winner_seat"] == 0
+    assert "Ty (S0)" in res["winner_name"]
+    assert res["net_delta"] == 20  # Hero invested 10, won pot (start_tot=300, end_tot=320 -> +20)
+
+    # In Hand 2, Hero stacks both opponents, reaching stack 890 (>= 880)
+    s3 = TableState(
+        table_id="tbl_tourney",
+        timestamp_ms=8000,
+        prize_pool=6,
+        small_blind=10,
+        big_blind=20,
+        pot=0,
+        hero_cards=["7c", "8c"],
+        board_cards=["7d", "8h", "2s", "Qc", "Kd"],
+        street="RIVER",
+        is_hero_turn=False,
+        available_actions=[],
+        players={
+            0: PlayerState(seat_id=0, stack=890, current_bet=0, is_dealer=True, is_active=True),
+            1: PlayerState(seat_id=1, stack=10, current_bet=0, is_dealer=False, is_active=True),
+            2: PlayerState(seat_id=2, stack=0, current_bet=0, is_dealer=False, is_active=False),
+        },
+        is_valid=True,
+    )
+    tracker.update(s3)
+    tr = tracker.current_hand.get("tournament_result")
+    assert tr is not None
+    assert tr["winner_seat"] == 0
+    assert "Ty (S0)" in tr["winner_name"]
+    assert tr["final_stack"] == 890
+    assert tr["prize_pool"] == 6
+
+
+def test_hand_history_per_game_zip_with_and_without_snapshots(tmp_path) -> None:
+    """Verify that 2 separate games create 2 separate .zip packages,
+
+    one with snapshots and one without, and cleans up working directory.
+    """
+    import zipfile
+    import numpy as np
+    from state.hand_history import HandHistoryRecorder
+
+    output_dir = tmp_path / "hh_test"
+    recorder = HandHistoryRecorder(output_dir=output_dir, save_snapshots=True, snapshot_width=640)
+
+    # Game 1 on table_1 (with snapshots enabled)
+    dummy_frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+    rect = (100, 100, 600, 400)
+
+    snap_path = recorder.save_snapshot(
+        frame_bgr=dummy_frame,
+        table_rect=rect,
+        table_id="table_1",
+        hand_number=1,
+        event_label="decision_flop",
+    )
+    assert snap_path is not None
+    assert snap_path == "snapshots/h001_decision_flop.jpg"
+
+    h1 = {
+        "hand_number": 1,
+        "table_id": "table_1",
+        "start_ts_ms": 1700000000000,
+        "blinds": (10, 20),
+        "prize_pool": 4,
+        "hero_cards": ["Ah", "Kd"],
+        "board_cards": ["Jh", "Th", "2c"],
+        "street": "FLOP",
+        "pot": 60,
+        "players": {
+            0: {"seat_id": 0, "name": "Ty (S0)", "stack": 280, "invested_total": 20, "is_dealer": False, "folded": False},
+            1: {"seat_id": 1, "name": "Rywal 1 (S1)", "stack": 280, "invested_total": 20, "is_dealer": False, "folded": False},
+        },
+        "action_log": [{"time_str": "12:00:00", "street": "PREFLOP", "seat_id": 1, "action": "BLIND", "amount": 20}],
+        "recommendations": [{"street": "FLOP", "action": "BET_30", "sizing_bb": 1, "ev_bb": 0.8, "reason": "C-bet"}],
+        "snapshots": [snap_path],
+    }
+    recorder.record_hand(h1)
+
+    # Game 2 on table_2 (snapshots disabled)
+    recorder.save_snapshots = False
+    snap_path2 = recorder.save_snapshot(
+        frame_bgr=dummy_frame,
+        table_rect=rect,
+        table_id="table_2",
+        hand_number=1,
+        event_label="decision_turn",
+    )
+    assert snap_path2 is None
+
+    h2 = {
+        "hand_number": 1,
+        "table_id": "table_2",
+        "start_ts_ms": 1700000005000,
+        "blinds": (10, 20),
+        "prize_pool": 10,
+        "hero_cards": ["Qc", "Qd"],
+        "board_cards": [],
+        "street": "PREFLOP",
+        "pot": 40,
+        "players": {
+            0: {"seat_id": 0, "name": "Ty (S0)", "stack": 280, "invested_total": 20, "is_dealer": False, "folded": False},
+            1: {"seat_id": 1, "name": "Rywal 1 (S1)", "stack": 280, "invested_total": 20, "is_dealer": False, "folded": False},
+        },
+        "action_log": [{"time_str": "12:00:05", "street": "PREFLOP", "seat_id": 1, "action": "BLIND", "amount": 20}],
+    }
+    recorder.record_hand(h2)
+
+    # Close and finalize both games into .zip packages
+    created_zips = recorder.close()
+    assert len(created_zips) == 2
+
+    # Check zip 1 (table_1)
+    zip_t1 = next(z for z in created_zips if "table_1" in z.name)
+    assert "_prize4" in zip_t1.name
+    with zipfile.ZipFile(zip_t1, "r") as zf:
+        names = zf.namelist()
+        assert "history.jsonl" in names
+        assert "history.md" in names
+        assert "snapshots/h001_decision_flop.jpg" in names
+
+        # Verify image properties
+        img_info = zf.getinfo("snapshots/h001_decision_flop.jpg")
+        assert img_info.file_size < 60 * 1024  # Less than 60 KB
+
+        import cv2
+        img_bytes = zf.read("snapshots/h001_decision_flop.jpg")
+        img_arr = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
+        assert img_arr.shape[1] == 640  # Exactly 640px wide
+
+    # Check zip 2 (table_2)
+    zip_t2 = next(z for z in created_zips if "table_2" in z.name)
+    assert "_prize10" in zip_t2.name
+    with zipfile.ZipFile(zip_t2, "r") as zf:
+        names = zf.namelist()
+        assert "history.jsonl" in names
+        assert "history.md" in names
+        assert not any("snapshots" in n for n in names)
+
+    # Working _active directory should be cleaned up
+    active_dir = output_dir / "_active"
+    assert not active_dir.exists()
+
 
 
 

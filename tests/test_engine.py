@@ -199,3 +199,35 @@ def test_monte_carlo_multiway_3way() -> None:
     assert eq_1v1 > eq_3way, f"1v1 equity ({eq_1v1:.3f}) should exceed 3-way ({eq_3way:.3f})"
     assert 0.60 <= eq_3way <= 0.85, f"AA 3-way equity should be in [0.60, 0.85], got {eq_3way:.3f}"
 
+
+def test_monte_carlo_deterministic_seed() -> None:
+    """Verify Monte Carlo produces bit-exact deterministic equity for the same inputs."""
+    mc = MonteCarloCalculator()
+
+    eq1 = mc.estimate_equity(
+        hero_cards=["Kh", "Qh"],
+        board_cards=["Jh", "Th", "2c"],
+        iterations=500,
+        time_budget_ms=100.0,
+        num_opponents=1,
+    )
+    eq2 = mc.estimate_equity(
+        hero_cards=["Kh", "Qh"],
+        board_cards=["Jh", "Th", "2c"],
+        iterations=500,
+        time_budget_ms=100.0,
+        num_opponents=1,
+    )
+    assert eq1 == pytest.approx(eq2, abs=1e-9)
+
+    # Different inputs produce different equity
+    eq3 = mc.estimate_equity(
+        hero_cards=["7c", "2d"],
+        board_cards=["Jh", "Th", "2c"],
+        iterations=500,
+        time_budget_ms=100.0,
+        num_opponents=1,
+    )
+    assert eq1 != eq3
+
+

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import random
 import time
+import zlib
 
 try:
     from phevaluator import evaluate_cards
@@ -31,6 +32,7 @@ class MonteCarloCalculator:
         iterations: int = 2000,
         time_budget_ms: float = 80.0,
         num_opponents: int = 1,
+        seed: int | None = None,
     ) -> float:
         """Estimate Hero equity against random cards or villain range.
 
@@ -41,10 +43,16 @@ class MonteCarloCalculator:
             iterations: Maximum number of Monte Carlo iterations.
             time_budget_ms: Maximum time allowed in milliseconds.
             num_opponents: Number of active opponents (1 for Heads-Up, 2 for 3-Way).
+            seed: Optional deterministic seed for RNG.
 
         Returns:
             Equity as a float in range [0.0, 1.0].
         """
+        if seed is None:
+            key_str = f"{sorted(hero_cards)}|{list(board_cards)}|{num_opponents}|{len(villain_range) if villain_range else 0}"
+            seed = zlib.crc32(key_str.encode("utf-8")) & 0xFFFFFFFF
+        rng = random.Random(seed)
+
         # Normalize cards representation
         hero_norm = [f"{c[0].upper()}{c[1].lower()}" for c in hero_cards]
         board_norm = [f"{c[0].upper()}{c[1].lower()}" for c in board_cards]
@@ -77,15 +85,15 @@ class MonteCarloCalculator:
 
             if num_opps <= 1:
                 if valid_villain:
-                    v1, v2 = random.choice(valid_villain)
+                    v1, v2 = rng.choice(valid_villain)
                     if missing_board_count > 0:
                         avail_deck = [c for c in deck if c != v1 and c != v2]
-                        drawn_board = random.sample(avail_deck, missing_board_count)
+                        drawn_board = rng.sample(avail_deck, missing_board_count)
                     else:
                         drawn_board = []
                 else:
                     needed = missing_board_count + 2
-                    sampled = random.sample(deck, needed)
+                    sampled = rng.sample(deck, needed)
                     drawn_board = sampled[:missing_board_count]
                     v1, v2 = sampled[missing_board_count], sampled[missing_board_count + 1]
 
@@ -102,10 +110,10 @@ class MonteCarloCalculator:
             else:
                 # Multiway (num_opponents >= 2)
                 if valid_villain:
-                    v1, v2 = random.choice(valid_villain)
+                    v1, v2 = rng.choice(valid_villain)
                     avail_deck = [c for c in deck if c != v1 and c != v2]
                     needed_other = missing_board_count + 2 * (num_opps - 1)
-                    sampled = random.sample(avail_deck, needed_other)
+                    sampled = rng.sample(avail_deck, needed_other)
                     drawn_board = sampled[:missing_board_count]
                     other_cards = sampled[missing_board_count:]
                     opp_hands = [(v1, v2)] + [
@@ -114,7 +122,7 @@ class MonteCarloCalculator:
                     ]
                 else:
                     needed = missing_board_count + 2 * num_opps
-                    sampled = random.sample(deck, needed)
+                    sampled = rng.sample(deck, needed)
                     drawn_board = sampled[:missing_board_count]
                     opp_cards = sampled[missing_board_count:]
                     opp_hands = [
