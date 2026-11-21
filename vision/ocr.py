@@ -410,22 +410,35 @@ def detect_hero_actions(
         return (False, [])
 
     hsv = cv2.cvtColor(actions_roi, cv2.COLOR_BGR2HSV)
-    total_pixels = actions_roi.shape[0] * actions_roi.shape[1]
+    h, w = actions_roi.shape[:2]
+    total_pixels = h * w
     min_action_pixels = max(20, min(80, int(total_pixels * 0.002)))
 
     # Red mask (Fold) - wraps around 0/180 in HSV
     mask_red1 = cv2.inRange(hsv, np.array([0, 60, 60]), np.array([10, 255, 255]))
     mask_red2 = cv2.inRange(hsv, np.array([170, 60, 60]), np.array([180, 255, 255]))
     mask_red = cv2.bitwise_or(mask_red1, mask_red2)
-    has_fold = int(cv2.countNonZero(mask_red)) >= min_action_pixels
 
     # Green mask (Check / Call)
     mask_green = cv2.inRange(hsv, np.array([35, 60, 60]), np.array([85, 255, 255]))
-    has_check = int(cv2.countNonZero(mask_green)) >= min_action_pixels
 
     # Orange / Gold mask (Bet / Raise / All-in)
     mask_orange = cv2.inRange(hsv, np.array([11, 60, 60]), np.array([34, 255, 255]))
-    has_bet = int(cv2.countNonZero(mask_orange)) >= min_action_pixels
+
+    if w >= 2 * h:
+        # Zoned action detection:
+        # Fold is located in left zone (0 .. 0.45w)
+        has_fold = int(cv2.countNonZero(mask_red[:, : int(w * 0.45)])) >= min_action_pixels
+        # Check / Call is located in middle zone (0.15w .. 0.80w)
+        has_check = int(cv2.countNonZero(mask_green[:, int(w * 0.15) : int(w * 0.80)])) >= min_action_pixels
+        # Bet / Raise is located in right zone (x >= 0.40w) with solid button contour
+        right_orange = mask_orange[:, int(w * 0.40) :]
+        cnts, _ = cv2.findContours(right_orange, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        has_bet = any(cv2.boundingRect(c)[2] >= 10 and cv2.boundingRect(c)[3] >= 10 for c in cnts)
+    else:
+        has_fold = int(cv2.countNonZero(mask_red)) >= min_action_pixels
+        has_check = int(cv2.countNonZero(mask_green)) >= min_action_pixels
+        has_bet = int(cv2.countNonZero(mask_orange)) >= min_action_pixels
 
     actions: list[str] = []
     if has_fold:

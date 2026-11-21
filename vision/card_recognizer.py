@@ -187,13 +187,24 @@ class CardRecognizer:
         boxes.sort(key=lambda b: (b[1], b[0]))
         rx, ry, rw, rh = boxes[0]
         suit_idx = 1
+        is_two_contour_ten = False
         if len(boxes) > 1:
             bx1, by1, bw1, bh1 = boxes[1]
             if abs(by1 - ry) <= 9 and (bx1 < rx + rw + 15 or abs(bx1 - rx) <= 20):
+                left_b, right_b = sorted([boxes[0], boxes[1]], key=lambda b: b[0])
+                min_h = min(left_b[3], right_b[3])
+                max_h = max(left_b[3], right_b[3])
+                rw_m = max(rx + rw, bx1 + bw1) - min(rx, bx1)
+                rh_m = max(ry + rh, by1 + bh1) - min(ry, by1)
+                if (
+                    min_h >= 0.65 * max_h
+                    and left_b[2] <= right_b[2] * 1.05
+                    and rw_m >= 0.78 * rh_m
+                ):
+                    is_two_contour_ten = True
+
                 rx_m = min(rx, bx1)
                 ry_m = min(ry, by1)
-                rw_m = max(rx + rw, bx1 + bw1) - rx_m
-                rh_m = max(ry + rh, by1 + bh1) - ry_m
                 rx, ry, rw, rh = rx_m, ry_m, rw_m, rh_m
                 suit_idx = 2
 
@@ -221,6 +232,9 @@ class CardRecognizer:
             res = cv2.matchTemplate(rank_padded, r_tpl, cv2.TM_CCOEFF_NORMED)
             rank_scores[r_name] = float(cv2.minMaxLoc(res)[1])
 
+        if is_two_contour_ten:
+            rank_scores["T"] = max(rank_scores.get("T", 0.0), 0.90)
+
         suit_scores: dict[str, float] = {}
         if suit_crop is not None and suit_crop.shape[0] >= 6 and suit_crop.shape[1] >= 6:
             suit_fit = _fit_glyph_to_box(suit_crop, 24, 24)
@@ -231,6 +245,31 @@ class CardRecognizer:
                 s_tpl = self.suits[s_name]
                 res = cv2.matchTemplate(suit_padded, s_tpl, cv2.TM_CCOEFF_NORMED)
                 suit_scores[s_name] = float(cv2.minMaxLoc(res)[1])
+
+            if color_group == "BLACK" and suit_crop.shape[0] >= 8 and suit_crop.shape[1] >= 8:
+                sh, sw = suit_crop.shape[:2]
+                top_h = max(2, int(sh * 0.16))
+                top_widths = [np.count_nonzero(suit_crop[row] > 128) for row in range(top_h)]
+                mean_top_w = float(np.mean(top_widths)) if top_widths else 0.0
+
+                waist_y1 = int(sh * 0.30)
+                waist_y2 = max(waist_y1 + 1, int(sh * 0.55))
+                waist_widths = [np.count_nonzero(suit_crop[row] > 128) for row in range(waist_y1, waist_y2)]
+                min_waist_w = float(np.min(waist_widths)) if waist_widths else 0.0
+
+                all_widths = [np.count_nonzero(suit_crop[row] > 128) for row in range(sh)]
+                max_w = float(np.max(all_widths)) if all_widths else 1.0
+                if max_w > 0:
+                    top_tip = mean_top_w / max_w
+                    waist = min_waist_w / max_w
+                    # Spade has a sharp pointy tip (top_tip <= 0.22) and thick solid waist (waist - top_tip >= 0.28)
+                    if top_tip <= 0.22 and (waist - top_tip) >= 0.28:
+                        suit_scores["s"] = suit_scores.get("s", 0.0) + 0.08
+                        suit_scores["c"] = suit_scores.get("c", 0.0) - 0.08
+                    # Club has a wide rounded top leaf (top_tip >= 0.26) or narrow waist (waist - top_tip <= 0.22)
+                    elif top_tip >= 0.26 or (waist - top_tip) <= 0.22:
+                        suit_scores["c"] = suit_scores.get("c", 0.0) + 0.08
+                        suit_scores["s"] = suit_scores.get("s", 0.0) - 0.08
         else:
             for s_name in allowed_suits:
                 suit_scores[s_name] = 0.5

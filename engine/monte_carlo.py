@@ -30,6 +30,7 @@ class MonteCarloCalculator:
         villain_range: list[tuple[str, str]] | None = None,
         iterations: int = 2000,
         time_budget_ms: float = 80.0,
+        num_opponents: int = 1,
     ) -> float:
         """Estimate Hero equity against random cards or villain range.
 
@@ -39,6 +40,7 @@ class MonteCarloCalculator:
             villain_range: Optional list of 2-card tuples for Villain.
             iterations: Maximum number of Monte Carlo iterations.
             time_budget_ms: Maximum time allowed in milliseconds.
+            num_opponents: Number of active opponents (1 for Heads-Up, 2 for 3-Way).
 
         Returns:
             Equity as a float in range [0.0, 1.0].
@@ -66,34 +68,70 @@ class MonteCarloCalculator:
         wins = 0.0
         simulations = 0
 
+        num_opps = max(1, num_opponents)
+
         while simulations < iterations:
             # Check budget every 50 iterations to avoid perf_counter overhead
             if simulations % 50 == 0 and (time.perf_counter() - start_time) >= time_limit_sec:
                 break
 
-            if valid_villain:
-                v1, v2 = random.choice(valid_villain)
-                if missing_board_count > 0:
-                    avail_deck = [c for c in deck if c != v1 and c != v2]
-                    drawn_board = random.sample(avail_deck, missing_board_count)
+            if num_opps <= 1:
+                if valid_villain:
+                    v1, v2 = random.choice(valid_villain)
+                    if missing_board_count > 0:
+                        avail_deck = [c for c in deck if c != v1 and c != v2]
+                        drawn_board = random.sample(avail_deck, missing_board_count)
+                    else:
+                        drawn_board = []
                 else:
-                    drawn_board = []
+                    needed = missing_board_count + 2
+                    sampled = random.sample(deck, needed)
+                    drawn_board = sampled[:missing_board_count]
+                    v1, v2 = sampled[missing_board_count], sampled[missing_board_count + 1]
+
+                full_board = board_norm + drawn_board
+
+                # In phevaluator, a LOWER score means a stronger hand
+                hero_score = evaluate_cards(*(hero_norm + full_board))
+                villain_score = evaluate_cards(v1, v2, *full_board)
+
+                if hero_score < villain_score:
+                    wins += 1.0
+                elif hero_score == villain_score:
+                    wins += 0.5
             else:
-                needed = missing_board_count + 2
-                sampled = random.sample(deck, needed)
-                drawn_board = sampled[:missing_board_count]
-                v1, v2 = sampled[missing_board_count], sampled[missing_board_count + 1]
+                # Multiway (num_opponents >= 2)
+                if valid_villain:
+                    v1, v2 = random.choice(valid_villain)
+                    avail_deck = [c for c in deck if c != v1 and c != v2]
+                    needed_other = missing_board_count + 2 * (num_opps - 1)
+                    sampled = random.sample(avail_deck, needed_other)
+                    drawn_board = sampled[:missing_board_count]
+                    other_cards = sampled[missing_board_count:]
+                    opp_hands = [(v1, v2)] + [
+                        (other_cards[2 * i], other_cards[2 * i + 1])
+                        for i in range(num_opps - 1)
+                    ]
+                else:
+                    needed = missing_board_count + 2 * num_opps
+                    sampled = random.sample(deck, needed)
+                    drawn_board = sampled[:missing_board_count]
+                    opp_cards = sampled[missing_board_count:]
+                    opp_hands = [
+                        (opp_cards[2 * i], opp_cards[2 * i + 1])
+                        for i in range(num_opps)
+                    ]
 
-            full_board = board_norm + drawn_board
+                full_board = board_norm + drawn_board
+                hero_score = evaluate_cards(*(hero_norm + full_board))
+                opp_scores = [evaluate_cards(c1, c2, *full_board) for c1, c2 in opp_hands]
+                best_opp_score = min(opp_scores)
 
-            # In phevaluator, a LOWER score means a stronger hand
-            hero_score = evaluate_cards(*(hero_norm + full_board))
-            villain_score = evaluate_cards(v1, v2, *full_board)
-
-            if hero_score < villain_score:
-                wins += 1.0
-            elif hero_score == villain_score:
-                wins += 0.5
+                if hero_score < best_opp_score:
+                    wins += 1.0
+                elif hero_score == best_opp_score:
+                    ties_count = 1 + opp_scores.count(hero_score)
+                    wins += 1.0 / ties_count
 
             simulations += 1
 

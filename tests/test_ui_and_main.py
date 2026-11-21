@@ -1061,3 +1061,55 @@ def test_preview_actions_contains_raise_and_preflop_range_penalty():
     assert "ALL_IN" not in candidates
     assert "CALL" in candidates
 
+
+def test_hud_overlay_compact_cards_label(qapp) -> None:
+    """Verify HudOverlay displays compact colored cards line even when details panel is collapsed."""
+    pytest.importorskip("PySide6")
+    from ui.hud import HudBridge, HudOverlay, format_cards_html
+
+    # Test format_cards_html helper directly
+    summary_text = (
+        "Status: VALID\n"
+        "Blinds: 10/20 | Prize: $4 | Pot: 40\n"
+        "Hero: Td 7h | Board: Qc 7c 7h\n"
+        "Gracze: S0: 300 (bet 20) | S1: 280 (bet 20) [D] | S2: 300 (bet 0)\n"
+        "Hero Turn: YES | Actions: [FOLD, CALL] | Spot: BB_VS_SB_RAISE"
+    )
+    formatted = format_cards_html(summary_text)
+    assert "10" in formatted
+    assert "♦" in formatted
+    assert "7" in formatted
+    assert "♥" in formatted
+    assert "Board:" in formatted
+    assert "Q" in formatted
+    assert "♣" in formatted
+
+    # Test HudOverlay presentation
+    bridge = HudBridge()
+    hud = HudOverlay(bridge=bridge)
+    assert hud.show_details is False
+
+    d = Decision(
+        table_id="table_1",
+        action="CALL",
+        ev_bb=1.2,
+        confidence=0.9,
+        profile_used="STANDARD_EXPLOIT",
+        reason="Pot odds call",
+    )
+    bridge.decision_updated.emit(d, 12.0, summary_text)
+
+    # Details widget is NOT visible when show_details is False
+    assert hud.details_widgets["table_1"].isVisible() is False
+
+    # Main table widget is populated with card HTML containing the cards line
+    card_text = hud.table_widgets["table_1"].text()
+    assert "10" in card_text
+    assert "♦" in card_text
+    assert "7" in card_text
+    assert "♥" in card_text
+    assert "Q" in card_text
+    assert "♣" in card_text
+    assert "CALL" in card_text
+
+

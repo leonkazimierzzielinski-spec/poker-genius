@@ -172,3 +172,30 @@ def test_flop_db_lookup_with_data(tmp_path: Path) -> None:
     assert result["CHECK"] == pytest.approx(0.35)
     assert result["BET_30"] == pytest.approx(0.55)
     assert result["ALL_IN"] == pytest.approx(0.10)
+
+
+def test_monte_carlo_multiway_3way() -> None:
+    """Verify Monte Carlo equity estimation in 3-way pots (num_opponents=2)."""
+    mc = MonteCarloCalculator()
+
+    # AA vs 1 opponent on dry board (Kd 7c 2s)
+    eq_1v1 = mc.estimate_equity(
+        hero_cards=["As", "Ah"],
+        board_cards=["Kd", "7c", "2s"],
+        iterations=1500,
+        time_budget_ms=100.0,
+        num_opponents=1,
+    )
+
+    # AA vs 2 opponents on same board
+    eq_3way = mc.estimate_equity(
+        hero_cards=["As", "Ah"],
+        board_cards=["Kd", "7c", "2s"],
+        iterations=1500,
+        time_budget_ms=100.0,
+        num_opponents=2,
+    )
+
+    assert eq_1v1 > eq_3way, f"1v1 equity ({eq_1v1:.3f}) should exceed 3-way ({eq_3way:.3f})"
+    assert 0.60 <= eq_3way <= 0.85, f"AA 3-way equity should be in [0.60, 0.85], got {eq_3way:.3f}"
+

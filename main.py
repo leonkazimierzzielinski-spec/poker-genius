@@ -402,16 +402,28 @@ def evaluate_candidates(
         if candidate_evs is None:
             if mc_calc is not None and hasattr(mc_calc, "estimate_equity") and len(hero_cards) == 2:
                 try:
+                    active_opponents = sum(
+                        1
+                        for sid, p in players.items()
+                        if sid != 0
+                        and getattr(p, "is_active", True)
+                        and getattr(p, "status_text", "") not in ("FOLDED", "SIT_OUT", "ELIMINATED")
+                    )
+                    num_opps = max(1, min(2, active_opponents))
+
                     equity = mc_calc.estimate_equity(
                         hero_cards,
                         board_cards,
                         time_budget_ms=80.0,
+                        num_opponents=num_opps,
                     )
 
                     if facing_bet:
                         call_equity = max(0.05, equity - 0.08)
                         shove_call_equity = max(0.05, equity - 0.16)
                         shove_fe = 0.18
+                        if num_opps == 2:
+                            shove_fe *= 0.65
                         if hasattr(mc_calc, "calculate_ev_bb"):
                             call_ev = mc_calc.calculate_ev_bb(
                                 call_equity, pot_bb, call_cost_bb=to_call_bb, fold_equity=0.0
@@ -438,6 +450,9 @@ def evaluate_candidates(
                         shove_call_equity = max(0.05, equity - 0.14)
                         bet_call_equity = max(0.05, equity - 0.06)
                         bet_fe = 0.25
+                        if num_opps == 2:
+                            shove_fe *= 0.65
+                            bet_fe *= 0.65
 
                         if hasattr(mc_calc, "calculate_ev_bb"):
                             check_ev = mc_calc.calculate_ev_bb(
@@ -719,9 +734,11 @@ def processing_loop(
     headless: bool = False,
     show_video: bool = False,
     playback: OfflinePlaybackController | None = None,
+    is_live: bool = False,
 ) -> None:
     """Thread 2: Processes frames, evaluates decisions, logs sessions, and updates HUD."""
     manual_rect_holder: list[tuple[int, int, int, int] | None] = [None]
+    last_idle_emit: float = 0.0
 
     def _on_manual_rect(rect: Any) -> None:
         manual_rect_holder[0] = rect
@@ -823,10 +840,12 @@ def processing_loop(
                     sub_frame = frame[max(0, my) : max(0, my + mh), max(0, mx) : max(0, mx + mw)]
                     if sub_frame.size > 0:
                         try:
+                            preferred_scale = getattr(pipeline, "_last_anchor_scale", None)
                             sub_anchor = find_anchor(
                                 sub_frame,
                                 pipeline.anchor_template,
                                 threshold=pipeline.anchor_threshold,
+                                preferred_scale=preferred_scale,
                             )
                         except Exception:
                             sub_anchor = None
@@ -835,6 +854,10 @@ def processing_loop(
                     ax, ay, aw, ah = sub_anchor
                     full_anchor = (max(0, mx) + ax, max(0, my) + ay, aw, ah)
                     anchors = [full_anchor]
+                    if getattr(pipeline, "anchor_template", None) is not None:
+                        tpl_w = pipeline.anchor_template.shape[1]
+                        if tpl_w > 0:
+                            pipeline._last_anchor_scale = aw / tpl_w
                     if compute_unclipped_table_rect is not None:
                         tpl_w = pipeline.anchor_template.shape[1] if getattr(pipeline, "anchor_template", None) is not None else None
                         tpl_h = pipeline.anchor_template.shape[0] if getattr(pipeline, "anchor_template", None) is not None else None
@@ -875,6 +898,25 @@ def processing_loop(
                             pipeline._last_anchor_scale = anchors[0][2] / tpl_w
                     except Exception:
                         anchors = []
+
+                if is_live and not anchors:
+                    now_sec = time.perf_counter()
+                    if now_sec - last_idle_emit >= 0.5:
+                        last_idle_emit = now_sec
+                        idle_decision = Decision(
+                            table_id="table_1",
+                            action="WAIT",
+                            ev_bb=None,
+                            confidence=1.0,
+                            profile_used="STANDARD_EXPLOIT",
+                            reason="Szukam stołu Stake...",
+                        )
+                        if hud_bridge is not None and hasattr(hud_bridge, "decision_updated"):
+                            try:
+                                hud_bridge.decision_updated.emit(idle_decision, 0.0, "Szukam stołu Stake...")
+                            except Exception:
+                                pass
+                    continue
 
                 table_jobs = []
                 if anchors and compute_unclipped_table_rect is not None:
@@ -1287,6 +1329,7 @@ def main(argv: list[str] | None = None) -> int:
                 headless=True,
                 show_video=args.show_video,
                 playback=playback,
+                is_live=is_live,
             )
         except KeyboardInterrupt:
             pass
@@ -1329,6 +1372,7 @@ def main(argv: list[str] | None = None) -> int:
             False,
             args.show_video,
             playback,
+            is_live,
         ),
         daemon=True,
     )

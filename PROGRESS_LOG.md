@@ -1,6 +1,63 @@
 # Poker Genius — Dziennik Postępu Prac (Progress Log)
 
-## V8.2 — Naprawa 10/T (bw>=2), stabilizacja table_id (wycięcie #ID bez mini-kart) i precyzyjny Obszar (2026-11-21)
+## V9 — Jakość produkcyjna: pełne 10/T, dyskryminacja c/s, strefowe akcje, postflop 3-way i mini-karty w HUD (2026-11-21)
+
+### 1. Wdrożone zmiany i usprawnienia systemowe
+1. **Pełny i czysty szablon `T.png` oraz poszerzenie ROI `hero_card_1` (`data/templates/ranks/T.png`, `config.json`, `vision/card_recognizer.py`):**
+   - Zastąpiono poprzedni ucięty szablon `T.png` pełnym, wyostrzonym szablonem `10` (23x19) z kompletnym daszkiem jedynki wyciętym z klatki `211257` f2604 (`board_card_2`), bez artefaktów na dole.
+   - Poszerzono ROI `hero_card_1` w `config.json` z `[0.4636, 0.6744, 0.0350, 0.0880]` na `[0.4585, 0.6744, 0.0405, 0.0880]`, co zapobiega obcinaniu lewego szeryfa jedynki w szerokich dwuznakowych kartach `10`.
+   - Wprowadzono 2-konturową regułę dla `T` w `vision/card_recognizer.py`: połączenie dwóch konturów w rzędzie rangi o zbliżonej wysokości podbija dopasowanie do `>= 0.90`.
+2. **Precyzyjna dyskryminacja czarnych kolorów `c` (trefl) vs `s` (pik) (`vision/card_recognizer.py`):**
+   - Zaimplementowano geometryczną analizę kształtu: czubek (`top_tip_ratio`) oraz talię (`waist_ratio`).
+   - Pik: ostry szpic (`top_tip <= 0.22`) i brak głębokiego przewężenia (`waist - top_tip >= 0.28`) otrzymuje premię +0.08 dla `s` i karę -0.08 dla `c`.
+   - Trefl: zaokrąglony listek (`top_tip >= 0.26`) lub wąska talia (`waist - top_tip <= 0.22`) otrzymuje premię +0.08 dla `c` i karę -0.08 dla `s`.
+   - Całkowicie wyeliminowano fałszywe detekcje pików jako trefli (m.in. na `232515` f12592 bezbłędny odczyt boardu `['2c', '5s', '5c', '4d', '8s']`).
+3. **Strefowa detekcja przycisków akcji Hero (`vision/ocr.py`):**
+   - W `detect_hero_actions` wprowadzono podział paska akcji na strefy: Fold (czerwony, `x <= 0.45w`), Check/Call (zielony, `0.15w..0.80w`), Bet/Raise (pomarańczowy, `x >= 0.40w`).
+   - Przycisk Bet/Raise wymaga litego konturu przycisku (`bw >= 10, bh >= 10`), ignorując drobny złoty szum tła kasyna na lewo od przycisków.
+   - Na klatce `4757` (`211257` vs All-In): `available_actions` zwraca czyste `['FOLD', 'CALL']` (bez fałszywego `BET`), a decyzja to prawidłowe `CALL`.
+4. **Postflop 3-Way w Monte Carlo (`engine/monte_carlo.py`, `main.py`):**
+   - Dodano opcjonalny parametr `num_opponents: int = 1` do `estimate_equity`. Przy `num_opponents > 1` symulator losuje karty dla wszystkich aktywnych rywali i sprawdza wygraną przeciwko najlepszej ręce rywali (`hero_score < min(opp_scores)`).
+   - W `main.py` (`evaluate_candidates` postflop) obliczana jest liczba aktywnych rywali (`num_opps = max(1, min(2, active_opponents))`), a przy 3-way pot fold equity mnożone jest przez `0.65`.
+5. **Optymalizacja `live` i `📐 Obszar` (`main.py`):**
+   - W gałęzi `manual_rect` przekazywane jest `preferred_scale=getattr(pipeline, "_last_anchor_scale", None)` i zapisywany cache skali, przyspieszając kolejne klatki.
+   - Dodano lekki tryb spoczynku w `--mode live`: gdy brak kotwicy stołu i brak manualnego obszaru, emitowany jest stan `WAIT` ("Szukam stołu Stake...") maksymalnie raz na 0.5 s bez obciążania procesora i pipeline'u.
+6. **Kompaktowy pasek kart w HUD (`ui/hud.py`):**
+   - Funkcja `format_cards_html` wyciąga karty Hero i Board z podsumowania i formatuje je w elegancki pasek `🃏 10♦ 7♥  •  Board: Q♣ 7♣ 7♥` z kolorowymi symbolami HTML (czerwone `♥♦`, białe `♠♣`).
+   - Pasek jest wyświetlany w głównej karcie stołu i pozostaje w 100% widoczny nawet przy zwiniętym panelu `🔍 Szczegóły`.
+
+### 2. Wyniki weryfikacji na klatkach testowych (pełna ścieżka produkcyjna `main.py`)
+
+| Nagranie | Klatka | Oczekiwane Karty / Pula | Wykryte Hero | Wykryty Board | Pot | Stan / Spot | Decyzja | Status |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `2026-11-19 211257` | `4757` | Hero `7s 7d` \| `Qc 7c 7h` | `['7s', '7d']` | `['Qc', '7c', '7h']` | **`682`** | VALID / `FLOP` (Actions: `['FOLD', 'CALL']`) | **`CALL`** | **PASS** |
+| `2026-11-19 211257` | `2604` | Hero `Kh 2s` \| `7d Td Th 2h` | `['Kh', '2s']` | `['7d', 'Td', 'Th', '2h']` | **`218`** | VALID / `TURN` | **`CHECK`** | **PASS** |
+| `2026-11-19 211257` | `1827` | Hero `Kh 2s` | `['Kh', '2s']` | `[]` | **`70`** | VALID / `BB_VS_BTN_RAISE` | **`CALL`** | **PASS** |
+| `2026-11-19 211257` | `3220` | Hero `Jc 7d` | `['Jc', '7d']` | `[]` | **`30`** | VALID / `WAITING_FOR_TURN` | **`FOLD`** | **PASS** |
+| `2026-11-19 211257` | `3643` | Hero `Jc 4d` vs min-raise | `['Jc', '4d']` | `[]` | **`30`** | VALID / `BTN_OPEN` | **`ALL_IN`** | **PASS** |
+| `2026-11-19 211257` | `3668` | Hero `Jc 4d` (badge Call) | `['Jc', '4d']` | `[]` | **`50`** | VALID / `WAITING_FOR_TURN` | **`FOLD`** | **PASS** |
+| `2026-11-19 211257` | `3880` | Hero `Jc 4d` vs All-in 166 | `['Jc', '4d']` | `[]` | **`206`** | VALID / `BB_VS_SB_SHOVE` | **`FOLD`** | **PASS** |
+| `2026-11-18 224127` | `0` | Hero `2s Tc` | `['2s', 'Tc']` | `[]` | **`80`** | VALID / `WAITING_FOR_TURN` | **`FOLD`** | **PASS** |
+| `2026-11-18 224127` | `765` | Hero `Kd 3c` | `['Kd', '3c']` | `[]` | **`30`** | VALID / `BTN_OPEN` | **`ALL_IN`** | **PASS** |
+| `2026-11-18 224127` | `2370` | Hero `7c 5s` | `['7c', '5s']` | `[]` | **`90`** | VALID / `BB_VS_SB_RAISE` | **`CALL`** | **PASS** |
+| `2026-11-18 224127` | `4950` | `5h Jh` \| `Jd 2s 9h` | `['5h', 'Jh']` | `['Jd', '2s', '9h']` | **`60`** | VALID / `WAITING_FOR_TURN` | **`FOLD`** | **PASS** |
+| `2 gry na raz` | `1383` | `Ks 9s` \| `3s Ac Ah` | `['Ks', '9s']` | `['3s', 'Ac', 'Ah']` | **`80`** | VALID / `FLOP` | **`CHECK`** | **PASS** |
+| `2 gry na raz` | `1627` | `Ks 9s` \| `3s Ac Ah` | `['Ks', '9s']` | `['3s', 'Ac', 'Ah']` | **`240`** | VALID / `FLOP` | **`CALL`** | **PASS** |
+| `2 gry na raz` | `2418` | `4d Qs` \| Stół 2 | `['4d', 'Qs']` | `[]` | **`50`** | VALID / `WAITING_FOR_TURN` | **`FOLD`** | **PASS** |
+| `2 gry na raz` | `2605` | `4d Qs` \| `5d 8c Jh` | `['4d', 'Qs']` | `['5d', '8c', 'Jh']` | **`50`** | VALID / `WAITING_FOR_TURN` | **`FOLD`** | **PASS** |
+| `2026-11-18 232515` | `12592` | Board `2c 5s 5c 4d 8s` | `[]` | `['2c', '5s', '5c', '4d', '8s']` | **`270`** | Dyskryminacja `c` vs `s` (bez kolizji) | **`WAIT`** | **PASS** |
+
+### 3. Wyniki testów jednostkowych (`pytest -v tests/`)
+- Liczba testów: **95 passed in 4.17s (100% sukcesu)**.
+- Nowe testy:
+  - `tests/test_vision.py::test_card_recognizer_two_contour_ten_rule`
+  - `tests/test_vision.py::test_detect_hero_actions_zoned_rejects_noise`
+  - `tests/test_engine.py::test_monte_carlo_multiway_3way`
+  - `tests/test_ui_and_main.py::test_hud_overlay_compact_cards_label`
+
+---
+
+
 
 ### 1. Rozwiązane problemy z testów na żywo (`--mode live`)
 1. **Odczyt karty `10` / `T` na mniejszych oknach (`vision/card_recognizer.py`):**

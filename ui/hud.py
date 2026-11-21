@@ -98,6 +98,57 @@ class _DecisionSignalDescriptor:
         return instance._wrapped_decision_updated
 
 
+def format_cards_html(scan_summary: str) -> str:
+    """Extract and format Hero and Board cards into a rich HTML snippet with colored suits."""
+    if not scan_summary:
+        return ""
+
+    hero_str = ""
+    board_str = ""
+    for line in scan_summary.splitlines():
+        line = line.strip()
+        if line.startswith("Hero:"):
+            parts = line.split("|")
+            hero_str = parts[0].replace("Hero:", "").strip()
+            if len(parts) > 1 and "Board:" in parts[1]:
+                board_str = parts[1].replace("Board:", "").strip()
+            break
+
+    def _fmt(tokens_str: str) -> str:
+        out = []
+        for token in tokens_str.split():
+            token = token.strip("[],'\"")
+            if not token or token == "--":
+                continue
+            rank = token[:-1]
+            suit = token[-1]
+            if rank in ("T", "10"):
+                rank = "10"
+            if suit in ("h", "H"):
+                s_sym = '<span style="color:#ff5c5c; font-weight:bold;">♥</span>'
+            elif suit in ("d", "D"):
+                s_sym = '<span style="color:#ff5c5c; font-weight:bold;">♦</span>'
+            elif suit in ("s", "S"):
+                s_sym = '<span style="color:#e2e8f0; font-weight:bold;">♠</span>'
+            elif suit in ("c", "C"):
+                s_sym = '<span style="color:#e2e8f0; font-weight:bold;">♣</span>'
+            else:
+                s_sym = suit
+            out.append(f"<span style='color:#ffffff; font-weight:bold;'>{rank}</span>{s_sym}")
+        return " ".join(out)
+
+    hero_fmt = _fmt(hero_str)
+    board_fmt = _fmt(board_str)
+
+    if hero_fmt and board_fmt:
+        return f"🃏 {hero_fmt} &nbsp;&bull;&nbsp; <span style='color:#94a3b8;'>Board:</span> {board_fmt}"
+    elif hero_fmt:
+        return f"🃏 {hero_fmt}"
+    elif board_fmt:
+        return f"<span style='color:#94a3b8;'>Board:</span> {board_fmt}"
+    return ""
+
+
 class HudBridge(QObject):
     """Thread-safe Qt signal bridge delivering decisions to HUD."""
 
@@ -218,6 +269,7 @@ class HudOverlay(QWidget):
 
         self.table_widgets: dict[str, QLabel] = {}
         self.details_widgets: dict[str, QLabel] = {}
+        self.cards_line_by_table: dict[str, str] = {}
         self.is_locked: bool = False
         self.show_details: bool = False
         self._drag_pos: QPoint | None = None
@@ -558,11 +610,20 @@ class HudOverlay(QWidget):
         lat_str = f"{latency_ms:.1f} ms"
         plan_subtitle = '<div style="font-size: 10px; color: #38bdf8; margin-top: 3px;">⏳ Podgląd w przód (czekam na turę)</div>' if is_plan else ""
 
+        cards_bar = format_cards_html(scan_summary)
+        self.cards_line_by_table[table_id] = cards_bar
+        cards_row = (
+            f'<div style="font-size: 11px; margin-bottom: 5px; padding: 3px 6px; background: rgba(0, 0, 0, 0.3); border-radius: 4px;">{cards_bar}</div>'
+            if cards_bar
+            else ""
+        )
+
         card_html = f"""
         <div style="background-color: rgba(255, 255, 255, 0.06); border-radius: 6px; padding: 8px; margin-top: 4px;">
             <div style="font-size: 10px; color: #94a3b8; margin-bottom: 4px;">
                 <b>{table_id}</b> &bull; <span style="color: #60a5fa;">{profile_used}</span>
             </div>
+            {cards_row}
             <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 4px;">
                 <tr>
                     <td align="left" style="white-space: nowrap;">
@@ -613,6 +674,7 @@ class HudOverlay(QWidget):
     @Slot(str)
     def remove_table(self, table_id: str) -> None:
         """Remove a stale table widget and details from layout."""
+        self.cards_line_by_table.pop(table_id, None)
         if table_id in self.table_widgets:
             widget = self.table_widgets.pop(table_id)
             self.tables_layout.removeWidget(widget)

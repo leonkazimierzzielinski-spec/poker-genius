@@ -805,13 +805,13 @@ def test_card_recognizer_thin_one_in_ten() -> None:
 
     # Construct scaled-down synthetic card image
     card = np.full((80, 56, 3), 250, dtype=np.uint8)
-    # Resize T so that '1' contour has thin width (2-3 px)
-    t_small = cv2.resize(t_tpl, (12, 16), interpolation=cv2.INTER_NEAREST)
-    card[10:26, 8:20][t_small > 0] = (20, 20, 20)
+    # Resize T so that '1' contour has thin width (3 px)
+    t_small = cv2.resize(t_tpl, (16, 20), interpolation=cv2.INTER_NEAREST)
+    card[10:30, 8:24][t_small > 0] = (20, 20, 20)
 
     # Suit 's'
-    s_small = cv2.resize(s_tpl, (12, 14), interpolation=cv2.INTER_NEAREST)
-    card[32:46, 8:20][s_small > 0] = (20, 20, 20)
+    s_small = cv2.resize(s_tpl, (14, 16), interpolation=cv2.INTER_NEAREST)
+    card[34:50, 8:22][s_small > 0] = (20, 20, 20)
 
     cands = rec.recognize_candidates(card, slot_hint="hero_left")
     assert len(cands) > 0
@@ -821,6 +821,60 @@ def test_card_recognizer_thin_one_in_ten() -> None:
 
     card_str, score = rec.recognize(card, slot_hint="hero_left")
     assert card_str == "Ts"
+
+
+def test_card_recognizer_two_contour_ten_rule() -> None:
+    """Verify CardRecognizer boosts rank 'T' (10) when two side-by-side contours form the rank."""
+    from vision.card_recognizer import CardRecognizer
+
+    rec = CardRecognizer()
+    if not (Path("data/templates/ranks").is_dir() and Path("data/templates/suits").is_dir()):
+        pytest.skip("Rank/suit templates not present")
+
+    t_tpl = rec.ranks["T"]
+    th, tw = t_tpl.shape
+    d_tpl = rec.suits["d"]
+    dh, dw = d_tpl.shape
+
+    card_img = np.full((90, 60, 3), 245, dtype=np.uint8)
+    for y in range(th):
+        for x in range(tw):
+            if t_tpl[y, x] > 128:
+                card_img[8 + y, 5 + x] = (20, 20, 220)
+
+    for y in range(dh):
+        for x in range(dw):
+            if d_tpl[y, x] > 128:
+                card_img[8 + th + 6 + y, 5 + x] = (20, 20, 220)
+
+    cands = rec.recognize_candidates(card_img)
+    assert len(cands) > 0
+    top_card, top_score = cands[0]
+    assert top_card == "Td"
+    assert top_score >= 0.85
+
+    card_str, score = rec.recognize(card_img)
+    assert card_str == "Td"
+    assert score >= 0.85
+
+
+def test_detect_hero_actions_zoned_rejects_noise() -> None:
+    """Verify zoned Hero actions rejection of background noise in Bet zone."""
+    actions_roi = np.full((50, 160, 3), 20, dtype=np.uint8)
+    # Fold button in left zone
+    actions_roi[10:40, 10:45] = (30, 30, 220)
+    # Call/Check button in middle zone
+    actions_roi[10:40, 60:100] = (30, 200, 30)
+    # Orange noise in left zone only (x < 0.40 * w)
+    actions_roi[5:10, 15:25] = (30, 150, 230)
+    # Right zone (x >= 0.58 * w) has only background felt
+
+    is_turn, acts = detect_hero_actions(actions_roi)
+    assert is_turn is True
+    assert "FOLD" in acts
+    assert ("CHECK" in acts or "CALL" in acts)
+    assert "BET" not in acts
+
 
 
 
