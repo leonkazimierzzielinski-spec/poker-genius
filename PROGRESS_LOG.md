@@ -1,5 +1,60 @@
 # Poker Genius — Dziennik Postępu Prac (Progress Log)
 
+## V13 — Mikro-kalibracja ROI, Minimalistyczny HUD z Wizualnymi Kartami i Tabelą Zagrań, Sizing w Wielokrotnościach BB oraz Rejestrator Historii Rozdań (2026-11-21)
+
+### 1. Wdrożone zmiany i nowa architektura
+1. **Mikro-kalibracja 4 ROI i rozszerzenie poziomów blindów (`config.json`, `core/constants.py`, `tests/test_contracts.py`):**
+   - `seat_2_bet`: poszerzono z `[0.675, 0.405, 0.04, 0.038]` na `[0.666, 0.405, 0.049, 0.038]` (bezpieczny lewy margines dla cyfry `5` w zakładach `565`).
+   - `seat_1_dealer` & `seat_2_dealer`: skalibrowano `y` i `h` na `[0.368, 0.270, 0.032, 0.042]` oraz `[0.602, 0.270, 0.032, 0.042]` (brak obcinania żetonu `[D]`).
+   - `blinds`: poszerzono z `[0.55, 0.57, 0.065, 0.0351]` na `[0.546, 0.57, 0.072, 0.036]` (obsługa blindów `50/100` i `60/120` bez stykania się cyfr z lewą krawędzią).
+   - W `core/constants.py` dodano `(50, 100)` oraz `(60, 120)` do `BLIND_LEVELS` (łącznie 7 poziomów). Zaktualizowano `tests/test_contracts.py`.
+2. **Sizing wyłącznie w wielokrotnościach BB lub ALL-IN (`core/contracts.py`, `strategy/simplifier.py`, `main.py`, `ui/hud.py`):**
+   - Rozszerzono `Decision` o opcjonalne pola: `sizing_chips: int | None = None` oraz `sizing_bb: int | None = None` (100% zgodności wstecznej z dotychczasowymi konstruktorami).
+   - Zaimplementowano funkcję `quantize_sizing_to_bb(target_chips, big_blind, hero_stack, effective_stack, min_bb_mult=1, all_in_threshold_ratio=0.65)` w `strategy/simplifier.py`.
+   - Przejście w `ALL_IN`: gdy `chips >= 0.65 * effective_stack`, `chips >= hero_stack` lub `effective_stack <= 3 * big_blind` przy akcji agresywnej.
+   - W `main.py` powiązano estymację EV postflop w `evaluate_candidates` z rzeczywistym skwantyzowanym rozmiarem betu `bet_bb = float(bb_mult)`, eliminując niespójności matematyczne.
+   - Wprowadzono wspólną funkcję `format_action_label(action, sizing_bb, sizing_chips)` w `ui/hud.py` wykorzystywaną spójnie w HUD oraz w `ActionBarOverlay` (np. `BET 2 BB (200)`, `RAISE 2 BB (40)`, `ALL-IN (235)`).
+3. **Śledzenie zagrań w rozdaniu (`state/tracker.py`) i rejestrator historii (`state/hand_history.py`):**
+   - Rozbudowano `TableTracker` o chronologiczny stan rozdania `self.current_hand`, `self.last_completed_hand`, sumowanie `invested_total` przez ulice, czas reakcji (`decision_sec`) oraz deduplikację rekomendacji HUD.
+   - Deterministyczne wykrywanie FOLD: warunek A (status `FOLDED` / brak aktywności gracza), warunek B (zmiana ulicy bez wyrównania wcześniejszego betu), warunek C (Hero fold po minięciu tury bez sprawdzenia zakładu).
+   - Utworzono moduł `HandHistoryRecorder`: zapisuje zakończone rozdania do `hand_histories/session_YYYYMMDD_HHMMSS.jsonl` oraz czytelnego `.md` z tabelami graczy, chronologią akcji i rekomendacjami HUD (dopisano `hand_histories/` do `.gitignore`).
+4. **Minimalistyczny HUD, wizualne karty i rozdzielenie kalibracji (`ui/hud.py`):**
+   - Dodano `render_visual_cards_html` renderującą ostre, białe kafelki kart z symbolami w kolorach `#dc2626` (`♦♥`) i `#0f172a` (`♠♣`) w tabeli HTML (idealny render na Windows HiDPI).
+   - Zaktualizowano `format_cards_html` pod kątem białych kafelków.
+   - Tryb domyślny HUD: minimalistyczny widok z dużą odznaką rekomendacji, EV oraz rzędem białych kafelków kart własnych i stołu.
+   - Tryb `🔍 Szczegóły`: bogaty, czysty panel HTML z tabelą graczy (`Stack`, `Włożył`, `Zagranie`, `Czas`), złotą odznaką dealera `[D]`, wyszarzonymi wierszami `FOLD` ze skreśloną nazwą `<s>...</s>`, historią 4 ostatnich akcji i stopką diagnostyczną.
+   - **Naprawa błędu z V12:** kliknięcie `🔍 Szczegóły` **nigdy** nie otwiera panelu kalibracji stołu. Kalibracja została przeniesiona pod mały dyskretny przycisk `⚙` w nagłówku stołu.
+   - Dodano dedykowany sygnał `HudBridge.hand_summary_updated` zapewniający pełną izolację sygnałów.
+
+### 2. Wyniki weryfikacji na nagraniach testowych
+
+| Nagranie | Klatka | Rozdzielczość | Źródło kotwicy | Karty Hero | Karty Board | Pot | Blinds | Status |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `2026-11-19 211257` | `1827` | `1858x1248` | **RIM** | `Kh 2s` | `--` | `70` | `10/20` | **VALID (100%)** |
+| `2026-11-19 211257` | `2604` | `1858x1248` | **RIM** | `Kh 2s` | `7d Td Th 2h` | `218` | `10/20` | **VALID (100%)** |
+| `2026-11-19 211257` | `3643` | `1858x1248` | **RIM** | `Jc 4d` | `--` | `30` | `10/20` | **VALID (100%)** |
+| `2026-11-19 211257` | `3880` | `1858x1248` | **RIM** | `Jc 4d` | `--` | `206` | `10/20` | **VALID (100%)** |
+| `2026-11-19 211257` | `4757` | `1858x1248` | **RIM** | `7s 7d` | `Qc 7c 7h` | `682` | `15/30` | **VALID (100%)** |
+| `2026-11-18 224127` | `0` | `1772x1126` | **RIM** | `2s Tc` | `--` | `80` | `10/20` | **VALID (100%)** |
+| `2026-11-18 224127` | `765` | `1772x1126` | **RIM** | `Kd 3c` | `--` | `30` | `10/20` | **VALID (100%)** |
+| `2026-11-18 224127` | `2370` | `1772x1126` | **RIM** | `7c 5s` | `--` | `90` | `15/30` | **VALID (100%)** |
+| `2026-11-18 224127` | `4950` | `1772x1126` | **RIM** | `5h Jh` | `Jd 2s 9h` | `60` | `15/30` | **VALID (100%)** |
+| `2 gry na raz` | `1383` | `1706x1022` | **RIM** | `Ks 9s` | `3s Ac Ah` | `80` | `10/20` | **VALID (100%)** |
+| `2 gry na raz` | `1627` | `1706x1022` | **RIM** | `Ks 9s` | `3s Ac Ah` | `240` | `10/20` | **VALID (100%)** |
+| `2 gry na raz` | `2418` | `1706x1022` | **RIM** | `4d Qs` | `--` | `50` | `10/20` | **VALID (100%)** |
+| `2 gry na raz` | `2605` | `1706x1022` | **RIM** | `4d Qs` | `5d 8c Jh` | `50` | `10/20` | **VALID (100%)** |
+
+### 3. Wyniki testów jednostkowych (`pytest -v tests/`)
+- Liczba testów: **111 passed in 4.03s (100% sukcesu)**.
+- Nowe testy:
+  1. `tests/test_strategy.py::test_quantize_sizing_to_bb_and_all_in`: testuje kwantyzację sizingu do wielokrotności BB dla BB=20 i BB=100, próg ALL-IN (>= 65% efektywnego stacka oraz <= 3 BB przy agresji) i stack 0.
+  2. `tests/test_state.py::test_tracker_hand_summary_invested_time_and_fold`: testuje sumowanie `invested_total` w trakcie rozdania i przez ulice, czas decyzji (`decision_sec`) oraz deterministyczne wykrywanie FOLD (warunki A, B, C).
+  3. `tests/test_state.py::test_hand_history_recorder_jsonl_and_md`: testuje zapis plików `.jsonl` i `.md`, pomijanie pustych rozdań oraz strukturę raportu.
+  4. `tests/test_ui_and_main.py::test_render_visual_cards_html_and_action_labels`: testuje białe kafelki kart HTML z poprawnymi kolorami i formatowanie etykiet akcji.
+  5. `tests/test_ui_and_main.py::test_hud_details_shows_table_with_grayed_fold_and_keeps_calibration_hidden`: testuje panel szczegółów z wyszarzonym wierszem FOLD, mały guzik `⚙` i niewidoczność panelu kalibracji bez kliknięcia `⚙`.
+
+---
+
 ## V12 — Pancerna geometria stołu (4 czyste łuki złotej obwódki jako numer 1, Anti-Jitter, usuwanie dowolnego stołu i kompaktowy HUD) (2026-11-21)
 
 ### 1. Wdrożone zmiany i nowa architektura

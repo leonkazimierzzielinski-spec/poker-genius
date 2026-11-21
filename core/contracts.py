@@ -45,6 +45,8 @@ class Decision:
     confidence: float
     profile_used: str
     reason: str
+    sizing_chips: int | None = None
+    sizing_bb: int | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)

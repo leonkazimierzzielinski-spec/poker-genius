@@ -8,6 +8,8 @@ BLIND_LEVELS: list[tuple[int, int]] = [
     (20, 40),
     (30, 60),
     (40, 80),
+    (50, 100),
+    (60, 120),
 ]
 CARD_MATCH_THRESHOLD: float = 0.92
 EV_LOSS_THRESHOLD_BB: float = 0.08

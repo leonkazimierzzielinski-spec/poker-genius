@@ -44,6 +44,35 @@ def is_action_available(act: str, available_actions: list[str]) -> bool:
     return False
 
 
+def quantize_sizing_to_bb(
+    target_chips: float,
+    big_blind: int,
+    hero_stack: int,
+    effective_stack: int,
+    min_bb_mult: int = 1,
+    all_in_threshold_ratio: float = 0.65,
+) -> tuple[str, int | None, int]:
+    """Zwraca (mode, bb_mult, chips), gdzie mode to 'ALL_IN' albo 'BB_MULT'."""
+    bb = max(1, int(big_blind))
+    hero_stk = max(0, int(hero_stack))
+    eff_stk = max(0, int(effective_stack))
+    if hero_stk == 0:
+        return ("ALL_IN", None, 0)
+
+    bb_mult = max(min_bb_mult, int(round(target_chips / bb)))
+    chips = bb_mult * bb
+
+    # Reguła przejścia w ALL_IN: >= 65% efektywnego stacka, >= stacka Hero lub <= 3 BB przy agresji
+    if (
+        chips >= hero_stk
+        or (eff_stk > 0 and chips >= int(round(all_in_threshold_ratio * eff_stk)))
+        or (eff_stk > 0 and eff_stk <= 3 * bb and bb_mult >= 2)
+    ):
+        return ("ALL_IN", None, hero_stk)
+
+    return ("BB_MULT", bb_mult, chips)
+
+
 class StrategySimplifier:
     """Simplifies solver strategies to deterministic pure actions with EV-loss filtering."""
 

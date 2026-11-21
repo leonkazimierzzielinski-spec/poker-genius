@@ -201,54 +201,110 @@ class _TableAdjustSignalDescriptor:
         return instance._wrapped_table_adjust_changed
 
 
+def render_visual_cards_html(cards: list[str], empty_text: str = "—") -> str:
+    """Render list of poker cards as visual crisp white tiles in an HTML table."""
+    if not cards:
+        return f'<span style="color: #64748b; font-size: 11px;">{empty_text}</span>'
+
+    cells = []
+    for card in cards:
+        card = card.strip("[],'\"")
+        if not card or card == "--":
+            continue
+        rank = card[:-1]
+        suit = card[-1].lower()
+        if rank in ("T", "10"):
+            rank = "10"
+
+        if suit in ("h", "d"):
+            color = "#dc2626"
+            symbol = "♥" if suit == "h" else "♦"
+        elif suit in ("s", "c"):
+            color = "#0f172a"
+            symbol = "♠" if suit == "s" else "♣"
+        else:
+            color = "#0f172a"
+            symbol = suit
+
+        cell = (
+            f'<td style="background-color: #f8fafc; color: {color}; '
+            f'border: 1px solid #94a3b8; padding: 2px 6px; font-weight: bold; '
+            f'font-size: 13px; white-space: nowrap;">{rank}{symbol}</td>'
+        )
+        cells.append(cell)
+
+    if not cells:
+        return f'<span style="color: #64748b; font-size: 11px;">{empty_text}</span>'
+
+    return f'<table cellspacing="3" cellpadding="0" style="display: inline-table;"><tr>{"".join(cells)}</tr></table>'
+
+
+def format_action_label(
+    action: str,
+    sizing_bb: int | None = None,
+    sizing_chips: int | None = None,
+) -> str:
+    """Format action string into a clean, uniform label with BB multiple and chip amounts."""
+    act = str(action or "WAIT").upper()
+    if act == "BET_30":
+        if sizing_bb is not None and sizing_chips is not None:
+            return f"BET {sizing_bb} BB ({sizing_chips})"
+        elif sizing_bb is not None:
+            return f"BET {sizing_bb} BB"
+        elif sizing_chips is not None and sizing_chips > 0:
+            return f"BET ({sizing_chips})"
+        return "BET 30%"
+    elif act == "MIN_RAISE":
+        if sizing_bb is not None and sizing_chips is not None:
+            return f"RAISE {sizing_bb} BB ({sizing_chips})"
+        elif sizing_bb is not None:
+            return f"RAISE {sizing_bb} BB"
+        elif sizing_chips is not None and sizing_chips > 0:
+            return f"RAISE ({sizing_chips})"
+        return "RAISE 2 BB"
+    elif act == "ALL_IN":
+        if sizing_chips is not None and sizing_chips > 0:
+            return f"ALL-IN ({sizing_chips})"
+        return "ALL-IN"
+    elif act == "CALL":
+        if sizing_chips is not None and sizing_chips > 0:
+            return f"CALL ({sizing_chips})"
+        return "CALL"
+    elif act in ("CHECK", "FOLD", "WAIT"):
+        return act
+    else:
+        if sizing_chips is not None and sizing_chips > 0:
+            return f"{act} ({sizing_chips})"
+        return act
+
+
 def format_cards_html(scan_summary: str) -> str:
-    """Extract and format Hero and Board cards into a rich HTML snippet with colored suits."""
+    """Extract and format Hero and Board cards into a rich HTML snippet with visual white tiles."""
     if not scan_summary:
         return ""
 
-    hero_str = ""
-    board_str = ""
+    hero_cards: list[str] = []
+    board_cards: list[str] = []
     for line in scan_summary.splitlines():
         line = line.strip()
         if line.startswith("Hero:"):
             parts = line.split("|")
-            hero_str = parts[0].replace("Hero:", "").strip()
+            h_part = parts[0].replace("Hero:", "").strip()
+            hero_cards = [c.strip("[],'\"") for c in h_part.split() if c.strip("[],'\"") and c != "--"]
             if len(parts) > 1 and "Board:" in parts[1]:
-                board_str = parts[1].replace("Board:", "").strip()
+                b_part = parts[1].replace("Board:", "").strip()
+                board_cards = [c.strip("[],'\"") for c in b_part.split() if c.strip("[],'\"") and c != "--"]
             break
 
-    def _fmt(tokens_str: str) -> str:
-        out = []
-        for token in tokens_str.split():
-            token = token.strip("[],'\"")
-            if not token or token == "--":
-                continue
-            rank = token[:-1]
-            suit = token[-1]
-            if rank in ("T", "10"):
-                rank = "10"
-            if suit in ("h", "H"):
-                s_sym = '<span style="color:#ff5c5c; font-weight:bold;">♥</span>'
-            elif suit in ("d", "D"):
-                s_sym = '<span style="color:#ff5c5c; font-weight:bold;">♦</span>'
-            elif suit in ("s", "S"):
-                s_sym = '<span style="color:#e2e8f0; font-weight:bold;">♠</span>'
-            elif suit in ("c", "C"):
-                s_sym = '<span style="color:#e2e8f0; font-weight:bold;">♣</span>'
-            else:
-                s_sym = suit
-            out.append(f"<span style='color:#ffffff; font-weight:bold;'>{rank}</span>{s_sym}")
-        return " ".join(out)
+    hero_html = render_visual_cards_html(hero_cards) if hero_cards else ""
+    board_html = render_visual_cards_html(board_cards) if board_cards else ""
 
-    hero_fmt = _fmt(hero_str)
-    board_fmt = _fmt(board_str)
-
-    if hero_fmt and board_fmt:
-        return f"🃏 {hero_fmt} &nbsp;&bull;&nbsp; <span style='color:#94a3b8;'>Board:</span> {board_fmt}"
-    elif hero_fmt:
-        return f"🃏 {hero_fmt}"
-    elif board_fmt:
-        return f"<span style='color:#94a3b8;'>Board:</span> {board_fmt}"
+    if hero_html and board_html:
+        return f"🃏 {hero_html} &nbsp;&bull;&nbsp; <span style='color:#94a3b8;'>Board:</span> {board_html}"
+    elif hero_html:
+        return f"🃏 {hero_html}"
+    elif board_html:
+        return f"<span style='color:#94a3b8;'>Board:</span> {board_html}"
     return ""
 
 
@@ -266,6 +322,7 @@ class HudBridge(QObject):
     debug_overlay_updated = Signal(object)
     buy_in_changed = Signal(float)
     action_bar_updated = Signal(object)
+    hand_summary_updated = Signal(str, object)
 
 
 class RegionSelectorOverlay(QWidget):
@@ -471,39 +528,22 @@ class ActionBarOverlay(QWidget):
 
             bx, by, bw, bh = self.get_badge_rect_for_action(action, actions_rect, dpr)
             amt = data.get("amount_chips")
+            sizing_bb = data.get("sizing_bb")
             is_plan = bool(data.get("is_plan", False))
 
-            if action == "FOLD":
-                text = "▲ PLAN: FOLD" if is_plan else "▲ FOLD"
+            label = format_action_label(action, sizing_bb, amt)
+            text = f"▲ PLAN: {label}" if is_plan else f"▲ {label}"
+
+            if action in ("ALL_IN", "BET_30", "MIN_RAISE"):
+                bg_color = QColor(39, 174, 96, 200 if is_plan else 245)
+                border_color = QColor("#2ecc71")
+            elif action in ("CHECK", "CALL"):
+                bg_color = QColor(230, 126, 34, 200 if is_plan else 245)
+                border_color = QColor("#f39c12")
+            elif action == "FOLD":
                 bg_color = QColor(192, 57, 43, 200 if is_plan else 245)
                 border_color = QColor("#e74c3c")
-            elif action == "CHECK":
-                text = "▲ PLAN: CHECK" if is_plan else "▲ CHECK"
-                bg_color = QColor(230, 126, 34, 200 if is_plan else 245)
-                border_color = QColor("#f39c12")
-            elif action == "CALL":
-                amt_str = f" {amt}" if amt is not None else ""
-                text = f"▲ PLAN: CALL{amt_str}" if is_plan else f"▲ CALL{amt_str}"
-                bg_color = QColor(230, 126, 34, 200 if is_plan else 245)
-                border_color = QColor("#f39c12")
-            elif action == "BET_30":
-                amt_str = f" {amt}" if amt is not None else ""
-                text = f"▲ PLAN: BET{amt_str}" if is_plan else f"▲ BET{amt_str}"
-                bg_color = QColor(39, 174, 96, 200 if is_plan else 245)
-                border_color = QColor("#2ecc71")
-            elif action == "MIN_RAISE":
-                amt_str = f" {amt}" if amt is not None else ""
-                text = f"▲ PLAN: RAISE{amt_str}" if is_plan else f"▲ RAISE{amt_str}"
-                bg_color = QColor(39, 174, 96, 200 if is_plan else 245)
-                border_color = QColor("#2ecc71")
-            elif action == "ALL_IN":
-                amt_str = f" {amt}" if (amt is not None and amt > 0) else ""
-                text = f"▲ PLAN: ALL-IN{amt_str}" if is_plan else f"▲ ALL-IN{amt_str}"
-                bg_color = QColor(39, 174, 96, 200 if is_plan else 245)
-                border_color = QColor("#2ecc71")
             else:
-                amt_str = f" {amt}" if amt is not None else ""
-                text = f"▲ {action}{amt_str}"
                 bg_color = QColor(41, 128, 185, 200 if is_plan else 245)
                 border_color = QColor("#3498db")
 
@@ -807,6 +847,10 @@ class HudOverlay(QWidget):
         self._removed_table_ids: set[str] = set()
         self.editing_table_id: str | None = None
         self._pre_edit_adjust: tuple[int, int, float, float] = (0, 0, 1.0, 1.0)
+        self.hand_summaries: dict[str, dict[str, Any]] = {}
+        self.last_scan_summaries: dict[str, str] = {}
+        self.last_latencies: dict[str, float] = {}
+        self.table_calib_buttons: dict[str, QPushButton] = {}
 
         # Legacy backward-compat attributes for table_1
         self.table_dx: int = 0
@@ -833,6 +877,8 @@ class HudOverlay(QWidget):
 
         if self.bridge is not None:
             self.bridge.decision_updated.connect(self.on_decision_updated)
+            if hasattr(self.bridge, "hand_summary_updated"):
+                self.bridge.hand_summary_updated.connect(self.on_hand_summary_updated)
             if hasattr(self.bridge, "table_removed"):
                 self.bridge.table_removed.connect(self.remove_table)
             if hasattr(self.bridge, "table_adjust_changed"):
@@ -1309,11 +1355,15 @@ class HudOverlay(QWidget):
             self.buy_in_panel.setVisible(self.show_details)
         if hasattr(self, "btn_debug_overlay"):
             self.btn_debug_overlay.setVisible(self.show_details)
-        if hasattr(self, "adjust_panel"):
-            self.adjust_panel.setVisible(self.show_details)
+        # Never automatically open calibration panel when toggling details
+        if not self.show_details and self.editing_table_id is None:
+            if hasattr(self, "calibration_panel"):
+                self.calibration_panel.setVisible(False)
         for tid, header in self.table_header_widgets.items():
             header.setVisible(self.show_details)
         for tid, detail_lbl in self.details_widgets.items():
+            if self.show_details:
+                detail_lbl.setText(self._render_details_html(tid))
             detail_lbl.setVisible(self.show_details and bool(detail_lbl.text()))
         if self.show_details:
             self.btn_details.setStyleSheet(
@@ -1760,6 +1810,184 @@ class HudOverlay(QWidget):
         self._drag_pos = None
         super().mouseReleaseEvent(event)
 
+    @Slot(str, object)
+    def on_hand_summary_updated(self, table_id: str, summary: Any) -> None:
+        """Receive structured hand summary update from tracker."""
+        if isinstance(summary, dict):
+            self.hand_summaries[table_id] = summary
+            if table_id in self.details_widgets and self.show_details:
+                self.details_widgets[table_id].setText(self._render_details_html(table_id))
+                self.details_widgets[table_id].setVisible(True)
+                self.adjustSize()
+                self._clamp_to_screen()
+
+    def _render_details_html(self, table_id: str) -> str:
+        """Render structured rich HTML for the hand details panel."""
+        summary = self.hand_summaries.get(table_id)
+        scan_summary = self.last_scan_summaries.get(table_id, "")
+        lat = self.last_latencies.get(table_id, 0.0)
+
+        hero_cards: list[str] = []
+        board_cards: list[str] = []
+        sb, bb = (0, 0)
+        pot = 0
+        prize_str = "--"
+        players: dict[Any, dict[str, Any]] = {}
+        action_log: list[dict[str, Any]] = []
+
+        if summary:
+            hero_cards = summary.get("hero_cards") or []
+            board_cards = summary.get("board_cards") or []
+            sb, bb = summary.get("blinds") or (0, 0)
+            pot = summary.get("pot", 0)
+            prize = summary.get("prize_pool")
+            prize_str = f"${prize}" if prize is not None and not str(prize).startswith("$") else (str(prize) if prize is not None else "--")
+            players = summary.get("players") or {}
+            action_log = summary.get("action_log") or []
+
+        # Fallback to parse fields from scan_summary if summary is missing or incomplete
+        if scan_summary:
+            for line in scan_summary.splitlines():
+                line = line.strip()
+                if not hero_cards and line.startswith("Hero:"):
+                    parts = line.split("|")
+                    h_part = parts[0].replace("Hero:", "").strip()
+                    hero_cards = [c.strip("[],'\"") for c in h_part.split() if c.strip("[],'\"") and c != "--"]
+                    if len(parts) > 1 and "Board:" in parts[1]:
+                        b_part = parts[1].replace("Board:", "").strip()
+                        board_cards = [c.strip("[],'\"") for c in b_part.split() if c.strip("[],'\"") and c != "--"]
+                elif (sb == 0 and bb == 0) and line.startswith("Blinds:"):
+                    for seg in line.split("|"):
+                        seg = seg.strip()
+                        if seg.startswith("Blinds:"):
+                            b_str = seg.replace("Blinds:", "").strip()
+                            if "/" in b_str:
+                                try:
+                                    sb = int(b_str.split("/")[0])
+                                    bb = int(b_str.split("/")[1])
+                                except Exception:
+                                    pass
+                        elif seg.startswith("Prize:") and prize_str == "--":
+                            prize_str = seg.replace("Prize:", "").strip()
+                        elif seg.startswith("Pot:") and pot == 0:
+                            try:
+                                pot = int(seg.replace("Pot:", "").strip())
+                            except Exception:
+                                pass
+
+        if not players:
+            players = {
+                0: {"name": "Ty (S0)", "stack": 300, "invested_total": 0, "last_action": "—", "folded": False},
+                1: {"name": "Rywal 1 (S1)", "stack": 300, "invested_total": 0, "last_action": "—", "folded": False},
+                2: {"name": "Rywal 2 (S2)", "stack": 300, "invested_total": 0, "last_action": "—", "folded": False},
+            }
+
+        # Extract anchor source from scan_summary if available
+        anchor_src = "RIM"
+        if scan_summary:
+            for line in scan_summary.splitlines():
+                if line.startswith("Kotwica:"):
+                    anchor_src = line.replace("Kotwica:", "").strip()
+                    break
+
+        # Render visual card tiles
+        hero_tiles = render_visual_cards_html(hero_cards)
+        board_tiles = render_visual_cards_html(board_cards)
+
+        # Player table rows
+        rows = []
+        for sid in (0, 1, 2):
+            p = players.get(sid) or players.get(str(sid))
+            if not p:
+                continue
+            name = p.get("name") or ("Ty (S0)" if sid == 0 else f"Rywal {sid} (S{sid})")
+            is_dealer = bool(p.get("is_dealer", False))
+            d_tag = ' <span style="color:#f59e0b; font-weight:bold;">[D]</span>' if is_dealer else ""
+            stack = p.get("stack")
+            stack_str = str(stack) if stack is not None else "--"
+            invested = p.get("invested_total", 0)
+            last_act = p.get("last_action") or "—"
+            dec_sec = p.get("last_decision_sec")
+            dec_str = f"{dec_sec:.1f}s" if dec_sec is not None else "—"
+            folded = bool(p.get("folded", False))
+
+            if folded:
+                row_style = "color: #64748b; background-color: rgba(255, 255, 255, 0.02);"
+                name_cell = f"<s>{name}</s>{d_tag}"
+                act_cell = '<span style="color: #ef4444; font-weight: bold;">FOLD</span>'
+            else:
+                row_style = "color: #f8fafc;"
+                name_cell = f"{name}{d_tag}"
+                act_cell = f'<span style="color: #e2e8f0;">{last_act}</span>'
+
+            rows.append(f"""
+            <tr style="{row_style}">
+                <td align="left">{name_cell}</td>
+                <td align="right">{stack_str}</td>
+                <td align="right"><b>{invested}</b></td>
+                <td align="center">{act_cell}</td>
+                <td align="right">{dec_str}</td>
+            </tr>
+            """)
+
+        # Recent action log
+        action_log_html = ""
+        if action_log:
+            recent = action_log[-4:]
+            log_lines = []
+            for entry in recent:
+                t_str = entry.get("time_str", "")
+                p_name = entry.get("player_name") or f"S{entry.get('seat_id', '')}"
+                act = entry.get("action", "")
+                amt = entry.get("amount", "")
+                amt_str = f" {amt}" if amt and act not in ("FOLD", "CHECK") else ""
+                ds = entry.get("decision_sec")
+                ds_str = f" ({ds}s)" if ds is not None else ""
+                log_lines.append(f'<div style="font-size: 10px; color: #94a3b8; padding: 1px 0;">{t_str} &bull; {p_name} <b>{act}{amt_str}</b>{ds_str}</div>')
+            action_log_html = '<div style="margin-top: 4px; margin-bottom: 4px; padding: 3px 6px; background: rgba(0,0,0,0.25); border-radius: 4px;">' + "".join(log_lines) + '</div>'
+
+        status_val = "VALID"
+        if scan_summary:
+            for line in scan_summary.splitlines():
+                line = line.strip()
+                if line.startswith("Status:"):
+                    status_val = line.replace("Status:", "").strip()
+                    break
+
+        footer_html = f"""
+        <div style="font-size: 9px; color: #64748b; border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 3px; margin-top: 4px;">
+            Status: {status_val} &bull; Blinds: {sb}/{bb} &bull; Pot: {pot} &bull; Prize: {prize_str} &bull; {anchor_src} ({lat:.0f} ms)
+        </div>
+        """
+
+        html = f"""
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 11px; color: #cbd5e1; padding: 4px;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 6px;">
+                <tr>
+                    <td align="left" style="vertical-align: middle;">
+                        <span style="color: #94a3b8; font-size: 10px; font-weight: bold; margin-right: 4px;">Moje karty:</span>{hero_tiles}
+                    </td>
+                    <td align="right" style="vertical-align: middle;">
+                        <span style="color: #94a3b8; font-size: 10px; font-weight: bold; margin-right: 4px;">Karty na stole:</span>{board_tiles}
+                    </td>
+                </tr>
+            </table>
+            <table width="100%" cellpadding="3" cellspacing="0" style="border-collapse: collapse;">
+                <tr style="color: #94a3b8; border-bottom: 1px solid rgba(255, 255, 255, 0.1); font-size: 10px;">
+                    <th align="left">Gracz</th>
+                    <th align="right">Stack</th>
+                    <th align="right">Włożył</th>
+                    <th align="center">Zagranie</th>
+                    <th align="right">Czas</th>
+                </tr>
+                {"".join(rows)}
+            </table>
+            {action_log_html}
+            {footer_html}
+        </div>
+        """
+        return html
+
     @Slot(object, float, str)
     @Slot(object, float)
     def on_decision_updated(
@@ -1778,13 +2006,20 @@ class HudOverlay(QWidget):
                 "adjust": (0, 0, 1.0, 1.0),
             }
             self._update_table_delete_buttons_visibility()
+
+        self.last_scan_summaries[table_id] = scan_summary
+        self.last_latencies[table_id] = latency_ms
+
         action = getattr(decision, "action", "WAIT")
         ev_bb = getattr(decision, "ev_bb", None)
         profile_used = getattr(decision, "profile_used", "STANDARD_EXPLOIT")
         reason = getattr(decision, "reason", "")
+        sizing_bb = getattr(decision, "sizing_bb", None)
+        sizing_chips = getattr(decision, "sizing_chips", None)
 
         is_plan = str(reason).startswith("[PLAN]")
-        badge_text = f"PLAN: {action}" if is_plan else action
+        action_label = format_action_label(action, sizing_bb, sizing_chips)
+        badge_text = f"PLAN: {action_label}" if is_plan else action_label
 
         # Action badge colors & styling
         if is_plan:
@@ -1816,42 +2051,71 @@ class HudOverlay(QWidget):
             ev_str = "EV: --"
             ev_color = "#95a5a6"
 
-        lat_str = f"{latency_ms:.1f} ms"
         plan_subtitle = '<div style="font-size: 10px; color: #38bdf8; margin-top: 3px;">⏳ Podgląd w przód (czekam na turę)</div>' if is_plan else ""
 
         cards_bar = format_cards_html(scan_summary)
         self.cards_line_by_table[table_id] = cards_bar
-        cards_row = (
-            f'<div style="font-size: 11px; margin-bottom: 5px; padding: 3px 6px; background: rgba(0, 0, 0, 0.3); border-radius: 4px;">{cards_bar}</div>'
-            if cards_bar
-            else ""
-        )
+
+        summary = self.hand_summaries.get(table_id, {})
+        hero_cards = summary.get("hero_cards") or []
+        board_cards = summary.get("board_cards") or []
+        if not hero_cards and scan_summary:
+            for line in scan_summary.splitlines():
+                line = line.strip()
+                if line.startswith("Hero:"):
+                    parts = line.split("|")
+                    h_part = parts[0].replace("Hero:", "").strip()
+                    hero_cards = [c.strip("[],'\"") for c in h_part.split() if c.strip("[],'\"") and c != "--"]
+                    if len(parts) > 1 and "Board:" in parts[1]:
+                        b_part = parts[1].replace("Board:", "").strip()
+                        board_cards = [c.strip("[],'\"") for c in b_part.split() if c.strip("[],'\"") and c != "--"]
+                    break
+
+        cards_row_html = ""
+        if hero_cards or board_cards:
+            hero_tiles = render_visual_cards_html(hero_cards)
+            board_tiles = render_visual_cards_html(board_cards) if board_cards else ""
+            if board_tiles:
+                cards_row_html = f"""
+                <div style="margin: 3px 0 5px 0;">
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                        <tr>
+                            <td align="left" style="vertical-align: middle;">
+                                <span style="font-size: 10px; color: #94a3b8; font-weight: bold; margin-right: 4px;">Moje:</span>{hero_tiles}
+                            </td>
+                            <td align="right" style="vertical-align: middle;">
+                                <span style="font-size: 10px; color: #94a3b8; font-weight: bold; margin-right: 4px;">Stół:</span>{board_tiles}
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+                """
+            else:
+                cards_row_html = f"""
+                <div style="margin: 3px 0 5px 0;">
+                    <span style="font-size: 10px; color: #94a3b8; font-weight: bold; margin-right: 4px;">Moje:</span>{hero_tiles}
+                </div>
+                """
 
         card_html = f"""
-        <div style="background-color: rgba(255, 255, 255, 0.06); border-radius: 6px; padding: 8px; margin-top: 2px;">
-            <div style="font-size: 10px; color: #94a3b8; margin-bottom: 4px;">
+        <div data-action="{action}" style="background-color: rgba(255, 255, 255, 0.06); border-radius: 6px; padding: 8px; margin-top: 2px;">
+            <div style="font-size: 10px; color: #94a3b8; margin-bottom: 3px;">
                 <b>{table_id}</b> &bull; <span style="color: #60a5fa;">{profile_used}</span>
             </div>
-            {cards_row}
-            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 4px;">
+            {cards_row_html}
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 2px;">
                 <tr>
                     <td align="left" style="white-space: nowrap;">
-                        <span style="{action_badge_style} color: #ffffff; font-size: 15px; font-weight: bold; padding: 3px 10px; border-radius: 4px;">
+                        <span style="{action_badge_style} color: #ffffff; font-size: 14px; font-weight: bold; padding: 3px 8px; border-radius: 4px;">
                             {badge_text}
                         </span>
                     </td>
-                    <td align="right" style="font-size: 14px; font-weight: bold; color: {ev_color}; padding-right: 6px; white-space: nowrap;">
+                    <td align="right" style="font-size: 14px; font-weight: bold; color: {ev_color}; padding-right: 4px; white-space: nowrap;">
                         {ev_str}
                     </td>
                 </tr>
             </table>
             {plan_subtitle}
-            <div style="font-size: 11px; color: #cbd5e1; margin-top: 4px;">
-                {reason}
-            </div>
-            <div style="font-size: 9px; color: #64748b; text-align: right; margin-top: 2px;">
-                ⏱ {lat_str}
-            </div>
         </div>
         """
 
@@ -1862,23 +2126,27 @@ class HudOverlay(QWidget):
             hl.setContentsMargins(0, 2, 0, 0)
             hl.setSpacing(4)
 
-            btn_calib = QPushButton("✎ Kalibruj", header_w)
+            btn_calib = QPushButton("⚙", header_w)
+            btn_calib.setFixedSize(22, 20)
+            btn_calib.setToolTip("Kalibracja ramki stołu")
             btn_calib.setStyleSheet("""
                 QPushButton {
-                    background-color: rgba(243, 156, 18, 0.2);
-                    color: #f39c12;
-                    border: 1px solid rgba(243, 156, 18, 0.5);
+                    background-color: rgba(255, 255, 255, 0.08);
+                    color: #cbd5e1;
+                    border: 1px solid rgba(255, 255, 255, 0.2);
                     border-radius: 3px;
-                    padding: 1px 6px;
-                    font-size: 10px;
-                    font-weight: bold;
+                    font-size: 11px;
+                    padding: 0;
                 }
                 QPushButton:hover {
-                    background-color: rgba(243, 156, 18, 0.4);
+                    background-color: rgba(243, 156, 18, 0.3);
+                    color: #f39c12;
+                    border: 1px solid #f39c12;
                 }
             """)
-            btn_calib.clicked.connect(lambda checked=False, tid=table_id: self.start_table_calibration(tid))
+            btn_calib.clicked.connect(lambda checked=False, tid=table_id: self._toggle_calib_for_table(tid))
             hl.addWidget(btn_calib)
+            self.table_calib_buttons[table_id] = btn_calib
 
             btn_area = QPushButton("📐 Obszar", header_w)
             btn_area.setStyleSheet("""
@@ -1949,11 +2217,10 @@ class HudOverlay(QWidget):
 
             detail_label = QLabel(self.container)
             detail_label.setStyleSheet(
-                "font-family: Consolas, 'Courier New', monospace; font-size: 10px; "
-                "background-color: rgba(0, 0, 0, 0.45); color: #cbd5e1; "
-                "padding: 6px; border-radius: 4px; border: 1px solid rgba(255, 255, 255, 0.1);"
+                "background-color: rgba(15, 23, 42, 0.85); color: #cbd5e1; "
+                "padding: 6px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1);"
             )
-            detail_label.setTextFormat(Qt.TextFormat.PlainText)
+            detail_label.setTextFormat(Qt.TextFormat.RichText)
             detail_label.setVisible(self.show_details and bool(scan_summary))
             self.tables_layout.addWidget(detail_label)
             self.details_widgets[table_id] = detail_label
@@ -1961,16 +2228,28 @@ class HudOverlay(QWidget):
         self.table_widgets[table_id].setText(card_html)
 
         if table_id in self.details_widgets:
-            self.details_widgets[table_id].setText(scan_summary)
-            self.details_widgets[table_id].setVisible(self.show_details and bool(scan_summary))
+            details_html = self._render_details_html(table_id)
+            self.details_widgets[table_id].setText(details_html)
+            self.details_widgets[table_id].setVisible(self.show_details and bool(details_html))
 
         self.adjustSize()
         self._clamp_to_screen()
+
+    def _toggle_calib_for_table(self, table_id: str) -> None:
+        """Toggle table calibration panel from small gear button."""
+        if self.editing_table_id == table_id:
+            self.cancel_table_calibration()
+        else:
+            self.start_table_calibration(table_id)
 
     @Slot(str)
     def remove_table(self, table_id: str) -> None:
         """Remove a stale table widget and details from layout."""
         self.cards_line_by_table.pop(table_id, None)
+        self.hand_summaries.pop(table_id, None)
+        self.last_scan_summaries.pop(table_id, None)
+        self.last_latencies.pop(table_id, None)
+        self.table_calib_buttons.pop(table_id, None)
         if self._debug_overlay is not None:
             self._debug_overlay.remove_table(table_id)
         if self._action_bar_overlay is not None:

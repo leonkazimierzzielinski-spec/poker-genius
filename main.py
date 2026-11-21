@@ -59,10 +59,12 @@ except ImportError:
 
 # State module
 try:
+    from state.hand_history import HandHistoryRecorder
     from state.logger import SessionLogger
     from state.tracker import TableTracker
     from state.validator import StateValidator
 except ImportError:
+    HandHistoryRecorder = None  # type: ignore[assignment]
     SessionLogger = Any  # type: ignore[misc, assignment]
     TableTracker = Any  # type: ignore[misc, assignment]
     StateValidator = Any  # type: ignore[misc, assignment]
@@ -86,17 +88,21 @@ except ImportError:
 # Strategy module
 try:
     from strategy.decision_maker import DecisionMaker
+    from strategy.simplifier import quantize_sizing_to_bb
 except ImportError:
     DecisionMaker = None
+    quantize_sizing_to_bb = None
 
 # UI module
 try:
     from PySide6.QtWidgets import QApplication
-    from ui.hud import HudBridge, HudOverlay
+    from ui.hud import HudBridge, HudOverlay, format_action_label, render_visual_cards_html
 except ImportError:
     QApplication = None  # type: ignore[assignment]
     HudBridge = None  # type: ignore[assignment]
     HudOverlay = None  # type: ignore[assignment]
+    format_action_label = None  # type: ignore[assignment]
+    render_visual_cards_html = None  # type: ignore[assignment]
 
 
 def _is_preflop_shove(opp: Any, bb_val: int) -> bool:
@@ -462,22 +468,27 @@ def evaluate_candidates(
                             shove_fe *= 0.65
                             bet_fe *= 0.65
 
+                        # Sizing quantization in multiples of BB or ALL-IN
+                        hero_player = players.get(0)
+                        hero_stk = getattr(hero_player, "stack", 0) or 0
+                        eff_stk = int(round(stack_bb * bb_val))
+                        target_chips = 0.30 * pot
+                        if quantize_sizing_to_bb is not None:
+                            mode, bb_mult, _ = quantize_sizing_to_bb(
+                                target_chips, bb_val, hero_stk, eff_stk, min_bb_mult=1
+                            )
+                        else:
+                            mode, bb_mult = ("BB_MULT", max(1, int(round(target_chips / bb_val))))
+
                         if hasattr(mc_calc, "calculate_ev_bb"):
                             check_ev = mc_calc.calculate_ev_bb(
                                 equity, pot_bb, call_cost_bb=0.0, fold_equity=0.0
-                            )
-                            bet_ev = mc_calc.calculate_ev_bb(
-                                bet_call_equity, pot_bb, call_cost_bb=bet30_bb, fold_equity=bet_fe
                             )
                             shove_ev = mc_calc.calculate_ev_bb(
                                 shove_call_equity, pot_bb, call_cost_bb=stack_bb, fold_equity=shove_fe
                             )
                         else:
                             check_ev = round(equity * pot_bb, 3)
-                            bet_ev = round(
-                                bet_fe * pot_bb + (1.0 - bet_fe) * (bet_call_equity * (pot_bb + bet30_bb) - (1.0 - bet_call_equity) * bet30_bb),
-                                3,
-                            )
                             shove_ev = round(
                                 shove_fe * pot_bb + (1.0 - shove_fe) * (shove_call_equity * (pot_bb + stack_bb) - (1.0 - shove_call_equity) * stack_bb),
                                 3,
@@ -485,10 +496,22 @@ def evaluate_candidates(
 
                         candidate_evs = {
                             "CHECK": float(check_ev),
-                            "BET_30": float(bet_ev),
                             "ALL_IN": float(shove_ev),
                             "FOLD": 0.0,
                         }
+
+                        if mode == "BB_MULT" and bb_mult is not None:
+                            bet_bb = float(bb_mult)
+                            if hasattr(mc_calc, "calculate_ev_bb"):
+                                bet_ev = mc_calc.calculate_ev_bb(
+                                    bet_call_equity, pot_bb, call_cost_bb=bet_bb, fold_equity=bet_fe
+                                )
+                            else:
+                                bet_ev = round(
+                                    bet_fe * pot_bb + (1.0 - bet_fe) * (bet_call_equity * (pot_bb + bet_bb) - (1.0 - bet_call_equity) * bet_bb),
+                                    3,
+                                )
+                            candidate_evs["BET_30"] = float(bet_ev)
                 except Exception:
                     if facing_bet:
                         candidate_evs = {"CALL": 0.0, "ALL_IN": 0.0, "FOLD": 0.0}
@@ -743,6 +766,7 @@ def processing_loop(
     show_video: bool = False,
     playback: OfflinePlaybackController | None = None,
     is_live: bool = False,
+    hand_recorder: Any = None,
 ) -> None:
     """Thread 2: Processes frames, evaluates decisions, logs sessions, and updates HUD."""
     managed_tables: dict[str, dict[str, Any]] = {
@@ -1087,6 +1111,12 @@ def processing_loop(
                     if resolved_tid not in trackers:
                         trackers[resolved_tid] = TableTracker(resolved_tid)
                     state, events = trackers[resolved_tid].update(state)
+                    if any(getattr(e, "event_type", "") == "NEW_HAND" for e in events) and getattr(trackers[resolved_tid], "last_completed_hand", None):
+                        if hand_recorder is not None:
+                            try:
+                                hand_recorder.record_hand(trackers[resolved_tid].last_completed_hand)
+                            except Exception:
+                                pass
 
                 if logger is not None and hasattr(logger, "log_state"):
                     logger.log_state(state, events)
@@ -1177,6 +1207,58 @@ def processing_loop(
                                 reason=f"Candidate EV ({spot})",
                             )
 
+                # Sizing quantization in multiples of BB or ALL-IN
+                hero_p_chips = getattr(state, "players", {}).get(0)
+                hero_stk_chips = getattr(hero_p_chips, "stack", 0) or 0
+                hero_bet_chips = getattr(hero_p_chips, "current_bet", 0) or 0
+                bb_val_chips = getattr(state, "big_blind", 20) or 20
+                pot_val_chips = getattr(state, "pot", 0) or 0
+                eff_stk_chips = int(round(effective_bb * bb_val_chips)) if "effective_bb" in locals() and effective_bb is not None else hero_stk_chips
+                max_opp_bet_chips = max(
+                    (getattr(p, "current_bet", 0) or 0 for sid, p in getattr(state, "players", {}).items() if sid != 0),
+                    default=0,
+                )
+
+                if decision.action == "MIN_RAISE":
+                    min_legal_chips = max(2 * bb_val_chips, max_opp_bet_chips * 2)
+                    min_mult = max(2, int((min_legal_chips + bb_val_chips - 1) // bb_val_chips))
+                    if quantize_sizing_to_bb is not None:
+                        mode, bb_mult, chips = quantize_sizing_to_bb(
+                            min_mult * bb_val_chips, bb_val_chips, hero_stk_chips, eff_stk_chips, min_bb_mult=min_mult
+                        )
+                    else:
+                        mode, bb_mult, chips = ("BB_MULT", min_mult, min_mult * bb_val_chips)
+                    if mode == "ALL_IN":
+                        decision.action = "ALL_IN"
+                        decision.sizing_bb = None
+                        decision.sizing_chips = chips
+                    else:
+                        decision.sizing_bb = bb_mult
+                        decision.sizing_chips = chips
+                elif decision.action == "BET_30":
+                    if quantize_sizing_to_bb is not None:
+                        mode, bb_mult, chips = quantize_sizing_to_bb(
+                            0.30 * pot_val_chips, bb_val_chips, hero_stk_chips, eff_stk_chips, min_bb_mult=1
+                        )
+                    else:
+                        mode, bb_mult, chips = ("BB_MULT", max(1, int(round(0.30 * pot_val_chips / bb_val_chips))), int(round(0.30 * pot_val_chips)))
+                    if mode == "ALL_IN":
+                        decision.action = "ALL_IN"
+                        decision.sizing_bb = None
+                        decision.sizing_chips = chips
+                    else:
+                        decision.sizing_bb = bb_mult
+                        decision.sizing_chips = chips
+                elif decision.action == "ALL_IN":
+                    decision.sizing_bb = None
+                    decision.sizing_chips = hero_stk_chips
+                elif decision.action == "CALL":
+                    decision.sizing_bb = None
+                    decision.sizing_chips = max(0, max_opp_bet_chips - hero_bet_chips)
+                else:
+                    decision.sizing_bb = None
+                    decision.sizing_chips = None
+
                 # Diagnostic scan summary for HUD details view
                 val_status = "VALID" if is_valid else f"INVALID: {', '.join(validation_errors)}"
                 blinds_str = f"{getattr(state, 'small_blind', 0)}/{getattr(state, 'big_blind', 0)}"
@@ -1237,29 +1319,23 @@ def processing_loop(
                 if logger is not None and hasattr(logger, "log_decision"):
                     logger.log_decision(decision, latency_ms)
 
+                if TableTracker is not None and resolved_tid in trackers:
+                    try:
+                        trackers[resolved_tid].record_recommendation(
+                            decision, getattr(state, "street", "PREFLOP"), getattr(state, "timestamp_ms", 0)
+                        )
+                        if hud_bridge is not None and hasattr(hud_bridge, "hand_summary_updated"):
+                            hud_bridge.hand_summary_updated.emit(resolved_tid, trackers[resolved_tid].get_hand_summary())
+                    except Exception:
+                        pass
+
                 if hud_bridge is not None and hasattr(hud_bridge, "decision_updated"):
                     hud_bridge.decision_updated.emit(decision, latency_ms, scan_summary)
 
                 if hud_bridge is not None and hasattr(hud_bridge, "action_bar_updated"):
-                    amount_chips = None
-                    pot_val_chips = getattr(state, "pot", 0) or 0
-                    bb_val_chips = getattr(state, "big_blind", 20) or 20
-                    hero_p_chips = getattr(state, "players", {}).get(0)
-                    hero_bet_chips = getattr(hero_p_chips, "current_bet", 0) or 0
-                    hero_stk_chips = getattr(hero_p_chips, "stack", 0) or 0
-                    max_opp_bet_chips = max(
-                        (getattr(p, "current_bet", 0) or 0 for sid, p in getattr(state, "players", {}).items() if sid != 0),
-                        default=0,
-                    )
+                    amount_chips = getattr(decision, "sizing_chips", None)
+                    sizing_bb = getattr(decision, "sizing_bb", None)
                     act_str_chips = getattr(decision, "action", "WAIT")
-                    if act_str_chips == "BET_30":
-                        amount_chips = max(bb_val_chips, int(round(0.30 * pot_val_chips)))
-                    elif act_str_chips == "MIN_RAISE":
-                        amount_chips = max(2 * bb_val_chips, max_opp_bet_chips * 2)
-                    elif act_str_chips == "CALL":
-                        amount_chips = max(0, max_opp_bet_chips - hero_bet_chips)
-                    elif act_str_chips == "ALL_IN":
-                        amount_chips = hero_stk_chips
 
                     eff_table_rect = table_rect if table_rect is not None else (
                         0,
@@ -1281,6 +1357,7 @@ def processing_loop(
                         "actions_rect": (ax, ay, aw, ah),
                         "action": act_str_chips,
                         "amount_chips": amount_chips,
+                        "sizing_bb": sizing_bb,
                         "ev_bb": getattr(decision, "ev_bb", None),
                         "is_plan": str(getattr(decision, "reason", "")).startswith("[PLAN]"),
                     }
@@ -1560,6 +1637,13 @@ def main(argv: list[str] | None = None) -> int:
         total = getattr(source, "total_frames", 0)
         playback = OfflinePlaybackController(total_frames=total)
 
+    hand_recorder = None
+    if HandHistoryRecorder is not None and is_live:
+        try:
+            hand_recorder = HandHistoryRecorder()
+        except Exception:
+            pass
+
     if args.headless or QApplication is None or HudOverlay is None:
         interval = 0.0 if (args.mode == "offline" and not args.show_video) else 0.05
         cap_thread = threading.Thread(
@@ -1586,6 +1670,7 @@ def main(argv: list[str] | None = None) -> int:
                 show_video=args.show_video,
                 playback=playback,
                 is_live=is_live,
+                hand_recorder=hand_recorder,
             )
         except KeyboardInterrupt:
             pass
@@ -1595,6 +1680,11 @@ def main(argv: list[str] | None = None) -> int:
                 source.release()
             if logger is not None and hasattr(logger, "close"):
                 logger.close()
+            if hand_recorder is not None and hasattr(hand_recorder, "close"):
+                try:
+                    hand_recorder.close(trackers)
+                except Exception:
+                    pass
         return 0
 
     # Normal mode with Qt HUD overlay
@@ -1629,6 +1719,7 @@ def main(argv: list[str] | None = None) -> int:
             args.show_video,
             playback,
             is_live,
+            hand_recorder,
         ),
         daemon=True,
     )
@@ -1643,6 +1734,11 @@ def main(argv: list[str] | None = None) -> int:
             source.release()
         if logger is not None and hasattr(logger, "close"):
             logger.close()
+        if hand_recorder is not None and hasattr(hand_recorder, "close"):
+            try:
+                hand_recorder.close(trackers)
+            except Exception:
+                pass
 
     return exit_code
 

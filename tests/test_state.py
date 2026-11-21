@@ -544,3 +544,316 @@ def test_validator_two_players_all_in_pot_conservation() -> None:
     assert errors == []
 
 
+def test_tracker_hand_summary_invested_time_and_fold() -> None:
+    """Verify TableTracker hand tracking: invested_total accumulation, decision timing, and fold detection."""
+    tracker = TableTracker("table_test")
+
+    # Frame 1: Initial Preflop state with blinds posted
+    # S1 (SB): bet 10, stack 290
+    # S0 (BB / Hero): bet 20, stack 280
+    # S2 (BTN): bet 0, stack 300, dealer=True
+    st1 = TableState(
+        table_id="table_test",
+        timestamp_ms=1000,
+        prize_pool=6,
+        small_blind=10,
+        big_blind=20,
+        pot=30,
+        hero_cards=["Ah", "Kh"],
+        board_cards=[],
+        street="PREFLOP",
+        is_hero_turn=False,
+        available_actions=[],
+        players={
+            0: PlayerState(seat_id=0, stack=280, current_bet=20, is_dealer=False),
+            1: PlayerState(seat_id=1, stack=290, current_bet=10, is_dealer=False),
+            2: PlayerState(seat_id=2, stack=300, current_bet=0, is_dealer=True),
+        },
+        is_valid=True,
+    )
+    tracker.update(st1)
+    summary1 = tracker.get_hand_summary()
+    assert summary1["players"][0]["invested_total"] == 20
+    assert summary1["players"][1]["invested_total"] == 10
+    assert summary1["players"][2]["invested_total"] == 0
+    assert summary1["players"][0]["folded"] is False
+
+    # Frame 2: BTN (S2) raises to 40 at t=2800 (reaction 1.8s)
+    st2 = TableState(
+        table_id="table_test",
+        timestamp_ms=2800,
+        prize_pool=6,
+        small_blind=10,
+        big_blind=20,
+        pot=70,
+        hero_cards=["Ah", "Kh"],
+        board_cards=[],
+        street="PREFLOP",
+        is_hero_turn=False,
+        available_actions=[],
+        players={
+            0: PlayerState(seat_id=0, stack=280, current_bet=20, is_dealer=False),
+            1: PlayerState(seat_id=1, stack=290, current_bet=10, is_dealer=False),
+            2: PlayerState(seat_id=2, stack=260, current_bet=40, is_dealer=True),
+        },
+        is_valid=True,
+    )
+    tracker.update(st2)
+    summary2 = tracker.get_hand_summary()
+    assert summary2["players"][2]["invested_total"] == 40
+    assert summary2["players"][2]["last_decision_sec"] == 1.8
+    assert "RAISE" in summary2["players"][2]["last_action"] or "BET" in summary2["players"][2]["last_action"]
+
+    # Frame 3: SB (S1) folds (Condition A), Hero (S0) turn begins facing bet 40
+    st3 = TableState(
+        table_id="table_test",
+        timestamp_ms=3500,
+        prize_pool=6,
+        small_blind=10,
+        big_blind=20,
+        pot=70,
+        hero_cards=["Ah", "Kh"],
+        board_cards=[],
+        street="PREFLOP",
+        is_hero_turn=True,
+        available_actions=["FOLD", "CALL", "RAISE"],
+        players={
+            0: PlayerState(seat_id=0, stack=280, current_bet=20, is_dealer=False),
+            1: PlayerState(seat_id=1, stack=290, current_bet=10, is_dealer=False, is_active=False, status_text="FOLDED"),
+            2: PlayerState(seat_id=2, stack=260, current_bet=40, is_dealer=True),
+        },
+        is_valid=True,
+    )
+    tracker.update(st3)
+    summary3 = tracker.get_hand_summary()
+    assert summary3["players"][1]["folded"] is True
+    assert summary3["players"][1]["last_action"] == "FOLD"
+
+    # Frame 4: Hero (S0) calls 40 (bet rises from 20 to 40)
+    st4 = TableState(
+        table_id="table_test",
+        timestamp_ms=4500,
+        prize_pool=6,
+        small_blind=10,
+        big_blind=20,
+        pot=90,
+        hero_cards=["Ah", "Kh"],
+        board_cards=[],
+        street="PREFLOP",
+        is_hero_turn=False,
+        available_actions=[],
+        players={
+            0: PlayerState(seat_id=0, stack=260, current_bet=40, is_dealer=False),
+            1: PlayerState(seat_id=1, stack=290, current_bet=10, is_dealer=False, is_active=False, status_text="FOLDED"),
+            2: PlayerState(seat_id=2, stack=260, current_bet=40, is_dealer=True),
+        },
+        is_valid=True,
+    )
+    tracker.update(st4)
+    summary4 = tracker.get_hand_summary()
+    assert summary4["players"][0]["invested_total"] == 40
+    assert summary4["players"][0]["folded"] is False
+
+    # Frame 5: Street change to FLOP -> street_bet resets to 0, board cards appear
+    st5 = TableState(
+        table_id="table_test",
+        timestamp_ms=5000,
+        prize_pool=6,
+        small_blind=10,
+        big_blind=20,
+        pot=90,
+        hero_cards=["Ah", "Kh"],
+        board_cards=["Qc", "Jd", "2s"],
+        street="FLOP",
+        is_hero_turn=True,
+        available_actions=["CHECK", "BET"],
+        players={
+            0: PlayerState(seat_id=0, stack=260, current_bet=0, is_dealer=False),
+            1: PlayerState(seat_id=1, stack=290, current_bet=0, is_dealer=False, is_active=False, status_text="FOLDED"),
+            2: PlayerState(seat_id=2, stack=260, current_bet=0, is_dealer=True),
+        },
+        is_valid=True,
+    )
+    tracker.update(st5)
+    summary5 = tracker.get_hand_summary()
+    assert summary5["street"] == "FLOP"
+    assert summary5["players"][0]["street_bet"] == 0
+    assert summary5["players"][2]["street_bet"] == 0
+    # Total invested from preflop persists!
+    assert summary5["players"][0]["invested_total"] == 40
+    assert summary5["players"][2]["invested_total"] == 40
+
+    # Frame 6: S2 bets 60 on Flop at t=6200
+    st6 = TableState(
+        table_id="table_test",
+        timestamp_ms=6200,
+        prize_pool=6,
+        small_blind=10,
+        big_blind=20,
+        pot=150,
+        hero_cards=["Ah", "Kh"],
+        board_cards=["Qc", "Jd", "2s"],
+        street="FLOP",
+        is_hero_turn=True,
+        available_actions=["FOLD", "CALL", "RAISE"],
+        players={
+            0: PlayerState(seat_id=0, stack=260, current_bet=0, is_dealer=False),
+            1: PlayerState(seat_id=1, stack=290, current_bet=0, is_dealer=False, is_active=False, status_text="FOLDED"),
+            2: PlayerState(seat_id=2, stack=200, current_bet=60, is_dealer=True),
+        },
+        is_valid=True,
+    )
+    tracker.update(st6)
+    summary6 = tracker.get_hand_summary()
+    # S2 invested_total accumulated: 40 (preflop) + 60 (flop) = 100!
+    assert summary6["players"][2]["invested_total"] == 100
+
+    # Frame 7: Hero folds (Condition C: was facing bet 60, hero turn ends without calling)
+    st7 = TableState(
+        table_id="table_test",
+        timestamp_ms=7000,
+        prize_pool=6,
+        small_blind=10,
+        big_blind=20,
+        pot=150,
+        hero_cards=["Ah", "Kh"],
+        board_cards=["Qc", "Jd", "2s"],
+        street="FLOP",
+        is_hero_turn=False,
+        available_actions=[],
+        players={
+            0: PlayerState(seat_id=0, stack=260, current_bet=0, is_dealer=False),
+            1: PlayerState(seat_id=1, stack=290, current_bet=0, is_dealer=False, is_active=False, status_text="FOLDED"),
+            2: PlayerState(seat_id=2, stack=200, current_bet=60, is_dealer=True),
+        },
+        is_valid=True,
+    )
+    tracker.update(st7)
+    summary7 = tracker.get_hand_summary()
+    assert summary7["players"][0]["folded"] is True
+    assert summary7["players"][0]["last_action"] == "FOLD"
+
+
+def test_hand_history_recorder_jsonl_and_md(tmp_path) -> None:
+    """Verify HandHistoryRecorder lazy creation, JSONL line emission, and readable Markdown formatting."""
+    from state.hand_history import HandHistoryRecorder
+
+    recorder = HandHistoryRecorder(output_dir=tmp_path / "histories")
+
+    # Empty hand should be safely ignored
+    recorder.record_hand({})
+    assert len(list((tmp_path / "histories").glob("*.jsonl"))) == 0
+
+    hand_summary = {
+        "hand_number": 42,
+        "table_id": "table_1",
+        "start_ts_ms": 1700000000000,
+        "blinds": (50, 100),
+        "prize_pool": 6,
+        "hero_cards": ["Ad", "Kd"],
+        "board_cards": ["7d", "Td", "Th", "2h"],
+        "street": "TURN",
+        "pot": 665,
+        "players": {
+            0: {
+                "seat_id": 0,
+                "name": "Ty (S0)",
+                "is_dealer": False,
+                "stack": 235,
+                "invested_total": 100,
+                "street_bet": 0,
+                "last_action": "CHECK",
+                "last_decision_sec": 1.2,
+                "folded": False,
+            },
+            1: {
+                "seat_id": 1,
+                "name": "Rywal 1 (S1)",
+                "is_dealer": True,
+                "stack": 0,
+                "invested_total": 50,
+                "street_bet": 0,
+                "last_action": "FOLD",
+                "last_decision_sec": None,
+                "folded": True,
+            },
+            2: {
+                "seat_id": 2,
+                "name": "Rywal 2 (S2)",
+                "is_dealer": False,
+                "stack": 0,
+                "invested_total": 565,
+                "street_bet": 565,
+                "last_action": "ALL-IN 565",
+                "last_decision_sec": 1.8,
+                "folded": False,
+            },
+        },
+        "action_log": [
+            {
+                "time_str": "19:14:20",
+                "street": "PREFLOP",
+                "seat_id": 1,
+                "player_name": "Rywal 1 (S1)",
+                "action": "BLIND",
+                "amount": 50,
+                "invested_total": 50,
+                "decision_sec": None,
+            },
+            {
+                "time_str": "19:14:22",
+                "street": "PREFLOP",
+                "seat_id": 2,
+                "player_name": "Rywal 2 (S2)",
+                "action": "ALL-IN",
+                "amount": 565,
+                "invested_total": 565,
+                "decision_sec": 1.8,
+            },
+        ],
+        "recommendations": [
+            {
+                "street": "PREFLOP",
+                "action": "CALL",
+                "sizing_bb": None,
+                "sizing_chips": 565,
+                "ev_bb": 1.45,
+                "reason": "Push/Fold +1.45 BB equity vs loose shove",
+                "timestamp_ms": 1700000002000,
+            }
+        ],
+    }
+
+    recorder.record_hand(hand_summary)
+    recorder.close()
+
+    jsonl_files = list((tmp_path / "histories").glob("*.jsonl"))
+    md_files = list((tmp_path / "histories").glob("*.md"))
+    assert len(jsonl_files) == 1
+    assert len(md_files) == 1
+
+    # Verify JSONL content
+    with open(jsonl_files[0], "r", encoding="utf-8") as f:
+        lines = [line.strip() for line in f if line.strip()]
+    assert len(lines) == 1
+    parsed_json = json.loads(lines[0])
+    assert parsed_json["hand_number"] == 42
+    assert parsed_json["blinds"] == [50, 100]
+    assert parsed_json["hero_cards"] == ["Ad", "Kd"]
+
+    # Verify Markdown content
+    with open(md_files[0], "r", encoding="utf-8") as f:
+        md_text = f.read()
+    assert "# Rozdanie #42" in md_text
+    assert "Blinds 50/100" in md_text
+    assert "Prize $6" in md_text
+    assert "Ad Kd" in md_text
+    assert "### Gracze" in md_text
+    assert "Rywal 2 (S2)" in md_text
+    assert "### Przebieg zagrań" in md_text
+    assert "ALL-IN" in md_text
+    assert "### Rekomendacje HUD" in md_text
+    assert "Push/Fold +1.45 BB" in md_text
+
+
+

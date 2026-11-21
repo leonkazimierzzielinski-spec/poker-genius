@@ -18,9 +18,10 @@ audit_pack*/
 raport/
 scratch/
 
-# Logs
+# Logs & Session Hand Histories
 logs/
 *.log
+hand_histories/
 
 # Environment & IDE
 .env

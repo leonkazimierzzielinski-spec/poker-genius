@@ -360,3 +360,66 @@ def test_exploit_timing_tell_fast_bet_not_check() -> None:
     assert adjusted_evs["BET_30"] == pytest.approx(0.10)
 
 
+def test_quantize_sizing_to_bb_and_all_in() -> None:
+    """Verify sizing quantization to BB multiples and deterministic ALL-IN thresholding."""
+    from strategy.simplifier import quantize_sizing_to_bb
+
+    # 1. BB multiples for BB=20
+    mode, bb_mult, chips = quantize_sizing_to_bb(
+        target_chips=38, big_blind=20, hero_stack=300, effective_stack=300, min_bb_mult=1
+    )
+    assert mode == "BB_MULT"
+    assert bb_mult == 2
+    assert chips == 40
+
+    mode, bb_mult, chips = quantize_sizing_to_bb(
+        target_chips=21, big_blind=20, hero_stack=300, effective_stack=300, min_bb_mult=1
+    )
+    assert mode == "BB_MULT"
+    assert bb_mult == 1
+    assert chips == 20
+
+    # 2. BB multiples for BB=100
+    mode, bb_mult, chips = quantize_sizing_to_bb(
+        target_chips=260, big_blind=100, hero_stack=1000, effective_stack=1000, min_bb_mult=1
+    )
+    assert mode == "BB_MULT"
+    assert bb_mult == 3
+    assert chips == 300
+
+    # 3. Transition to ALL_IN at >= 65% of effective stack
+    # 0.65 * 300 = 195 chips. Sizing 200 chips (10 BB) is >= 195 -> ALL_IN
+    mode, bb_mult, chips = quantize_sizing_to_bb(
+        target_chips=200, big_blind=20, hero_stack=300, effective_stack=300, min_bb_mult=1
+    )
+    assert mode == "ALL_IN"
+    assert bb_mult is None
+    assert chips == 300
+
+    # 4. Transition to ALL_IN when effective_stack <= 3 * BB facing aggression
+    # eff_stk = 50 <= 60 (3 BB), bb_mult >= 2 -> ALL_IN
+    mode, bb_mult, chips = quantize_sizing_to_bb(
+        target_chips=40, big_blind=20, hero_stack=250, effective_stack=50, min_bb_mult=1
+    )
+    assert mode == "ALL_IN"
+    assert bb_mult is None
+    assert chips == 250
+
+    # 5. Chips exceed Hero stack
+    mode, bb_mult, chips = quantize_sizing_to_bb(
+        target_chips=150, big_blind=20, hero_stack=80, effective_stack=300, min_bb_mult=1
+    )
+    assert mode == "ALL_IN"
+    assert bb_mult is None
+    assert chips == 80
+
+    # 6. Hero stack is 0
+    mode, bb_mult, chips = quantize_sizing_to_bb(
+        target_chips=40, big_blind=20, hero_stack=0, effective_stack=300, min_bb_mult=1
+    )
+    assert mode == "ALL_IN"
+    assert bb_mult is None
+    assert chips == 0
+
+
+

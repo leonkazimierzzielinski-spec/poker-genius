@@ -1198,24 +1198,26 @@ def test_table_adjust_signal_and_drag_mode(qapp) -> None:
     assert hud.table_scale_mult == 1.0
     assert hud.adjust_panel.isHidden() is True
 
-    # Show details reveals adjust_panel
+    # Show details keeps adjust_panel hidden until calibration is started via gear button
     hud.toggle_details()
+    assert hud.adjust_panel.isHidden() is True
+    hud.start_table_calibration("table_1")
     assert hud.adjust_panel.isHidden() is False
 
-    # Adjust dx (+10 without shift)
+    # Adjust dx (+5 when editing table)
     hud.adjust_table_dx(1)
-    assert hud.table_dx == 10
-    assert received_adjust[-1] == (10, 0, 1.0)
+    assert hud.table_dx == 5
+    assert received_adjust[-1] == (5, 0, 1.0)
 
-    # Adjust dy (-10)
+    # Adjust dy (-5 when editing table)
     hud.adjust_table_dy(-1)
-    assert hud.table_dy == -10
-    assert received_adjust[-1] == (10, -10, 1.0)
+    assert hud.table_dy == -5
+    assert received_adjust[-1] == (5, -5, 1.0)
 
     # Adjust scale (+1%)
     hud.adjust_table_scale(0.01)
     assert abs(hud.table_scale_mult - 1.01) < 0.001
-    assert received_adjust[-1] == (10, -10, 1.01)
+    assert received_adjust[-1] == (5, -5, 1.01)
 
     # Reset table adjust
     hud.reset_table_adjust()
@@ -1501,6 +1503,160 @@ def test_anti_jitter_deadband() -> None:
 
     # None input
     assert apply_anti_jitter(None, stable_rect, deadband_px=3) is None
+
+
+def test_render_visual_cards_html_and_action_labels() -> None:
+    """Verify visual card tiles rendering with suits/colors and uniform action formatting."""
+    from ui.hud import format_action_label, render_visual_cards_html
+
+    # 1. Visual cards HTML rendering
+    cards = ["10d", "Ad", "6c"]
+    html = render_visual_cards_html(cards)
+    assert "<table" in html
+    assert "background-color: #f8fafc" in html
+    assert "border: 1px solid #94a3b8" in html
+    assert "10♦" in html
+    assert "#dc2626" in html  # Red for diamonds/hearts
+    assert "A♦" in html
+    assert "6♣" in html
+    assert "#0f172a" in html  # Dark navy/slate for clubs/spades
+
+    empty_html = render_visual_cards_html([])
+    assert "—" in empty_html
+
+    # 2. Action labels formatting
+    assert format_action_label("BET_30", sizing_bb=2, sizing_chips=200) == "BET 2 BB (200)"
+    assert format_action_label("BET_30", sizing_bb=3) == "BET 3 BB"
+    assert format_action_label("BET_30") == "BET 30%"
+
+    assert format_action_label("MIN_RAISE", sizing_bb=2, sizing_chips=40) == "RAISE 2 BB (40)"
+    assert format_action_label("MIN_RAISE", sizing_bb=3) == "RAISE 3 BB"
+    assert format_action_label("MIN_RAISE") == "RAISE 2 BB"
+
+    assert format_action_label("ALL_IN", sizing_chips=235) == "ALL-IN (235)"
+    assert format_action_label("ALL_IN") == "ALL-IN"
+
+    assert format_action_label("CALL", sizing_chips=40) == "CALL (40)"
+    assert format_action_label("CALL") == "CALL"
+
+    assert format_action_label("CHECK") == "CHECK"
+    assert format_action_label("FOLD") == "FOLD"
+    assert format_action_label("WAIT") == "WAIT"
+
+
+def test_hud_details_shows_table_with_grayed_fold_and_keeps_calibration_hidden(qapp) -> None:
+    """Verify details view shows players table with grayed fold row, small gear button, and keeps calibration panel hidden."""
+    from core.contracts import Decision
+    from ui.hud import HudBridge, HudOverlay
+
+    bridge = HudBridge()
+    hud = HudOverlay(bridge=bridge)
+    hud.show()
+
+    dec = Decision(
+        table_id="table_1",
+        action="BET_30",
+        ev_bb=1.45,
+        confidence=0.95,
+        profile_used="STANDARD_EXPLOIT",
+        reason="Value bet",
+        sizing_chips=200,
+        sizing_bb=2,
+    )
+
+    hand_summary = {
+        "hand_number": 1,
+        "table_id": "table_1",
+        "start_ts_ms": 1700000000000,
+        "blinds": (10, 20),
+        "prize_pool": 6,
+        "hero_cards": ["10d", "Ad"],
+        "board_cards": ["6c", "2s", "9h"],
+        "street": "FLOP",
+        "pot": 120,
+        "players": {
+            0: {
+                "seat_id": 0,
+                "name": "Ty (S0)",
+                "is_dealer": False,
+                "stack": 280,
+                "invested_total": 40,
+                "street_bet": 0,
+                "last_action": "BET 2 BB",
+                "last_decision_sec": 1.2,
+                "folded": False,
+            },
+            1: {
+                "seat_id": 1,
+                "name": "Rywal 1 (S1)",
+                "is_dealer": True,
+                "stack": 290,
+                "invested_total": 10,
+                "street_bet": 0,
+                "last_action": "FOLD",
+                "last_decision_sec": None,
+                "folded": True,
+            },
+            2: {
+                "seat_id": 2,
+                "name": "Rywal 2 (S2)",
+                "is_dealer": False,
+                "stack": 230,
+                "invested_total": 40,
+                "street_bet": 0,
+                "last_action": "CALL 40",
+                "last_decision_sec": 1.8,
+                "folded": False,
+            },
+        },
+        "action_log": [
+            {
+                "time_str": "19:14:20",
+                "street": "PREFLOP",
+                "seat_id": 1,
+                "player_name": "Rywal 1 (S1)",
+                "action": "FOLD",
+                "amount": 0,
+                "invested_total": 10,
+                "decision_sec": None,
+            }
+        ],
+    }
+
+    bridge.decision_updated.emit(dec, 14.0)
+    bridge.hand_summary_updated.emit("table_1", hand_summary)
+
+    # 1. Initially details and calibration panel are hidden
+    assert hud.show_details is False
+    assert hud.calibration_panel.isVisible() is False
+
+    # 2. Toggle details ON: reveals details widget and table header, but calibration panel stays HIDDEN!
+    hud.toggle_details()
+    assert hud.show_details is True
+    assert hud.calibration_panel.isVisible() is False
+
+    detail_lbl = hud.details_widgets["table_1"]
+    assert detail_lbl.isVisible() is True
+    detail_text = detail_lbl.text()
+    assert "<s>Rywal 1 (S1)</s>" in detail_text or "Rywal 1 (S1)" in detail_text
+    assert "FOLD" in detail_text
+    assert "color: #64748b" in detail_text  # Grayed out folded row
+
+    # 3. Table header has discrete gear button '⚙'
+    assert "table_1" in hud.table_calib_buttons
+    btn_calib = hud.table_calib_buttons["table_1"]
+    assert btn_calib.text() == "⚙"
+
+    # 4. Clicking gear button opens calibration panel
+    btn_calib.click()
+    assert hud.calibration_panel.isVisible() is True
+    assert hud.editing_table_id == "table_1"
+
+    # 5. Clicking gear button again cancels / hides calibration panel
+    btn_calib.click()
+    assert hud.calibration_panel.isVisible() is False
+    assert hud.editing_table_id is None
+
 
 
 

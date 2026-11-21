@@ -19,9 +19,9 @@ def test_constants():
     """Verify core domain constants match CONSTITUTION.md."""
     assert TOTAL_CHIPS == 900
     assert STARTING_STACK == 300
-    assert len(BLIND_LEVELS) == 5
+    assert len(BLIND_LEVELS) == 7
     assert BLIND_LEVELS[0] == (10, 20)
-    assert BLIND_LEVELS[-1] == (40, 80)
+    assert BLIND_LEVELS[-1] == (60, 120)
     assert CARD_MATCH_THRESHOLD == 0.92
     assert EV_LOSS_THRESHOLD_BB == 0.08
     assert RANKS == "23456789TJQKA"
