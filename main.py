@@ -27,9 +27,11 @@ except ImportError:
 try:
     from vision.anchor import (
         compute_table_rect,
+        compute_table_rect_from_rim,
         compute_unclipped_table_rect,
         find_all_anchors,
         find_anchor,
+        find_golden_rim,
         find_right_anchor,
     )
     from vision.capture import (
@@ -42,8 +44,10 @@ try:
 except ImportError:
     find_all_anchors = None  # type: ignore[assignment]
     find_anchor = None  # type: ignore[assignment]
+    find_golden_rim = None  # type: ignore[assignment]
     find_right_anchor = None  # type: ignore[assignment]
     compute_table_rect = None  # type: ignore[assignment]
+    compute_table_rect_from_rim = None  # type: ignore[assignment]
     compute_unclipped_table_rect = None  # type: ignore[assignment]
     DXCAM_AVAILABLE = False
     FrameSource = Any  # type: ignore[misc, assignment]
@@ -739,29 +743,74 @@ def processing_loop(
     is_live: bool = False,
 ) -> None:
     """Thread 2: Processes frames, evaluates decisions, logs sessions, and updates HUD."""
-    manual_rect_holder: list[tuple[int, int, int, int] | None] = [None]
-    adjust_holder: list[Any] = [0, 0, 1.0]
+    managed_tables: dict[str, dict[str, Any]] = {
+        "table_1": {
+            "search_region": None,
+            "adjust": (0, 0, 1.0, 1.0),
+            "last_opponents_sig": None,
+        }
+    }
     last_idle_emit: float = 0.0
 
     def _on_manual_rect(rect: Any) -> None:
-        manual_rect_holder[0] = rect
+        if "table_1" in managed_tables:
+            managed_tables["table_1"]["search_region"] = rect
 
-    def _on_table_adjust(dx: int, dy: int, scale_mult: float) -> None:
-        adjust_holder[0] = dx
-        adjust_holder[1] = dy
-        adjust_holder[2] = scale_mult
+    def _on_table_added(tid: str, search_region: Any) -> None:
+        managed_tables[tid] = {
+            "search_region": search_region,
+            "adjust": (0, 0, 1.0, 1.0),
+            "last_opponents_sig": None,
+        }
 
-    if hud_bridge is not None and hasattr(hud_bridge, "manual_rect_changed"):
-        try:
-            hud_bridge.manual_rect_changed.connect(_on_manual_rect)
-        except Exception:
-            pass
+    def _on_table_removed_by_user(tid: str) -> None:
+        managed_tables.pop(tid, None)
+        if validator is not None:
+            validator.reset_table(tid)
+        trackers.pop(tid, None)
 
-    if hud_bridge is not None and hasattr(hud_bridge, "table_adjust_changed"):
-        try:
-            hud_bridge.table_adjust_changed.connect(_on_table_adjust)
-        except Exception:
-            pass
+    def _on_table_adjust_5arg(tid: str, dx: int, dy: int, sx: float, sy: float) -> None:
+        if tid in managed_tables:
+            managed_tables[tid]["adjust"] = (dx, dy, sx, sy)
+        elif "table_1" in managed_tables:
+            managed_tables["table_1"]["adjust"] = (dx, dy, sx, sy)
+
+    def _on_table_adjust_3arg(dx: int, dy: int, s: float) -> None:
+        tid = "table_1"
+        if tid in managed_tables:
+            managed_tables[tid]["adjust"] = (dx, dy, s, s)
+
+    def _on_buy_in_changed(val: float) -> None:
+        if decision_maker is not None:
+            decision_maker.buy_in = val
+
+    if hud_bridge is not None:
+        if hasattr(hud_bridge, "manual_rect_changed"):
+            try:
+                hud_bridge.manual_rect_changed.connect(_on_manual_rect)
+            except Exception:
+                pass
+        if hasattr(hud_bridge, "table_added"):
+            try:
+                hud_bridge.table_added.connect(_on_table_added)
+            except Exception:
+                pass
+        if hasattr(hud_bridge, "table_removed_by_user"):
+            try:
+                hud_bridge.table_removed_by_user.connect(_on_table_removed_by_user)
+            except Exception:
+                pass
+        if hasattr(hud_bridge, "table_adjust_changed"):
+            try:
+                hud_bridge.table_adjust_changed[str, int, int, float, float].connect(_on_table_adjust_5arg)
+                hud_bridge.table_adjust_changed[int, int, float].connect(_on_table_adjust_3arg)
+            except Exception:
+                hud_bridge.table_adjust_changed.connect(_on_table_adjust_3arg)
+        if hasattr(hud_bridge, "buy_in_changed"):
+            try:
+                hud_bridge.buy_in_changed.connect(_on_buy_in_changed)
+            except Exception:
+                pass
 
     WINDOW_NAME = "Poker Assistant - Offline Replay"
     trackbar_created = False
@@ -840,162 +889,108 @@ def processing_loop(
                 except Exception:
                     pass
 
-            # Detect anchors or fallback to single table / manual ROI
-            manual_rect = manual_rect_holder[0]
-            if manual_rect is not None:
-                mx, my, mw, mh = manual_rect
-                sub_anchor = None
-                if (
-                    getattr(pipeline, "anchor_template", None) is not None
-                    and find_anchor is not None
-                    and frame is not None
-                    and frame.size > 0
-                ):
-                    sub_frame = frame[max(0, my) : max(0, my + mh), max(0, mx) : max(0, mx + mw)]
-                    if sub_frame.size > 0:
-                        try:
-                            preferred_scale = getattr(pipeline, "_last_anchor_scale", None)
-                            sub_anchor = find_anchor(
-                                sub_frame,
-                                pipeline.anchor_template,
-                                threshold=pipeline.anchor_threshold,
-                                preferred_scale=preferred_scale,
-                            )
-                        except Exception:
-                            sub_anchor = None
+            # Detect tables using golden rim (first) or anchor fallback per managed table slot
+            table_jobs: list[tuple[str, Any, bool, tuple[Any, ...]]] = []
+            for tid, slot_info in list(managed_tables.items()):
+                search_region = slot_info.get("search_region")
+                table_rect = None
+                has_anchor = False
 
-                if sub_anchor is not None:
-                    ax, ay, aw, ah = sub_anchor
-                    full_anchor = (max(0, mx) + ax, max(0, my) + ay, aw, ah)
-                    anchors = [full_anchor]
-                    if getattr(pipeline, "anchor_template", None) is not None:
-                        tpl_w = pipeline.anchor_template.shape[1]
-                        if tpl_w > 0:
-                            pipeline._last_anchor_scale = aw / tpl_w
-                    if compute_unclipped_table_rect is not None:
-                        tpl_w = pipeline.anchor_template.shape[1] if getattr(pipeline, "anchor_template", None) is not None else None
-                        tpl_h = pipeline.anchor_template.shape[0] if getattr(pipeline, "anchor_template", None) is not None else None
-                        template_size = (tpl_w, tpl_h) if tpl_w and tpl_h else None
-                        canonical_sz = getattr(pipeline, "canonical_table_size", (1757, 997))
-                        table_offset = getattr(pipeline, "table_offset_rel", [0.0, 0.0, 1.0, 1.0])
-                        right_anchor = None
-                        if getattr(pipeline, "right_anchor_template", None) is not None and find_right_anchor is not None:
+                # 1. Primary anchor template matching (dual-anchor unclipped rect)
+                if frame is not None and frame.size > 0:
+                    if search_region is not None:
+                        mx, my, mw, mh = search_region
+                        sub_frame = frame[max(0, my) : max(0, my + mh), max(0, mx) : max(0, mx + mw)]
+                        if sub_frame.size > 0 and getattr(pipeline, "anchor_template", None) is not None and find_anchor is not None:
                             try:
-                                right_anchor = find_right_anchor(
-                                    frame,
-                                    pipeline.right_anchor_template,
-                                    full_anchor,
-                                    canonical_size=canonical_sz,
-                                    left_template_size=template_size or (78, 35),
-                                )
+                                sub_anchor = find_anchor(sub_frame, pipeline.anchor_template, threshold=pipeline.anchor_threshold)
+                                if sub_anchor is not None:
+                                    ax, ay, aw, ah = sub_anchor
+                                    full_anchor = (max(0, mx) + ax, max(0, my) + ay, aw, ah)
+                                    canonical_sz = getattr(pipeline, "canonical_table_size", (1757, 997))
+                                    tpl_w = pipeline.anchor_template.shape[1]
+                                    tpl_h = pipeline.anchor_template.shape[0]
+                                    table_offset = getattr(pipeline, "table_offset_rel", [0.0, 0.0, 1.0, 1.0])
+                                    right_anchor = None
+                                    if getattr(pipeline, "right_anchor_template", None) is not None and find_right_anchor is not None:
+                                        right_anchor = find_right_anchor(frame, pipeline.right_anchor_template, full_anchor, canonical_size=canonical_sz, left_template_size=(tpl_w, tpl_h))
+                                    table_rect = compute_unclipped_table_rect(full_anchor, table_offset, canonical_size=canonical_sz, template_size=(tpl_w, tpl_h), frame_shape=frame.shape, right_anchor=right_anchor)
+                                    has_anchor = True
+                                else:
+                                    table_rect = search_region
                             except Exception:
-                                right_anchor = None
-                        table_rect = compute_unclipped_table_rect(
-                            full_anchor,
-                            table_offset,
-                            canonical_size=canonical_sz,
-                            template_size=template_size,
-                            frame_shape=frame.shape,
-                            right_anchor=right_anchor,
-                        )
-                    elif compute_table_rect is not None:
-                        table_rect = compute_table_rect(full_anchor, pipeline.table_offset_rel, frame.shape)
+                                table_rect = search_region
+                        else:
+                            table_rect = search_region
                     else:
-                        table_rect = manual_rect
-                    table_jobs = [("table_1", table_rect)]
-                else:
-                    table_jobs = [("table_1", manual_rect)]
-                    anchors = []
-            else:
-                anchors = []
-                if (
-                    getattr(pipeline, "anchor_template", None) is not None
-                    and find_all_anchors is not None
-                ):
+                        if getattr(pipeline, "anchor_template", None) is not None and find_anchor is not None:
+                            try:
+                                preferred_scale = getattr(pipeline, "_last_anchor_scale", None)
+                                anchor = find_anchor(frame, pipeline.anchor_template, threshold=pipeline.anchor_threshold, preferred_scale=preferred_scale)
+                                if anchor is not None:
+                                    canonical_sz = getattr(pipeline, "canonical_table_size", (1757, 997))
+                                    tpl_w = pipeline.anchor_template.shape[1]
+                                    tpl_h = pipeline.anchor_template.shape[0]
+                                    table_offset = getattr(pipeline, "table_offset_rel", [0.0, 0.0, 1.0, 1.0])
+                                    right_anchor = None
+                                    if getattr(pipeline, "right_anchor_template", None) is not None and find_right_anchor is not None:
+                                        right_anchor = find_right_anchor(frame, pipeline.right_anchor_template, anchor, canonical_size=canonical_sz, left_template_size=(tpl_w, tpl_h))
+                                    table_rect = compute_unclipped_table_rect(anchor, table_offset, canonical_size=canonical_sz, template_size=(tpl_w, tpl_h), frame_shape=frame.shape, right_anchor=right_anchor)
+                                    has_anchor = True
+                            except Exception:
+                                anchor = None
+
+                # 2. Golden rim detection fallback (when anchor is scrolled out of view or hidden)
+                if table_rect is None and find_golden_rim is not None and compute_table_rect_from_rim is not None and frame is not None and frame.size > 0:
                     try:
-                        preferred_scale = getattr(pipeline, "_last_anchor_scale", None)
-                        anchors = find_all_anchors(
-                            frame,
-                            pipeline.anchor_template,
-                            threshold=pipeline.anchor_threshold,
-                            preferred_scale=preferred_scale,
-                        )
-                        if anchors and getattr(pipeline, "anchor_template", None) is not None:
-                            tpl_w = pipeline.anchor_template.shape[1]
-                            pipeline._last_anchor_scale = anchors[0][2] / tpl_w
+                        rim = find_golden_rim(frame, search_rect=search_region)
+                        if rim is not None:
+                            canonical_sz = getattr(pipeline, "canonical_table_size", (1757, 997))
+                            rim_rel = getattr(pipeline, "golden_rim_rel", [0.1816, 0.0963, 0.6460, 0.6780])
+                            table_rect = compute_table_rect_from_rim(rim, rim_rel=rim_rel, canonical_size=canonical_sz)
+                            has_anchor = True
                     except Exception:
-                        anchors = []
+                        table_rect = None
 
-                if is_live and not anchors:
-                    now_sec = time.perf_counter()
-                    if now_sec - last_idle_emit >= 0.5:
-                        last_idle_emit = now_sec
-                        idle_decision = Decision(
-                            table_id="table_1",
-                            action="WAIT",
-                            ev_bb=None,
-                            confidence=1.0,
-                            profile_used="STANDARD_EXPLOIT",
-                            reason="Szukam stołu Stake...",
-                        )
-                        if hud_bridge is not None and hasattr(hud_bridge, "decision_updated"):
-                            try:
-                                hud_bridge.decision_updated.emit(idle_decision, 0.0, "Szukam stołu Stake...")
-                            except Exception:
-                                pass
-                        if hud_bridge is not None and hasattr(hud_bridge, "debug_overlay_updated"):
-                            try:
-                                hud_bridge.debug_overlay_updated.emit({"table_rect": None, "rois": []})
-                            except Exception:
-                                pass
-                    continue
+                adj = slot_info.get("adjust", (0, 0, 1.0, 1.0))
+                table_jobs.append((tid, table_rect, has_anchor, adj))
 
-                table_jobs = []
-                if anchors and compute_unclipped_table_rect is not None:
-                    tpl_w = pipeline.anchor_template.shape[1] if getattr(pipeline, "anchor_template", None) is not None else None
-                    tpl_h = pipeline.anchor_template.shape[0] if getattr(pipeline, "anchor_template", None) is not None else None
-                    template_size = (tpl_w, tpl_h) if tpl_w and tpl_h else None
-                    canonical_sz = getattr(pipeline, "canonical_table_size", (1757, 997))
-                    table_offset = getattr(pipeline, "table_offset_rel", [0.0, 0.0, 1.0, 1.0])
-                    for idx, anchor in enumerate(anchors):
-                        table_id = f"table_{idx + 1}"
-                        right_anchor = None
-                        if getattr(pipeline, "right_anchor_template", None) is not None and find_right_anchor is not None:
-                            try:
-                                right_anchor = find_right_anchor(
-                                    frame,
-                                    pipeline.right_anchor_template,
-                                    anchor,
-                                    canonical_size=canonical_sz,
-                                    left_template_size=template_size or (78, 35),
-                                )
-                            except Exception:
-                                right_anchor = None
-                        table_rect = compute_unclipped_table_rect(
-                            anchor,
-                            table_offset,
-                            canonical_size=canonical_sz,
-                            template_size=template_size,
-                            frame_shape=frame.shape,
-                            right_anchor=right_anchor,
-                        )
-                        table_jobs.append((table_id, table_rect))
-                elif anchors and compute_table_rect is not None:
-                    for idx, anchor in enumerate(anchors):
-                        table_id = f"table_{idx + 1}"
-                        table_rect = compute_table_rect(anchor, pipeline.table_offset_rel, frame.shape)
-                        table_jobs.append((table_id, table_rect))
-                else:
-                    table_jobs.append(("table_1", None))
+            if is_live and all(t[1] is None for t in table_jobs):
+                now_sec = time.perf_counter()
+                if now_sec - last_idle_emit >= 0.5:
+                    last_idle_emit = now_sec
+                    idle_decision = Decision(
+                        table_id="table_1",
+                        action="WAIT",
+                        ev_bb=None,
+                        confidence=1.0,
+                        profile_used="STANDARD_EXPLOIT",
+                        reason="Szukam stołu Stake...",
+                    )
+                    if hud_bridge is not None and hasattr(hud_bridge, "decision_updated"):
+                        try:
+                            hud_bridge.decision_updated.emit(idle_decision, 0.0, "Szukam stołu Stake...")
+                        except Exception:
+                            pass
+                    if hud_bridge is not None and hasattr(hud_bridge, "debug_overlay_updated"):
+                        try:
+                            hud_bridge.debug_overlay_updated.emit({"table_id": "table_1", "table_rect": None, "rois": []})
+                        except Exception:
+                            pass
+                continue
 
-            for table_id, orig_table_rect in table_jobs:
+            for table_id, orig_table_rect, has_anchor, adj in table_jobs:
                 table_rect = orig_table_rect
                 if table_rect is not None:
-                    dx, dy, scale_mult = adjust_holder
-                    if dx != 0 or dy != 0 or abs(scale_mult - 1.0) > 0.001:
+                    if len(adj) == 4:
+                        dx, dy, sx, sy = adj
+                    else:
+                        dx, dy, sx = adj[:3]
+                        sy = sx
+                    if dx != 0 or dy != 0 or abs(sx - 1.0) > 0.001 or abs(sy - 1.0) > 0.001:
                         tx, ty, tw, th = table_rect
-                        new_tw = int(round(tw * scale_mult))
-                        new_th = int(round(th * scale_mult))
+                        new_tw = int(round(tw * sx))
+                        new_th = int(round(th * sy))
                         new_tx = tx + dx - (new_tw - tw) // 2
                         new_ty = ty + dy - (new_th - th) // 2
                         table_rect = (new_tx, new_ty, new_tw, new_th)
@@ -1007,28 +1002,31 @@ def processing_loop(
                         table_id=table_id,
                         timestamp_ms=now_ms,
                         table_rect=table_rect,
-                        allow_table_resolution=(len(anchors) <= 1 if (manual_rect is None or len(anchors) > 0) else False),
-                        has_anchor=(len(anchors) > 0),
+                        allow_table_resolution=False,
+                        has_anchor=has_anchor,
                     )
                 except Exception:
                     continue
 
                 resolved_tid = getattr(state, "table_id", table_id)
 
-                now_sec = time.perf_counter()
-                if len(anchors) <= 1:
-                    table_last_seen[resolved_tid] = now_sec
-                    stale_tids = [
-                        tid for tid, last_t in table_last_seen.items()
-                        if now_sec - last_t > 5.0 and tid != resolved_tid
-                    ]
-                    for stale_tid in stale_tids:
-                        table_last_seen.pop(stale_tid, None)
-                        if hud_bridge is not None and hasattr(hud_bridge, "table_removed"):
-                            try:
-                                hud_bridge.table_removed.emit(stale_tid)
-                            except Exception:
-                                pass
+                # Track opponent signature to reset validator across alternating tournaments in same slot
+                canonical_img = getattr(pipeline, "_last_canonical_table", None)
+                if canonical_img is not None and hasattr(pipeline, "compute_opponents_signature"):
+                    try:
+                        opp_sig = pipeline.compute_opponents_signature(canonical_img)
+                        if opp_sig is not None and table_id in managed_tables:
+                            last_sig = managed_tables[table_id].get("last_opponents_sig")
+                            if last_sig is not None:
+                                import cv2
+                                match_score = cv2.matchTemplate(opp_sig, last_sig, cv2.TM_CCOEFF_NORMED)[0][0]
+                                if match_score < 0.85:
+                                    if validator is not None:
+                                        validator.reset_table(table_id)
+                                    trackers.pop(table_id, None)
+                            managed_tables[table_id]["last_opponents_sig"] = opp_sig
+                    except Exception:
+                        pass
 
                 # Reset validator history if this table ID was just LRU evicted by pipeline
                 if getattr(pipeline, "last_evicted_table_id", None) == resolved_tid:
@@ -1211,6 +1209,55 @@ def processing_loop(
 
                 if hud_bridge is not None and hasattr(hud_bridge, "decision_updated"):
                     hud_bridge.decision_updated.emit(decision, latency_ms, scan_summary)
+
+                if hud_bridge is not None and hasattr(hud_bridge, "action_bar_updated"):
+                    amount_chips = None
+                    pot_val_chips = getattr(state, "pot", 0) or 0
+                    bb_val_chips = getattr(state, "big_blind", 20) or 20
+                    hero_p_chips = getattr(state, "players", {}).get(0)
+                    hero_bet_chips = getattr(hero_p_chips, "current_bet", 0) or 0
+                    hero_stk_chips = getattr(hero_p_chips, "stack", 0) or 0
+                    max_opp_bet_chips = max(
+                        (getattr(p, "current_bet", 0) or 0 for sid, p in getattr(state, "players", {}).items() if sid != 0),
+                        default=0,
+                    )
+                    act_str_chips = getattr(decision, "action", "WAIT")
+                    if act_str_chips == "BET_30":
+                        amount_chips = max(bb_val_chips, int(round(0.30 * pot_val_chips)))
+                    elif act_str_chips == "MIN_RAISE":
+                        amount_chips = max(2 * bb_val_chips, max_opp_bet_chips * 2)
+                    elif act_str_chips == "CALL":
+                        amount_chips = max(0, max_opp_bet_chips - hero_bet_chips)
+                    elif act_str_chips == "ALL_IN":
+                        amount_chips = hero_stk_chips
+
+                    eff_table_rect = table_rect if table_rect is not None else (
+                        0,
+                        0,
+                        frame.shape[1] if (frame is not None and frame.size > 0) else 1757,
+                        frame.shape[0] if (frame is not None and frame.size > 0) else 997,
+                    )
+                    rois_dict = getattr(pipeline, "rois_rel", {}) or (
+                        pipeline.config.get("rois", {}) if getattr(pipeline, "config", None) else {}
+                    )
+                    acts_rel = rois_dict.get("hero_actions", [0.65, 0.85, 0.28, 0.10])
+                    ax = int(round(eff_table_rect[0] + acts_rel[0] * eff_table_rect[2]))
+                    ay = int(round(eff_table_rect[1] + acts_rel[1] * eff_table_rect[3]))
+                    aw = int(round(acts_rel[2] * eff_table_rect[2]))
+                    ah = int(round(acts_rel[3] * eff_table_rect[3]))
+
+                    action_bar_payload = {
+                        "table_id": resolved_tid,
+                        "actions_rect": (ax, ay, aw, ah),
+                        "action": act_str_chips,
+                        "amount_chips": amount_chips,
+                        "ev_bb": getattr(decision, "ev_bb", None),
+                        "is_plan": str(getattr(decision, "reason", "")).startswith("[PLAN]"),
+                    }
+                    try:
+                        hud_bridge.action_bar_updated.emit(action_bar_payload)
+                    except Exception:
+                        pass
 
                 if hud_bridge is not None and hasattr(hud_bridge, "debug_overlay_updated"):
                     eff_rect = table_rect if table_rect is not None else (

@@ -5,11 +5,17 @@ Features:
 - Movable when unlocked (shortcut Ctrl+Shift+L)
 - Multi-table support (table_widgets: dict[str, QLabel])
 - Real-time action recommendation badge, EV, latency, and exploit reason
+- Exclusion from screen capture (WDA_EXCLUDEFROMCAPTURE)
+- Debug ROI overlay with live calibration edit mode and 3-second auto-hide
+- Action-Only bar overlay (ActionBarOverlay) directly below game buttons
+- Dynamic Buy-in selector ($0.50 / $2 / $5 / $10)
+- Manual multi-table add/remove without table multiplication
 """
 
 from __future__ import annotations
 
 import ctypes
+import inspect
 import sys
 from typing import Any
 
@@ -128,6 +134,73 @@ class _DecisionSignalDescriptor:
         return instance._wrapped_decision_updated
 
 
+class _TableAdjustSignalDescriptor:
+    """Descriptor supporting both legacy 3-arg (dx, dy, s) and 5-arg (tid, dx, dy, sx, sy) emissions."""
+
+    def __set_name__(self, owner: Any, name: str) -> None:
+        self.name = name
+
+    def __get__(self, instance: Any, owner: Any = None) -> Any:
+        if instance is None:
+            return owner._raw_table_adjust_changed
+        if not hasattr(instance, "_wrapped_table_adjust_changed"):
+            class _Wrapper:
+                def __init__(self, obj: Any) -> None:
+                    self._obj = obj
+
+                def connect(self, slot: Any) -> None:
+                    try:
+                        sig = inspect.signature(slot)
+                        num_params = len([
+                            p for p in sig.parameters.values()
+                            if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+                        ])
+                        if num_params == 3:
+                            self._obj._raw_table_adjust_changed[int, int, float].connect(slot)
+                            return
+                        elif num_params == 5:
+                            self._obj._raw_table_adjust_changed[str, int, int, float, float].connect(slot)
+                            return
+                    except Exception:
+                        pass
+                    try:
+                        self._obj._raw_table_adjust_changed[int, int, float].connect(slot)
+                    except Exception:
+                        pass
+                    try:
+                        self._obj._raw_table_adjust_changed.connect(slot)
+                    except Exception:
+                        pass
+
+                def disconnect(self, *args: Any) -> None:
+                    try:
+                        self._obj._raw_table_adjust_changed.disconnect(*args)
+                    except Exception:
+                        pass
+                    try:
+                        self._obj._raw_table_adjust_changed[int, int, float].disconnect(*args)
+                    except Exception:
+                        pass
+                    try:
+                        self._obj._raw_table_adjust_changed[str, int, int, float, float].disconnect(*args)
+                    except Exception:
+                        pass
+
+                def emit(self, *args: Any) -> None:
+                    if len(args) == 3:
+                        self._obj._raw_table_adjust_changed[int, int, float].emit(*args)
+                    elif len(args) == 5:
+                        self._obj._raw_table_adjust_changed.emit(*args)
+                    else:
+                        self._obj._raw_table_adjust_changed.emit(*args)
+
+                def __getitem__(self, item: Any) -> Any:
+                    return self._obj._raw_table_adjust_changed[item]
+
+            instance._wrapped_table_adjust_changed = _Wrapper(instance)
+        return instance._wrapped_table_adjust_changed
+
+
 def format_cards_html(scan_summary: str) -> str:
     """Extract and format Hero and Board cards into a rich HTML snippet with colored suits."""
     if not scan_summary:
@@ -186,8 +259,13 @@ class HudBridge(QObject):
     decision_updated = _DecisionSignalDescriptor()
     manual_rect_changed = Signal(object)
     table_removed = Signal(str)
+    table_removed_by_user = Signal(str)
+    table_added = Signal(str, object)
+    _raw_table_adjust_changed = Signal((str, int, int, float, float), (int, int, float))
+    table_adjust_changed = _TableAdjustSignalDescriptor()
     debug_overlay_updated = Signal(object)
-    table_adjust_changed = Signal(int, int, float)
+    buy_in_changed = Signal(float)
+    action_bar_updated = Signal(object)
 
 
 class RegionSelectorOverlay(QWidget):
@@ -288,6 +366,160 @@ class RegionSelectorOverlay(QWidget):
         painter.drawText(self.rect().adjusted(0, 30, 0, 0), Qt.AlignmentFlag.AlignHCenter, info_text)
 
 
+class ActionBarOverlay(QWidget):
+    """Frameless, transparent, click-through overlay showing action badges directly below hero_actions buttons."""
+
+    def __init__(
+        self,
+        bridge: HudBridge | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.bridge = bridge
+        self._action_data: dict[str, dict[str, Any]] = {}
+
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+
+        screen = QApplication.primaryScreen()
+        if screen:
+            self.setGeometry(screen.virtualGeometry())
+
+        if self.bridge is not None and hasattr(self.bridge, "action_bar_updated"):
+            self.bridge.action_bar_updated.connect(self.on_action_bar_updated)
+
+    def showEvent(self, event: Any) -> None:
+        super().showEvent(event)
+        hwnd = int(self.winId()) if self.effectiveWinId() else 0
+        set_click_through(hwnd, True)
+        set_exclude_from_capture(hwnd, True)
+
+    @Slot(object)
+    def on_action_bar_updated(self, data: Any) -> None:
+        """Receive updated action bar data for a table."""
+        if isinstance(data, dict):
+            tid = str(data.get("table_id") or "table_1")
+            self._action_data[tid] = data
+            if self.isVisible():
+                self.update()
+
+    def remove_table(self, table_id: str) -> None:
+        """Remove a stale table action bar."""
+        self._action_data.pop(table_id, None)
+        if self.isVisible():
+            self.update()
+
+    def get_badge_rect_for_action(
+        self, action: str, actions_rect: tuple[int, int, int, int], dpr: float = 1.0
+    ) -> tuple[float, float, float, float]:
+        """Compute logical bounding box for the action badge (useful for tests and paint)."""
+        ax, ay, aw, ah = actions_rect
+        lax = ax / dpr
+        lay = ay / dpr
+        law = aw / dpr
+        lah = ah / dpr
+
+        col_w = law / 3.0
+        bar_h = 28.0
+        bar_y = lay + lah + 4.0
+
+        screen = self.screen() or QApplication.primaryScreen()
+        if screen:
+            screen_h = screen.geometry().height()
+            if bar_y + bar_h > screen_h:
+                bar_y = max(4.0, lay - bar_h - 4.0)
+
+        # Columns: 0 = Fold, 1 = Check/Call, 2 = Bet/Raise/All-In
+        act_upper = action.upper()
+        if act_upper == "FOLD":
+            col_x = lax
+        elif act_upper in ("CHECK", "CALL"):
+            col_x = lax + col_w
+        else:
+            col_x = lax + 2.0 * col_w
+
+        return (col_x, bar_y, col_w, bar_h)
+
+    def paintEvent(self, event: Any) -> None:
+        if not self._action_data:
+            return
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        screen = self.screen() or QApplication.primaryScreen()
+        dpr = screen.devicePixelRatio() if screen else 1.0
+        dpr = max(0.1, dpr)
+
+        font_action = QFont("Arial", 11, QFont.Weight.Bold)
+
+        for tid, data in self._action_data.items():
+            if not data:
+                continue
+            action = str(data.get("action") or "WAIT").upper()
+            if action in ("WAIT", "", "NONE"):
+                continue
+
+            actions_rect = data.get("actions_rect")
+            if not actions_rect or len(actions_rect) < 4:
+                continue
+
+            bx, by, bw, bh = self.get_badge_rect_for_action(action, actions_rect, dpr)
+            amt = data.get("amount_chips")
+            is_plan = bool(data.get("is_plan", False))
+
+            if action == "FOLD":
+                text = "▲ PLAN: FOLD" if is_plan else "▲ FOLD"
+                bg_color = QColor(192, 57, 43, 200 if is_plan else 245)
+                border_color = QColor("#e74c3c")
+            elif action == "CHECK":
+                text = "▲ PLAN: CHECK" if is_plan else "▲ CHECK"
+                bg_color = QColor(230, 126, 34, 200 if is_plan else 245)
+                border_color = QColor("#f39c12")
+            elif action == "CALL":
+                amt_str = f" {amt}" if amt is not None else ""
+                text = f"▲ PLAN: CALL{amt_str}" if is_plan else f"▲ CALL{amt_str}"
+                bg_color = QColor(230, 126, 34, 200 if is_plan else 245)
+                border_color = QColor("#f39c12")
+            elif action == "BET_30":
+                amt_str = f" {amt}" if amt is not None else ""
+                text = f"▲ PLAN: BET{amt_str}" if is_plan else f"▲ BET{amt_str}"
+                bg_color = QColor(39, 174, 96, 200 if is_plan else 245)
+                border_color = QColor("#2ecc71")
+            elif action == "MIN_RAISE":
+                amt_str = f" {amt}" if amt is not None else ""
+                text = f"▲ PLAN: RAISE{amt_str}" if is_plan else f"▲ RAISE{amt_str}"
+                bg_color = QColor(39, 174, 96, 200 if is_plan else 245)
+                border_color = QColor("#2ecc71")
+            elif action == "ALL_IN":
+                amt_str = f" {amt}" if (amt is not None and amt > 0) else ""
+                text = f"▲ PLAN: ALL-IN{amt_str}" if is_plan else f"▲ ALL-IN{amt_str}"
+                bg_color = QColor(39, 174, 96, 200 if is_plan else 245)
+                border_color = QColor("#2ecc71")
+            else:
+                amt_str = f" {amt}" if amt is not None else ""
+                text = f"▲ {action}{amt_str}"
+                bg_color = QColor(41, 128, 185, 200 if is_plan else 245)
+                border_color = QColor("#3498db")
+
+            badge_rect = QRectF(bx + 2, by, bw - 4, bh)
+
+            pen = QPen(border_color, 1.5)
+            pen.setStyle(Qt.PenStyle.DashLine if is_plan else Qt.PenStyle.SolidLine)
+            painter.setPen(pen)
+            painter.setBrush(bg_color)
+            painter.drawRoundedRect(badge_rect, 5, 5)
+
+            painter.setPen(QColor("#ffffff"))
+            painter.setFont(font_action)
+            painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, text)
+
+
 class DebugRoiOverlay(QWidget):
     """Fullscreen semi-transparent click-through overlay drawing table bounds and ROIs."""
 
@@ -300,6 +532,7 @@ class DebugRoiOverlay(QWidget):
         self.bridge = bridge
         self._data: dict[str, Any] | None = None
         self._tables: dict[str, dict[str, Any]] = {}
+        self.editing_table_id: str | None = None
         self._drag_mode: bool = False
         self._drag_start_pos: QPoint | None = None
         self._drag_start_adjust: tuple[int, int] = (0, 0)
@@ -378,7 +611,15 @@ class DebugRoiOverlay(QWidget):
             self._current_dx = new_dx
             self._current_dy = new_dy
             if self.bridge is not None and hasattr(self.bridge, "table_adjust_changed"):
-                self.bridge.table_adjust_changed.emit(new_dx, new_dy, self._current_scale)
+                tid = self.editing_table_id or "table_1"
+                try:
+                    self.bridge.table_adjust_changed.emit(tid, new_dx, new_dy, self._current_scale, self._current_scale)
+                except Exception:
+                    pass
+                try:
+                    self.bridge.table_adjust_changed.emit(new_dx, new_dy, self._current_scale)
+                except Exception:
+                    pass
             self.update()
             event.accept()
         else:
@@ -438,6 +679,9 @@ class DebugRoiOverlay(QWidget):
             if not tbl_data:
                 continue
 
+            tid = str(tbl_data.get("table_id") or "default")
+            is_editing = (self.editing_table_id is not None and self.editing_table_id == tid)
+
             table_rect = tbl_data.get("table_rect")
             if table_rect and len(table_rect) >= 4:
                 tx, ty, tw, th = table_rect
@@ -446,25 +690,44 @@ class DebugRoiOverlay(QWidget):
                 lw = tw / dpr
                 lh = th / dpr
 
-                # Distinct dashed table outline (cyan)
-                pen = QPen(QColor("#00f0ff"))
-                pen.setWidth(2)
-                pen.setStyle(Qt.PenStyle.DashLine)
-                painter.setPen(pen)
-                painter.setBrush(QColor(0, 240, 255, 12))
-                painter.drawRect(QRectF(lx, ly, lw, lh))
+                if is_editing:
+                    # Highlight table in edit mode (bright orange / gold)
+                    pen = QPen(QColor("#f39c12"))
+                    pen.setWidth(3)
+                    pen.setStyle(Qt.PenStyle.SolidLine)
+                    painter.setPen(pen)
+                    painter.setBrush(QColor(243, 156, 18, 30))
+                    painter.drawRect(QRectF(lx, ly, lw, lh))
 
-                # Table label
-                tbl_label = f"TABLE ({int(tx)}, {int(ty)}, {int(tw)}x{int(th)})"
-                lbl_w = fm_tbl.horizontalAdvance(tbl_label) + 8
-                lbl_h = fm_tbl.height() + 4
-                lbl_rect = QRectF(lx + 4, max(4.0, ly - lbl_h - 2), lbl_w, lbl_h)
-                painter.setPen(Qt.PenStyle.NoPen)
-                painter.setBrush(QColor(15, 23, 42, 220))
-                painter.drawRoundedRect(lbl_rect, 3, 3)
-                painter.setPen(QColor("#00f0ff"))
-                painter.setFont(font_tbl)
-                painter.drawText(lbl_rect, Qt.AlignmentFlag.AlignCenter, tbl_label)
+                    tbl_label = f"✎ [TRYB EDYCJI - {tid}] ({int(tx)}, {int(ty)}, {int(tw)}x{int(th)})"
+                    lbl_w = fm_tbl.horizontalAdvance(tbl_label) + 12
+                    lbl_h = fm_tbl.height() + 6
+                    lbl_rect = QRectF(lx + 4, max(4.0, ly - lbl_h - 2), lbl_w, lbl_h)
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.setBrush(QColor(15, 23, 42, 245))
+                    painter.drawRoundedRect(lbl_rect, 4, 4)
+                    painter.setPen(QColor("#f39c12"))
+                    painter.setFont(font_tbl)
+                    painter.drawText(lbl_rect, Qt.AlignmentFlag.AlignCenter, tbl_label)
+                else:
+                    # Distinct dashed table outline (cyan)
+                    pen = QPen(QColor("#00f0ff"))
+                    pen.setWidth(2)
+                    pen.setStyle(Qt.PenStyle.DashLine)
+                    painter.setPen(pen)
+                    painter.setBrush(QColor(0, 240, 255, 12))
+                    painter.drawRect(QRectF(lx, ly, lw, lh))
+
+                    tbl_label = f"TABLE ({int(tx)}, {int(ty)}, {int(tw)}x{int(th)})"
+                    lbl_w = fm_tbl.horizontalAdvance(tbl_label) + 8
+                    lbl_h = fm_tbl.height() + 4
+                    lbl_rect = QRectF(lx + 4, max(4.0, ly - lbl_h - 2), lbl_w, lbl_h)
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.setBrush(QColor(15, 23, 42, 220))
+                    painter.drawRoundedRect(lbl_rect, 3, 3)
+                    painter.setPen(QColor("#00f0ff"))
+                    painter.setFont(font_tbl)
+                    painter.drawText(lbl_rect, Qt.AlignmentFlag.AlignCenter, tbl_label)
 
             # Draw ROIs
             rois = tbl_data.get("rois", [])
@@ -488,12 +751,12 @@ class DebugRoiOverlay(QWidget):
                     is_detected = val not in ("--", "", "None", "0")
                     color_str = "#22c55e" if is_detected else "#ef4444"
 
-                roi_color = QColor(color_str)
+                roi_color = QColor("#f39c12") if is_editing else QColor(color_str)
                 pen = QPen(roi_color)
-                pen.setWidth(1)
+                pen.setWidth(2 if is_editing else 1)
                 painter.setPen(pen)
                 fill = QColor(roi_color)
-                fill.setAlpha(20)
+                fill.setAlpha(30 if is_editing else 20)
                 painter.setBrush(fill)
                 painter.drawRect(QRectF(rlx, rly, rlw, rlh))
 
@@ -526,22 +789,40 @@ class HudOverlay(QWidget):
         self.bridge = bridge
 
         self.table_widgets: dict[str, QLabel] = {}
+        self.table_header_widgets: dict[str, QWidget] = {}
+        self.table_delete_buttons: dict[str, QPushButton] = {}
         self.details_widgets: dict[str, QLabel] = {}
         self.cards_line_by_table: dict[str, str] = {}
         self.is_locked: bool = False
         self.show_details: bool = False
         self.is_debug_overlay_enabled: bool = False
+        self.is_action_only_mode: bool = False
+
+        self.buy_in: float = 2.0
+        self.managed_tables: dict[str, dict[str, Any]] = {
+            "table_1": {"search_region": None, "adjust": (0, 0, 1.0, 1.0)}
+        }
+        self.editing_table_id: str | None = None
+        self._pre_edit_adjust: tuple[int, int, float, float] = (0, 0, 1.0, 1.0)
+
+        # Legacy backward-compat attributes for table_1
         self.table_dx: int = 0
         self.table_dy: int = 0
         self.table_scale_mult: float = 1.0
+        self.table_scale_x: float = 1.0
+        self.table_scale_y: float = 1.0
+
         self.is_drag_mode: bool = False
         self._drag_pos: QPoint | None = None
         self._selector: RegionSelectorOverlay | None = None
         self._debug_overlay: DebugRoiOverlay | None = None
+        self._action_bar_overlay: ActionBarOverlay | None = None
         self._manual_rect: tuple[int, int, int, int] | None = None
+        self._is_internal_adjust: bool = False
 
         if QApplication.instance() is not None:
             self._debug_overlay = DebugRoiOverlay(bridge=self.bridge)
+            self._action_bar_overlay = ActionBarOverlay(bridge=self.bridge)
 
         self._init_window()
         self._init_ui()
@@ -552,7 +833,11 @@ class HudOverlay(QWidget):
             if hasattr(self.bridge, "table_removed"):
                 self.bridge.table_removed.connect(self.remove_table)
             if hasattr(self.bridge, "table_adjust_changed"):
-                self.bridge.table_adjust_changed.connect(self.on_table_adjust_from_bridge)
+                try:
+                    self.bridge.table_adjust_changed[str, int, int, float, float].connect(self.on_table_adjust_5arg_from_bridge)
+                    self.bridge.table_adjust_changed[int, int, float].connect(self.on_table_adjust_from_bridge)
+                except Exception:
+                    self.bridge.table_adjust_changed.connect(self.on_table_adjust_from_bridge)
 
     def _init_window(self) -> None:
         self.setWindowFlags(
@@ -561,7 +846,7 @@ class HudOverlay(QWidget):
             | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.setMinimumWidth(420)
+        self.setMinimumWidth(430)
 
     def _init_ui(self) -> None:
         self.root_layout = QVBoxLayout(self)
@@ -575,16 +860,6 @@ class HudOverlay(QWidget):
         self.container_layout = QVBoxLayout(self.container)
         self.container_layout.setContentsMargins(10, 8, 10, 10)
         self.container_layout.setSpacing(6)
-
-        # Header bar
-        header_row = QHBoxLayout()
-        header_row.setContentsMargins(0, 0, 0, 0)
-        header_row.setSpacing(6)
-
-        self.title_label = QLabel("🎯 <b>POKER ASSISTANT</b>", self.container)
-        self.title_label.setStyleSheet("color: #ecf0f1; font-size: 12px; font-weight: bold;")
-        header_row.addWidget(self.title_label)
-        header_row.addStretch()
 
         btn_style = """
             QPushButton {
@@ -602,37 +877,131 @@ class HudOverlay(QWidget):
             }
         """
 
-        self.btn_details = QPushButton("🔍 Szczegóły", self.container)
+        # Action-Only Compact Pill (hidden by default)
+        self.action_only_pill = QWidget(self.container)
+        pill_layout = QHBoxLayout(self.action_only_pill)
+        pill_layout.setContentsMargins(4, 2, 4, 2)
+        pill_layout.setSpacing(8)
+
+        self.pill_label = QLabel("🎯 <b>HUD [⚡ Tylko akcja | Ctrl+Shift+A]</b>", self.action_only_pill)
+        self.pill_label.setStyleSheet("color: #38bdf8; font-size: 11px; font-weight: bold;")
+        pill_layout.addWidget(self.pill_label)
+        pill_layout.addStretch()
+
+        self.btn_pill_restore = QPushButton("Rozwiń HUD", self.action_only_pill)
+        self.btn_pill_restore.setStyleSheet(btn_style)
+        self.btn_pill_restore.clicked.connect(self.toggle_action_only_mode)
+        pill_layout.addWidget(self.btn_pill_restore)
+
+        self.action_only_pill.setVisible(False)
+        self.container_layout.addWidget(self.action_only_pill)
+
+        # Normal HUD Widget
+        self.normal_hud_widget = QWidget(self.container)
+        self.normal_hud_layout = QVBoxLayout(self.normal_hud_widget)
+        self.normal_hud_layout.setContentsMargins(0, 0, 0, 0)
+        self.normal_hud_layout.setSpacing(6)
+
+        # Header bar
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
+        header_row.setSpacing(6)
+
+        self.title_label = QLabel("🎯 <b>POKER ASSISTANT</b>", self.normal_hud_widget)
+        self.title_label.setStyleSheet("color: #ecf0f1; font-size: 12px; font-weight: bold;")
+        header_row.addWidget(self.title_label)
+        header_row.addStretch()
+
+        self.btn_details = QPushButton("🔍 Szczegóły", self.normal_hud_widget)
         self.btn_details.setStyleSheet(btn_style)
         self.btn_details.clicked.connect(self.toggle_details)
         header_row.addWidget(self.btn_details)
 
-        self.btn_debug_overlay = QPushButton("🎯 Ramki ROI", self.container)
+        self.btn_action_only = QPushButton("⚡ Tylko akcja", self.normal_hud_widget)
+        self.btn_action_only.setStyleSheet(btn_style)
+        self.btn_action_only.setToolTip("Tryb Tylko Akcja pod przyciskami gry (Ctrl+Shift+A)")
+        self.btn_action_only.clicked.connect(self.toggle_action_only_mode)
+        header_row.addWidget(self.btn_action_only)
+
+        self.btn_add_table = QPushButton("+ Stół", self.normal_hud_widget)
+        self.btn_add_table.setStyleSheet(btn_style)
+        self.btn_add_table.setToolTip("Dodaj kolejny stół do monitorowania")
+        self.btn_add_table.clicked.connect(self.start_add_table_flow)
+        header_row.addWidget(self.btn_add_table)
+
+        self.normal_hud_layout.addLayout(header_row)
+
+        self.status_label = QLabel(self.normal_hud_widget)
+        self.normal_hud_layout.addWidget(self.status_label)
+
+        # Buy-in selector row (visible in details)
+        self.buy_in_panel = QWidget(self.normal_hud_widget)
+        buy_in_layout = QHBoxLayout(self.buy_in_panel)
+        buy_in_layout.setContentsMargins(0, 2, 0, 2)
+        buy_in_layout.setSpacing(4)
+
+        lbl_bi = QLabel("<b>Buy-in:</b>", self.buy_in_panel)
+        lbl_bi.setStyleSheet("color: #94a3b8; font-size: 10px; font-weight: bold;")
+        buy_in_layout.addWidget(lbl_bi)
+
+        self.buy_in_buttons: dict[float, QPushButton] = {}
+        for val, text in [(0.50, "$0.50"), (2.0, "$2"), (5.0, "$5"), (10.0, "$10")]:
+            btn = QPushButton(text, self.buy_in_panel)
+            btn.setStyleSheet(btn_style)
+            btn.clicked.connect(lambda checked=False, v=val: self.set_buy_in(v))
+            buy_in_layout.addWidget(btn)
+            self.buy_in_buttons[val] = btn
+
+        buy_in_layout.addStretch()
+
+        self.btn_debug_overlay = QPushButton("🎯 Ramki ROI", self.buy_in_panel)
         self.btn_debug_overlay.setStyleSheet(btn_style)
+        self.btn_debug_overlay.setToolTip("Pokaż / ukryj ramki stołu i pól ROI (Ctrl+Shift+O)")
         self.btn_debug_overlay.clicked.connect(self.toggle_debug_overlay)
         self.btn_debug_overlay.setVisible(self.show_details)
-        header_row.addWidget(self.btn_debug_overlay)
+        buy_in_layout.addWidget(self.btn_debug_overlay)
 
-        self.btn_select_rect = QPushButton("📐 Obszar", self.container)
+        # Legacy backward-compat buttons
+        self.btn_select_rect = QPushButton("📐 Obszar", self.buy_in_panel)
         self.btn_select_rect.setStyleSheet(btn_style)
         self.btn_select_rect.clicked.connect(self.start_region_selection)
-        header_row.addWidget(self.btn_select_rect)
+        self.btn_select_rect.setVisible(False)
+        buy_in_layout.addWidget(self.btn_select_rect)
 
-        self.btn_auto_rect = QPushButton("↺ Auto", self.container)
+        self.btn_auto_rect = QPushButton("↺ Auto", self.buy_in_panel)
         self.btn_auto_rect.setStyleSheet(btn_style)
         self.btn_auto_rect.clicked.connect(self.reset_auto_rect)
-        header_row.addWidget(self.btn_auto_rect)
+        self.btn_auto_rect.setVisible(False)
+        buy_in_layout.addWidget(self.btn_auto_rect)
 
-        self.container_layout.addLayout(header_row)
+        self.buy_in_panel.setVisible(self.show_details)
+        self.normal_hud_layout.addWidget(self.buy_in_panel)
+        self._update_buy_in_buttons_ui()
 
-        self.status_label = QLabel(self.container)
-        self.container_layout.addWidget(self.status_label)
+        # Calibration Panel (DEFAULT HIDDEN! Opens via '✎ Kalibruj')
+        self.calibration_panel = QFrame(self.normal_hud_widget)
+        self.calibration_panel.setStyleSheet("""
+            QFrame {
+                background-color: rgba(30, 41, 59, 0.85);
+                border: 1px solid rgba(243, 156, 18, 0.6);
+                border-radius: 6px;
+                padding: 4px;
+            }
+        """)
+        calib_layout = QVBoxLayout(self.calibration_panel)
+        calib_layout.setContentsMargins(6, 4, 6, 4)
+        calib_layout.setSpacing(4)
 
-        # Manual table adjustment panel (visible when show_details is True)
-        self.adjust_panel = QWidget(self.container)
-        adjust_layout = QHBoxLayout(self.adjust_panel)
-        adjust_layout.setContentsMargins(0, 2, 0, 2)
-        adjust_layout.setSpacing(4)
+        calib_header_row = QHBoxLayout()
+        self.calib_title_label = QLabel("✎ <b>Tryb edycji ramki stołu</b>", self.calibration_panel)
+        self.calib_title_label.setStyleSheet("color: #f39c12; font-size: 11px; font-weight: bold;")
+        calib_header_row.addWidget(self.calib_title_label)
+        calib_header_row.addStretch()
+
+        self.adjust_label = QLabel("Offset: (0, 0) | 100%", self.calibration_panel)
+        self.adjust_label.setStyleSheet("color: #cbd5e1; font-size: 10px; font-weight: bold;")
+        calib_header_row.addWidget(self.adjust_label)
+        calib_layout.addLayout(calib_header_row)
 
         adj_btn_style = """
             QPushButton {
@@ -643,7 +1012,7 @@ class HudOverlay(QWidget):
                 padding: 1px 5px;
                 font-size: 11px;
                 font-weight: bold;
-                min-width: 18px;
+                min-width: 20px;
             }
             QPushButton:hover {
                 background-color: rgba(255, 255, 255, 0.2);
@@ -651,70 +1020,140 @@ class HudOverlay(QWidget):
             }
         """
 
-        self.btn_adj_left = QPushButton("◀", self.adjust_panel)
+        controls_row1 = QHBoxLayout()
+        controls_row1.setSpacing(4)
+
+        self.btn_adj_left = QPushButton("◀", self.calibration_panel)
         self.btn_adj_left.setStyleSheet(adj_btn_style)
-        self.btn_adj_left.setToolTip("Przesuń stół w lewo (Shift: 2px, domyślnie 10px)")
+        self.btn_adj_left.setToolTip("Przesuń stół w lewo (Shift: 15px, domyślnie 5px)")
         self.btn_adj_left.clicked.connect(lambda: self.adjust_table_dx(-1))
-        adjust_layout.addWidget(self.btn_adj_left)
+        controls_row1.addWidget(self.btn_adj_left)
 
-        self.btn_adj_up = QPushButton("▲", self.adjust_panel)
+        self.btn_adj_up = QPushButton("▲", self.calibration_panel)
         self.btn_adj_up.setStyleSheet(adj_btn_style)
-        self.btn_adj_up.setToolTip("Przesuń stół w górę (Shift: 2px, domyślnie 10px)")
+        self.btn_adj_up.setToolTip("Przesuń stół w górę (Shift: 15px, domyślnie 5px)")
         self.btn_adj_up.clicked.connect(lambda: self.adjust_table_dy(-1))
-        adjust_layout.addWidget(self.btn_adj_up)
+        controls_row1.addWidget(self.btn_adj_up)
 
-        self.btn_adj_down = QPushButton("▼", self.adjust_panel)
+        self.btn_adj_down = QPushButton("▼", self.calibration_panel)
         self.btn_adj_down.setStyleSheet(adj_btn_style)
-        self.btn_adj_down.setToolTip("Przesuń stół w dół (Shift: 2px, domyślnie 10px)")
+        self.btn_adj_down.setToolTip("Przesuń stół w dół (Shift: 15px, domyślnie 5px)")
         self.btn_adj_down.clicked.connect(lambda: self.adjust_table_dy(1))
-        adjust_layout.addWidget(self.btn_adj_down)
+        controls_row1.addWidget(self.btn_adj_down)
 
-        self.btn_adj_right = QPushButton("▶", self.adjust_panel)
+        self.btn_adj_right = QPushButton("▶", self.calibration_panel)
         self.btn_adj_right.setStyleSheet(adj_btn_style)
-        self.btn_adj_right.setToolTip("Przesuń stół w prawo (Shift: 2px, domyślnie 10px)")
+        self.btn_adj_right.setToolTip("Przesuń stół w prawo (Shift: 15px, domyślnie 5px)")
         self.btn_adj_right.clicked.connect(lambda: self.adjust_table_dx(1))
-        adjust_layout.addWidget(self.btn_adj_right)
+        controls_row1.addWidget(self.btn_adj_right)
 
-        self.btn_adj_sminus = QPushButton("-", self.adjust_panel)
+        self.btn_adj_sminus = QPushButton("Skala -", self.calibration_panel)
         self.btn_adj_sminus.setStyleSheet(adj_btn_style)
         self.btn_adj_sminus.setToolTip("Zmniejsz skalę stołu o 1%")
         self.btn_adj_sminus.clicked.connect(lambda: self.adjust_table_scale(-0.01))
-        adjust_layout.addWidget(self.btn_adj_sminus)
+        controls_row1.addWidget(self.btn_adj_sminus)
 
-        self.btn_adj_splus = QPushButton("+", self.adjust_panel)
+        self.btn_adj_splus = QPushButton("Skala +", self.calibration_panel)
         self.btn_adj_splus.setStyleSheet(adj_btn_style)
         self.btn_adj_splus.setToolTip("Zwiększ skalę stołu o 1%")
         self.btn_adj_splus.clicked.connect(lambda: self.adjust_table_scale(0.01))
-        adjust_layout.addWidget(self.btn_adj_splus)
+        controls_row1.addWidget(self.btn_adj_splus)
 
-        self.btn_adj_drag = QPushButton("✋ Przesuń", self.adjust_panel)
+        self.btn_adj_wminus = QPushButton("Szer ↔ -", self.calibration_panel)
+        self.btn_adj_wminus.setStyleSheet(adj_btn_style)
+        self.btn_adj_wminus.setToolTip("Zmniejsz szerokość stołu o 1%")
+        self.btn_adj_wminus.clicked.connect(lambda: self.adjust_table_stretch_x(-0.01))
+        controls_row1.addWidget(self.btn_adj_wminus)
+
+        self.btn_adj_wplus = QPushButton("Szer ↔ +", self.calibration_panel)
+        self.btn_adj_wplus.setStyleSheet(adj_btn_style)
+        self.btn_adj_wplus.setToolTip("Zwiększ szerokość stołu o 1%")
+        self.btn_adj_wplus.clicked.connect(lambda: self.adjust_table_stretch_x(0.01))
+        controls_row1.addWidget(self.btn_adj_wplus)
+
+        self.btn_adj_hminus = QPushButton("Wys ↕ -", self.calibration_panel)
+        self.btn_adj_hminus.setStyleSheet(adj_btn_style)
+        self.btn_adj_hminus.setToolTip("Zmniejsz wysokość stołu o 1%")
+        self.btn_adj_hminus.clicked.connect(lambda: self.adjust_table_stretch_y(-0.01))
+        controls_row1.addWidget(self.btn_adj_hminus)
+
+        self.btn_adj_hplus = QPushButton("Wys ↕ +", self.calibration_panel)
+        self.btn_adj_hplus.setStyleSheet(adj_btn_style)
+        self.btn_adj_hplus.setToolTip("Zwiększ wysokość stołu o 1%")
+        self.btn_adj_hplus.clicked.connect(lambda: self.adjust_table_stretch_y(0.01))
+        controls_row1.addWidget(self.btn_adj_hplus)
+
+        self.btn_adj_drag = QPushButton("✋ Przesuń", self.calibration_panel)
         self.btn_adj_drag.setStyleSheet(adj_btn_style)
         self.btn_adj_drag.setToolTip("Tryb przeciągania ramki stołu myszą")
         self.btn_adj_drag.clicked.connect(self.toggle_drag_mode)
-        adjust_layout.addWidget(self.btn_adj_drag)
+        controls_row1.addWidget(self.btn_adj_drag)
 
-        self.btn_adj_reset = QPushButton("↺", self.adjust_panel)
+        self.btn_adj_reset = QPushButton("↺", self.calibration_panel)
         self.btn_adj_reset.setStyleSheet(adj_btn_style)
-        self.btn_adj_reset.setToolTip("Resetuj przesunięcie i skalę do (0, 0) | 100%")
+        self.btn_adj_reset.setToolTip("Resetuj przesunięcie i skalę")
         self.btn_adj_reset.clicked.connect(self.reset_table_adjust)
-        adjust_layout.addWidget(self.btn_adj_reset)
+        controls_row1.addWidget(self.btn_adj_reset)
 
-        self.adjust_label = QLabel("Offset: (0, 0) | 100%", self.adjust_panel)
-        self.adjust_label.setStyleSheet("color: #94a3b8; font-size: 10px; font-weight: bold;")
-        adjust_layout.addWidget(self.adjust_label)
+        calib_layout.addLayout(controls_row1)
 
-        self.adjust_panel.setVisible(self.show_details)
-        self.container_layout.addWidget(self.adjust_panel)
+        # Confirm & Cancel row
+        confirm_row = QHBoxLayout()
+        confirm_row.addStretch()
+
+        self.btn_calib_confirm = QPushButton("✔ Zatwierdź", self.calibration_panel)
+        self.btn_calib_confirm.setStyleSheet("""
+            QPushButton {
+                background-color: #27ae60;
+                color: #ffffff;
+                border: 1px solid #2ecc71;
+                border-radius: 4px;
+                padding: 3px 12px;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #2ecc71;
+            }
+        """)
+        self.btn_calib_confirm.setToolTip("Zapisz w pamięci (ramki gasną po 3 s)")
+        self.btn_calib_confirm.clicked.connect(self.confirm_table_calibration)
+        confirm_row.addWidget(self.btn_calib_confirm)
+
+        self.btn_calib_cancel = QPushButton("✕ Anuluj", self.calibration_panel)
+        self.btn_calib_cancel.setStyleSheet("""
+            QPushButton {
+                background-color: #c0392b;
+                color: #ffffff;
+                border: 1px solid #e74c3c;
+                border-radius: 4px;
+                padding: 3px 12px;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #e74c3c;
+            }
+        """)
+        self.btn_calib_cancel.setToolTip("Cofnij do wartości sprzed edycji")
+        self.btn_calib_cancel.clicked.connect(self.cancel_table_calibration)
+        confirm_row.addWidget(self.btn_calib_cancel)
+
+        calib_layout.addLayout(confirm_row)
+
+        self.calibration_panel.setVisible(False)
+        self.adjust_panel = self.calibration_panel  # Backward compatibility alias
+        self.normal_hud_layout.addWidget(self.calibration_panel)
 
         # Multi-table cards layout
         self.tables_layout = QVBoxLayout()
         self.tables_layout.setSpacing(6)
-        self.container_layout.addLayout(self.tables_layout)
+        self.normal_hud_layout.addLayout(self.tables_layout)
 
+        self.container_layout.addWidget(self.normal_hud_widget)
         self._apply_lock_state()
 
     def _init_shortcuts(self) -> None:
-        # Fallback local shortcuts for when window has focus
         self.lock_shortcut = QShortcut(QKeySequence("Ctrl+Shift+L"), self)
         self.lock_shortcut.activated.connect(self.toggle_lock)
         self.close_shortcut = QShortcut(QKeySequence("Ctrl+Shift+Q"), self)
@@ -725,16 +1164,19 @@ class HudOverlay(QWidget):
         self.debug_overlay_shortcut.activated.connect(self.toggle_debug_overlay)
         self.rect_shortcut = QShortcut(QKeySequence("Ctrl+Shift+R"), self)
         self.rect_shortcut.activated.connect(self.start_region_selection)
+        self.action_only_shortcut = QShortcut(QKeySequence("Ctrl+Shift+A"), self)
+        self.action_only_shortcut.activated.connect(self.toggle_action_only_mode)
 
-        # Windows global hotkey timer via GetAsyncKeyState (works even when click-through/no focus)
+        # Windows global hotkey timer via GetAsyncKeyState
         self._key_l_pressed: bool = False
         self._key_q_pressed: bool = False
         self._key_d_pressed: bool = False
         self._key_r_pressed: bool = False
         self._key_o_pressed: bool = False
+        self._key_a_pressed: bool = False
         if sys.platform == "win32":
             self._hotkey_timer = QTimer(self)
-            self._hotkey_timer.setInterval(50)  # Check every 50 ms
+            self._hotkey_timer.setInterval(50)
             self._hotkey_timer.timeout.connect(self._check_global_hotkeys)
             self._hotkey_timer.start()
 
@@ -743,7 +1185,6 @@ class HudOverlay(QWidget):
             return
         try:
             user32 = ctypes.windll.user32
-            # VK_CONTROL = 0x11, VK_SHIFT = 0x10, VK_L = 0x4C, VK_Q = 0x51, VK_D = 0x44, VK_R = 0x52, VK_O = 0x4F
             ctrl_down = bool(user32.GetAsyncKeyState(0x11) & 0x8000)
             shift_down = bool(user32.GetAsyncKeyState(0x10) & 0x8000)
             l_down = bool(user32.GetAsyncKeyState(0x4C) & 0x8000)
@@ -751,8 +1192,8 @@ class HudOverlay(QWidget):
             d_down = bool(user32.GetAsyncKeyState(0x44) & 0x8000)
             r_down = bool(user32.GetAsyncKeyState(0x52) & 0x8000)
             o_down = bool(user32.GetAsyncKeyState(0x4F) & 0x8000)
+            a_down = bool(user32.GetAsyncKeyState(0x41) & 0x8000)
 
-            # Debounced toggle position lock (Ctrl + Shift + L)
             if ctrl_down and shift_down and l_down:
                 if not self._key_l_pressed:
                     self._key_l_pressed = True
@@ -760,7 +1201,6 @@ class HudOverlay(QWidget):
             else:
                 self._key_l_pressed = False
 
-            # Debounced emergency close (Ctrl + Shift + Q)
             if ctrl_down and shift_down and q_down:
                 if not self._key_q_pressed:
                     self._key_q_pressed = True
@@ -768,7 +1208,6 @@ class HudOverlay(QWidget):
             else:
                 self._key_q_pressed = False
 
-            # Debounced toggle details (Ctrl + Shift + D)
             if ctrl_down and shift_down and d_down:
                 if not self._key_d_pressed:
                     self._key_d_pressed = True
@@ -776,7 +1215,6 @@ class HudOverlay(QWidget):
             else:
                 self._key_d_pressed = False
 
-            # Debounced select table region (Ctrl + Shift + R)
             if ctrl_down and shift_down and r_down:
                 if not self._key_r_pressed:
                     self._key_r_pressed = True
@@ -784,13 +1222,19 @@ class HudOverlay(QWidget):
             else:
                 self._key_r_pressed = False
 
-            # Debounced toggle debug ROI overlay (Ctrl + Shift + O)
             if ctrl_down and shift_down and o_down:
                 if not self._key_o_pressed:
                     self._key_o_pressed = True
                     self.toggle_debug_overlay()
             else:
                 self._key_o_pressed = False
+
+            if ctrl_down and shift_down and a_down:
+                if not self._key_a_pressed:
+                    self._key_a_pressed = True
+                    self.toggle_action_only_mode()
+            else:
+                self._key_a_pressed = False
         except Exception:
             pass
 
@@ -798,6 +1242,8 @@ class HudOverlay(QWidget):
         """Emergency application close handler."""
         if self._debug_overlay is not None:
             self._debug_overlay.close()
+        if self._action_bar_overlay is not None:
+            self._action_bar_overlay.close()
         if self._selector is not None:
             self._selector.close()
         self.close()
@@ -809,6 +1255,8 @@ class HudOverlay(QWidget):
         """Window close handler."""
         if self._debug_overlay is not None:
             self._debug_overlay.close()
+        if self._action_bar_overlay is not None:
+            self._action_bar_overlay.close()
         if self._selector is not None:
             self._selector.close()
         super().closeEvent(event)
@@ -840,28 +1288,22 @@ class HudOverlay(QWidget):
             """)
 
     def toggle_lock(self) -> bool:
-        """Toggle position lock mode.
-
-        When unlocked, WS_EX_TRANSPARENT is disabled and window can be dragged.
-        When locked, clicks pass through to game window.
-
-        Returns:
-            bool: New is_locked state.
-        """
+        """Toggle position lock mode."""
         self.is_locked = not self.is_locked
         self._apply_lock_state()
         return self.is_locked
 
     def toggle_details(self) -> bool:
-        """Toggle scan diagnostics panel visibility.
-
-        Returns:
-            bool: New show_details state.
-        """
+        """Toggle scan diagnostics panel visibility."""
         self.show_details = not self.show_details
-        self.btn_debug_overlay.setVisible(self.show_details)
+        if hasattr(self, "buy_in_panel"):
+            self.buy_in_panel.setVisible(self.show_details)
+        if hasattr(self, "btn_debug_overlay"):
+            self.btn_debug_overlay.setVisible(self.show_details)
         if hasattr(self, "adjust_panel"):
             self.adjust_panel.setVisible(self.show_details)
+        for tid, header in self.table_header_widgets.items():
+            header.setVisible(self.show_details)
         for tid, detail_lbl in self.details_widgets.items():
             detail_lbl.setVisible(self.show_details and bool(detail_lbl.text()))
         if self.show_details:
@@ -879,11 +1321,7 @@ class HudOverlay(QWidget):
         return self.show_details
 
     def toggle_debug_overlay(self) -> bool:
-        """Toggle visibility of DebugRoiOverlay.
-
-        Returns:
-            bool: New is_debug_overlay_enabled state.
-        """
+        """Toggle visibility of DebugRoiOverlay."""
         self.is_debug_overlay_enabled = not self.is_debug_overlay_enabled
         if self._debug_overlay is not None:
             if self.is_debug_overlay_enabled:
@@ -892,7 +1330,8 @@ class HudOverlay(QWidget):
                     self._debug_overlay.setGeometry(screen.virtualGeometry())
                 self._debug_overlay.show()
             else:
-                self._debug_overlay.hide()
+                if self.editing_table_id is None:
+                    self._debug_overlay.hide()
 
         if self.is_debug_overlay_enabled:
             self.btn_debug_overlay.setStyleSheet(
@@ -908,6 +1347,175 @@ class HudOverlay(QWidget):
         self.adjustSize()
         return self.is_debug_overlay_enabled
 
+    def toggle_action_only_mode(self) -> bool:
+        """Toggle Action-Only mode (ActionBarOverlay below game buttons)."""
+        self.is_action_only_mode = not self.is_action_only_mode
+        if self.is_action_only_mode:
+            if self._action_bar_overlay is not None:
+                screen = QApplication.primaryScreen()
+                if screen:
+                    self._action_bar_overlay.setGeometry(screen.virtualGeometry())
+                self._action_bar_overlay.show()
+            if hasattr(self, "normal_hud_widget"):
+                self.normal_hud_widget.setVisible(False)
+            if hasattr(self, "action_only_pill"):
+                self.action_only_pill.setVisible(True)
+            if hasattr(self, "btn_action_only"):
+                self.btn_action_only.setStyleSheet(
+                    "background-color: #e67e22; color: #ffffff; border: 1px solid #d35400; "
+                    "border-radius: 4px; padding: 2px 6px; font-size: 10px; font-weight: bold;"
+                )
+        else:
+            if self._action_bar_overlay is not None:
+                self._action_bar_overlay.hide()
+            if hasattr(self, "action_only_pill"):
+                self.action_only_pill.setVisible(False)
+            if hasattr(self, "normal_hud_widget"):
+                self.normal_hud_widget.setVisible(True)
+            if hasattr(self, "btn_action_only"):
+                self.btn_action_only.setStyleSheet(
+                    "background-color: rgba(255, 255, 255, 0.08); color: #cbd5e1; "
+                    "border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 4px; padding: 2px 6px; "
+                    "font-size: 10px; font-weight: bold;"
+                )
+        self.adjustSize()
+        return self.is_action_only_mode
+
+    def set_buy_in(self, val: float) -> None:
+        """Set tournament buy-in amount and notify bridge."""
+        self.buy_in = val
+        self._update_buy_in_buttons_ui()
+        if self.bridge is not None and hasattr(self.bridge, "buy_in_changed"):
+            self.bridge.buy_in_changed.emit(val)
+
+    def _update_buy_in_buttons_ui(self) -> None:
+        active_style = (
+            "background-color: #2980b9; color: #ffffff; border: 1px solid #3498db; "
+            "border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: bold;"
+        )
+        inactive_style = (
+            "background-color: rgba(255, 255, 255, 0.08); color: #cbd5e1; "
+            "border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 4px; padding: 2px 8px; "
+            "font-size: 11px; font-weight: bold;"
+        )
+        for v, btn in self.buy_in_buttons.items():
+            if abs(v - self.buy_in) < 0.01:
+                btn.setStyleSheet(active_style)
+            else:
+                btn.setStyleSheet(inactive_style)
+
+    def start_add_table_flow(self) -> None:
+        """Start interactive region selection to add a new table."""
+        idx = 1
+        while f"table_{idx}" in self.managed_tables:
+            idx += 1
+        next_tid = f"table_{idx}"
+
+        def _on_region_selected(rect: Any) -> None:
+            if rect is not None:
+                self.add_table(next_tid, rect)
+
+        self._selector = RegionSelectorOverlay(on_selected=_on_region_selected)
+        self._selector.showFullScreen()
+
+    def add_table(self, table_id: str, search_region: Any = None) -> None:
+        """Add a managed table explicitly."""
+        self.managed_tables[table_id] = {
+            "search_region": search_region,
+            "adjust": (0, 0, 1.0, 1.0),
+        }
+        self._update_table_delete_buttons_visibility()
+        if self.bridge is not None and hasattr(self.bridge, "table_added"):
+            self.bridge.table_added.emit(table_id, search_region)
+        self.adjustSize()
+
+    def remove_table_by_user(self, table_id: str) -> None:
+        """Remove a managed table by user action."""
+        if len(self.managed_tables) <= 1:
+            return
+        self.managed_tables.pop(table_id, None)
+        self.remove_table(table_id)
+        self._update_table_delete_buttons_visibility()
+        if self.bridge is not None and hasattr(self.bridge, "table_removed_by_user"):
+            self.bridge.table_removed_by_user.emit(table_id)
+        self.adjustSize()
+
+    def _update_table_delete_buttons_visibility(self) -> None:
+        can_delete = len(self.managed_tables) > 1
+        for btn in self.table_delete_buttons.values():
+            btn.setVisible(can_delete)
+
+    def start_table_calibration(self, table_id: str) -> None:
+        """Open calibration panel for a specific table."""
+        self.editing_table_id = table_id
+        if table_id not in self.managed_tables:
+            self.managed_tables[table_id] = {
+                "search_region": None,
+                "adjust": (0, 0, 1.0, 1.0),
+            }
+        self._pre_edit_adjust = tuple(self.managed_tables[table_id]["adjust"])
+        if hasattr(self, "calib_title_label"):
+            self.calib_title_label.setText(f"✎ <b>Kalibracja: {table_id}</b>")
+        if hasattr(self, "calibration_panel"):
+            self.calibration_panel.setVisible(True)
+        if self._debug_overlay is not None:
+            self._debug_overlay.editing_table_id = table_id
+            if not self._debug_overlay.isVisible():
+                self._debug_overlay.show()
+            self._debug_overlay.update()
+        self._update_adjust_label()
+        self.adjustSize()
+
+    def confirm_table_calibration(self) -> None:
+        """Confirm in-memory table calibration, hide panel, and auto-hide overlay after 3 seconds."""
+        if self.editing_table_id:
+            if hasattr(self, "calibration_panel"):
+                self.calibration_panel.setVisible(False)
+            if self._debug_overlay is not None:
+                self._debug_overlay.editing_table_id = None
+                self._debug_overlay.update()
+                if not self.is_debug_overlay_enabled:
+                    QTimer.singleShot(3000, self._on_confirm_timer_done)
+            self.editing_table_id = None
+            self.adjustSize()
+
+    def _on_confirm_timer_done(self) -> None:
+        if not self.is_debug_overlay_enabled and self.editing_table_id is None:
+            if self._debug_overlay is not None:
+                self._debug_overlay.hide()
+
+    def cancel_table_calibration(self) -> None:
+        """Cancel calibration and revert adjustments for the current table."""
+        if self.editing_table_id:
+            tid = self.editing_table_id
+            dx, dy, sx, sy = self._pre_edit_adjust
+            self.managed_tables[tid]["adjust"] = (dx, dy, sx, sy)
+            if tid == "table_1":
+                self.table_dx = dx
+                self.table_dy = dy
+                self.table_scale_mult = sx
+                self.table_scale_x = sx
+                self.table_scale_y = sy
+            if self.bridge is not None and hasattr(self.bridge, "table_adjust_changed"):
+                try:
+                    self.bridge.table_adjust_changed.emit(tid, dx, dy, sx, sy)
+                except Exception:
+                    pass
+                try:
+                    self.bridge.table_adjust_changed.emit(dx, dy, sx)
+                except Exception:
+                    pass
+            if hasattr(self, "calibration_panel"):
+                self.calibration_panel.setVisible(False)
+            if self._debug_overlay is not None:
+                self._debug_overlay.editing_table_id = None
+                if not self.is_debug_overlay_enabled:
+                    self._debug_overlay.hide()
+                self._debug_overlay.update()
+            self.editing_table_id = None
+            self._update_adjust_label()
+            self.adjustSize()
+
     def start_region_selection(self) -> None:
         """Open fullscreen region selector overlay to manually choose table ROI."""
         self._selector = RegionSelectorOverlay(on_selected=self._on_region_selected)
@@ -916,66 +1524,126 @@ class HudOverlay(QWidget):
     def _on_region_selected(self, rect: tuple[int, int, int, int] | None) -> None:
         """Handle region selected by RegionSelectorOverlay."""
         self._manual_rect = rect
+        tid = self.editing_table_id or "table_1"
         if rect is not None:
+            if tid in self.managed_tables:
+                self.managed_tables[tid]["search_region"] = rect
             if self.bridge is not None and hasattr(self.bridge, "manual_rect_changed"):
                 self.bridge.manual_rect_changed.emit(rect)
-            self.status_label.setText(f"📐 <b>Obszar manualny:</b> {rect[2]}x{rect[3]} @ ({rect[0]},{rect[1]})")
-            self.btn_select_rect.setStyleSheet(
-                "background-color: #27ae60; color: #ffffff; border: 1px solid #2ecc71; "
-                "border-radius: 4px; padding: 2px 6px; font-size: 10px; font-weight: bold;"
-            )
+            self.status_label.setText(f"📐 <b>Obszar:</b> {rect[2]}x{rect[3]} @ ({rect[0]},{rect[1]})")
 
     def reset_auto_rect(self) -> None:
         """Reset table detection to automatic template matching."""
         self._manual_rect = None
+        tid = self.editing_table_id or "table_1"
+        if tid in self.managed_tables:
+            self.managed_tables[tid]["search_region"] = None
         if self.bridge is not None and hasattr(self.bridge, "manual_rect_changed"):
             self.bridge.manual_rect_changed.emit(None)
-        self.btn_select_rect.setStyleSheet(
-            "background-color: rgba(255, 255, 255, 0.08); color: #cbd5e1; "
-            "border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 4px; padding: 2px 6px; "
-            "font-size: 10px; font-weight: bold;"
-        )
         self.reset_table_adjust()
         self._apply_lock_state()
 
     def adjust_table_dx(self, direction: int) -> None:
         """Adjust horizontal table offset."""
         shift = bool(QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier)
-        step = 2 if shift else 10
-        self.apply_table_adjust(self.table_dx + direction * step, self.table_dy, self.table_scale_mult)
+        if self.editing_table_id is not None:
+            step = 15 if shift else 5
+        else:
+            step = 2 if shift else 10
+        tid = self.editing_table_id or "table_1"
+        dx, dy, sx, sy = self.managed_tables.get(tid, {}).get("adjust", (0, 0, 1.0, 1.0))
+        self.apply_table_adjust(dx + direction * step, dy, sx, sy, table_id=tid)
 
     def adjust_table_dy(self, direction: int) -> None:
         """Adjust vertical table offset."""
         shift = bool(QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier)
-        step = 2 if shift else 10
-        self.apply_table_adjust(self.table_dx, self.table_dy + direction * step, self.table_scale_mult)
+        if self.editing_table_id is not None:
+            step = 15 if shift else 5
+        else:
+            step = 2 if shift else 10
+        tid = self.editing_table_id or "table_1"
+        dx, dy, sx, sy = self.managed_tables.get(tid, {}).get("adjust", (0, 0, 1.0, 1.0))
+        self.apply_table_adjust(dx, dy + direction * step, sx, sy, table_id=tid)
 
     def adjust_table_scale(self, delta: float) -> None:
-        """Adjust table scale multiplier."""
-        new_s = max(0.50, min(2.00, round(self.table_scale_mult + delta, 2)))
-        self.apply_table_adjust(self.table_dx, self.table_dy, new_s)
+        """Adjust uniform table scale."""
+        tid = self.editing_table_id or "table_1"
+        dx, dy, sx, sy = self.managed_tables.get(tid, {}).get("adjust", (0, 0, 1.0, 1.0))
+        new_sx = max(0.50, min(2.00, round(sx + delta, 2)))
+        new_sy = max(0.50, min(2.00, round(sy + delta, 2)))
+        self.apply_table_adjust(dx, dy, new_sx, new_sy, table_id=tid)
 
-    def apply_table_adjust(self, dx: int, dy: int, scale_mult: float) -> None:
+    def adjust_table_stretch_x(self, delta: float) -> None:
+        """Adjust horizontal scale stretch."""
+        tid = self.editing_table_id or "table_1"
+        dx, dy, sx, sy = self.managed_tables.get(tid, {}).get("adjust", (0, 0, 1.0, 1.0))
+        new_sx = max(0.50, min(2.00, round(sx + delta, 2)))
+        self.apply_table_adjust(dx, dy, new_sx, sy, table_id=tid)
+
+    def adjust_table_stretch_y(self, delta: float) -> None:
+        """Adjust vertical scale stretch."""
+        tid = self.editing_table_id or "table_1"
+        dx, dy, sx, sy = self.managed_tables.get(tid, {}).get("adjust", (0, 0, 1.0, 1.0))
+        new_sy = max(0.50, min(2.00, round(sy + delta, 2)))
+        self.apply_table_adjust(dx, dy, sx, new_sy, table_id=tid)
+
+    def apply_table_adjust(
+        self,
+        dx: int,
+        dy: int,
+        scale_x: float,
+        scale_y: float | None = None,
+        table_id: str | None = None,
+    ) -> None:
         """Apply table adjustment and emit to bridge."""
-        self.table_dx = dx
-        self.table_dy = dy
-        self.table_scale_mult = scale_mult
+        if scale_y is None:
+            scale_y = scale_x
+        tid = table_id or self.editing_table_id or "table_1"
+        if tid not in self.managed_tables:
+            self.managed_tables[tid] = {"search_region": None, "adjust": (0, 0, 1.0, 1.0)}
+        self.managed_tables[tid]["adjust"] = (dx, dy, scale_x, scale_y)
+
+        if tid == "table_1":
+            self.table_dx = dx
+            self.table_dy = dy
+            self.table_scale_mult = scale_x
+            self.table_scale_x = scale_x
+            self.table_scale_y = scale_y
+
         self._update_adjust_label()
         if self._debug_overlay is not None:
             self._debug_overlay._current_dx = dx
             self._debug_overlay._current_dy = dy
-            self._debug_overlay._current_scale = scale_mult
+            self._debug_overlay._current_scale = scale_x
         if self.bridge is not None and hasattr(self.bridge, "table_adjust_changed"):
-            self.bridge.table_adjust_changed.emit(dx, dy, scale_mult)
+            self._is_internal_adjust = True
+            try:
+                self.bridge.table_adjust_changed.emit(tid, dx, dy, scale_x, scale_y)
+            except Exception:
+                pass
+            try:
+                self.bridge.table_adjust_changed.emit(dx, dy, scale_x)
+            except Exception:
+                pass
+            finally:
+                self._is_internal_adjust = False
 
     def reset_table_adjust(self) -> None:
         """Reset manual table offset and scale to (0, 0) | 100%."""
-        self.apply_table_adjust(0, 0, 1.0)
+        tid = self.editing_table_id or "table_1"
+        self.apply_table_adjust(0, 0, 1.0, 1.0, table_id=tid)
 
     def _update_adjust_label(self) -> None:
-        pct = int(round(self.table_scale_mult * 100))
+        tid = self.editing_table_id or "table_1"
+        adj = self.managed_tables.get(tid, {}).get("adjust", (0, 0, 1.0, 1.0))
+        dx, dy, sx, sy = adj
+        pct_x = int(round(sx * 100))
+        pct_y = int(round(sy * 100))
         if hasattr(self, "adjust_label"):
-            self.adjust_label.setText(f"({self.table_dx:+d}, {self.table_dy:+d}) | {pct}%")
+            if abs(sx - sy) < 0.005:
+                self.adjust_label.setText(f"Offset: ({dx:+d}, {dy:+d}) | {pct_x}%")
+            else:
+                self.adjust_label.setText(f"Offset: ({dx:+d}, {dy:+d}) | ↔{pct_x}% ↕{pct_y}%")
 
     def toggle_drag_mode(self) -> bool:
         """Toggle interactive drag mode on debug overlay."""
@@ -1000,10 +1668,29 @@ class HudOverlay(QWidget):
 
     @Slot(int, int, float)
     def on_table_adjust_from_bridge(self, dx: int, dy: int, scale_mult: float) -> None:
-        """Receive adjustment update (e.g. from mouse drag on overlay)."""
-        self.table_dx = dx
-        self.table_dy = dy
-        self.table_scale_mult = scale_mult
+        """Receive legacy adjustment update without re-emitting."""
+        if getattr(self, "_is_internal_adjust", False):
+            return
+        tid = self.editing_table_id or "table_1"
+        self.on_table_adjust_5arg_from_bridge(tid, dx, dy, scale_mult, scale_mult)
+
+    @Slot(str, int, int, float, float)
+    def on_table_adjust_5arg_from_bridge(self, table_id: str, dx: int, dy: int, sx: float, sy: float) -> None:
+        """Receive 5-arg adjustment update without re-emitting."""
+        if getattr(self, "_is_internal_adjust", False):
+            return
+        if table_id not in self.managed_tables:
+            self.managed_tables[table_id] = {"search_region": None, "adjust": (0, 0, 1.0, 1.0)}
+        cur = self.managed_tables[table_id].get("adjust")
+        if cur == (dx, dy, sx, sy):
+            return
+        self.managed_tables[table_id]["adjust"] = (dx, dy, sx, sy)
+        if table_id == "table_1":
+            self.table_dx = dx
+            self.table_dy = dy
+            self.table_scale_mult = sx
+            self.table_scale_x = sx
+            self.table_scale_y = sy
         self._update_adjust_label()
 
     def showEvent(self, event: Any) -> None:
@@ -1040,14 +1727,8 @@ class HudOverlay(QWidget):
         latency_ms: float = 0.0,
         scan_summary: str = "",
     ) -> None:
-        """Update or insert decision card for the corresponding table.
-
-        Args:
-            decision: Decision contract object.
-            latency_ms: Processing latency in milliseconds.
-            scan_summary: Multi-line diagnostic scan summary.
-        """
-        table_id = getattr(decision, "table_id", "default_table")
+        """Update or insert decision card for the corresponding table."""
+        table_id = getattr(decision, "table_id", "table_1")
         action = getattr(decision, "action", "WAIT")
         ev_bb = getattr(decision, "ev_bb", None)
         profile_used = getattr(decision, "profile_used", "STANDARD_EXPLOIT")
@@ -1068,18 +1749,17 @@ class HudOverlay(QWidget):
                 action_badge_style = "background-color: rgba(74, 85, 104, 0.45); border: 1px dashed #94a3b8;"
         else:
             if action in ("ALL_IN", "BET_30", "MIN_RAISE"):
-                action_color = "#27ae60"  # Green
+                action_color = "#27ae60"
             elif action in ("CALL", "CHECK"):
-                action_color = "#e67e22"  # Amber/Orange
+                action_color = "#e67e22"
             elif action == "FOLD":
-                action_color = "#c0392b"  # Red
+                action_color = "#c0392b"
             elif action == "WAIT":
-                action_color = "#4a5568"  # Gray
+                action_color = "#4a5568"
             else:
-                action_color = "#2980b9"  # Blue
+                action_color = "#2980b9"
             action_badge_style = f"background-color: {action_color};"
 
-        # EV text & color
         if ev_bb is not None:
             ev_str = f"EV: {ev_bb:+.2f} BB"
             ev_color = "#2ecc71" if ev_bb >= 0.0 else "#e74c3c"
@@ -1099,7 +1779,7 @@ class HudOverlay(QWidget):
         )
 
         card_html = f"""
-        <div style="background-color: rgba(255, 255, 255, 0.06); border-radius: 6px; padding: 8px; margin-top: 4px;">
+        <div style="background-color: rgba(255, 255, 255, 0.06); border-radius: 6px; padding: 8px; margin-top: 2px;">
             <div style="font-size: 10px; color: #94a3b8; margin-bottom: 4px;">
                 <b>{table_id}</b> &bull; <span style="color: #60a5fa;">{profile_used}</span>
             </div>
@@ -1127,6 +1807,92 @@ class HudOverlay(QWidget):
         """
 
         if table_id not in self.table_widgets:
+            # Per-table header toolbar (visible in details)
+            header_w = QWidget(self.container)
+            hl = QHBoxLayout(header_w)
+            hl.setContentsMargins(0, 2, 0, 0)
+            hl.setSpacing(4)
+
+            btn_calib = QPushButton("✎ Kalibruj", header_w)
+            btn_calib.setStyleSheet("""
+                QPushButton {
+                    background-color: rgba(243, 156, 18, 0.2);
+                    color: #f39c12;
+                    border: 1px solid rgba(243, 156, 18, 0.5);
+                    border-radius: 3px;
+                    padding: 1px 6px;
+                    font-size: 10px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: rgba(243, 156, 18, 0.4);
+                }
+            """)
+            btn_calib.clicked.connect(lambda checked=False, tid=table_id: self.start_table_calibration(tid))
+            hl.addWidget(btn_calib)
+
+            btn_area = QPushButton("📐 Obszar", header_w)
+            btn_area.setStyleSheet("""
+                QPushButton {
+                    background-color: rgba(255, 255, 255, 0.08);
+                    color: #cbd5e1;
+                    border: 1px solid rgba(255, 255, 255, 0.2);
+                    border-radius: 3px;
+                    padding: 1px 6px;
+                    font-size: 10px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: rgba(255, 255, 255, 0.2);
+                }
+            """)
+            btn_area.clicked.connect(lambda checked=False, tid=table_id: self.start_region_selection())
+            hl.addWidget(btn_area)
+
+            btn_auto = QPushButton("↺ Auto", header_w)
+            btn_auto.setStyleSheet("""
+                QPushButton {
+                    background-color: rgba(255, 255, 255, 0.08);
+                    color: #cbd5e1;
+                    border: 1px solid rgba(255, 255, 255, 0.2);
+                    border-radius: 3px;
+                    padding: 1px 6px;
+                    font-size: 10px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: rgba(255, 255, 255, 0.2);
+                }
+            """)
+            btn_auto.clicked.connect(lambda checked=False, tid=table_id: self.reset_auto_rect())
+            hl.addWidget(btn_auto)
+
+            hl.addStretch()
+
+            btn_del = QPushButton("✕", header_w)
+            btn_del.setStyleSheet("""
+                QPushButton {
+                    background-color: rgba(231, 76, 60, 0.2);
+                    color: #e74c3c;
+                    border: 1px solid rgba(231, 76, 60, 0.5);
+                    border-radius: 3px;
+                    padding: 1px 6px;
+                    font-size: 10px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: rgba(231, 76, 60, 0.4);
+                }
+            """)
+            btn_del.clicked.connect(lambda checked=False, tid=table_id: self.remove_table_by_user(tid))
+            btn_del.setVisible(len(self.managed_tables) > 1)
+            hl.addWidget(btn_del)
+
+            header_w.setVisible(self.show_details)
+            self.tables_layout.addWidget(header_w)
+            self.table_header_widgets[table_id] = header_w
+            self.table_delete_buttons[table_id] = btn_del
+
             label = QLabel(self.container)
             label.setTextFormat(Qt.TextFormat.RichText)
             self.tables_layout.addWidget(label)
@@ -1157,6 +1923,13 @@ class HudOverlay(QWidget):
         self.cards_line_by_table.pop(table_id, None)
         if self._debug_overlay is not None:
             self._debug_overlay.remove_table(table_id)
+        if self._action_bar_overlay is not None:
+            self._action_bar_overlay.remove_table(table_id)
+        if table_id in self.table_header_widgets:
+            hw = self.table_header_widgets.pop(table_id)
+            self.tables_layout.removeWidget(hw)
+            hw.deleteLater()
+        self.table_delete_buttons.pop(table_id, None)
         if table_id in self.table_widgets:
             widget = self.table_widgets.pop(table_id)
             self.tables_layout.removeWidget(widget)

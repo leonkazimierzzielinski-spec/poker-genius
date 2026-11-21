@@ -357,3 +357,139 @@ def crop_rois(
         crops[name] = frame[y1:y2, x1:x2].copy()
 
     return crops
+
+
+def find_golden_rim(
+    frame: np.ndarray,
+    search_rect: tuple[int, int, int, int] | None = None,
+) -> tuple[int, int, int, int] | None:
+    """Detect the golden/orange elliptical table rim on Stake poker felt.
+
+    Performs strict 4-arc confidence verification:
+    1. Finds candidate blue felt interior ellipse (HSV 90..135, area >= 20000, aspect 1.45..2.25).
+    2. Detects golden rim boundary (HSV H: 12..35, S: 50..255, V: 90..255) around all 4 sides (left, right, top, bottom).
+    3. Strict size (ow >= 300, oh >= 160) and aspect ratio checks (1.55 <= ow/oh <= 2.15).
+    4. Verified blue interior felt dominance (>= 50% blue pixels in center).
+
+    Returns (ox, oy, ow, oh) in full frame coordinates or None if not 100% confident.
+    """
+    if frame is None or frame.size == 0:
+        return None
+
+    sx_offset, sy_offset = 0, 0
+    work_frame = frame
+    if search_rect is not None:
+        sx, sy, sw, sh = search_rect
+        fh, fw = frame.shape[:2]
+        x1 = max(0, min(sx, fw - 1))
+        y1 = max(0, min(sy, fh - 1))
+        x2 = max(x1 + 1, min(sx + sw, fw))
+        y2 = max(y1 + 1, min(sy + sh, fh))
+        if x2 - x1 < 150 or y2 - y1 < 100:
+            return None
+        work_frame = frame[y1:y2, x1:x2]
+        sx_offset, sy_offset = x1, y1
+
+    H, W = work_frame.shape[:2]
+    if W < 300 or H < 160:
+        return None
+
+    hsv = cv2.cvtColor(work_frame, cv2.COLOR_BGR2HSV)
+
+    # 1. Detect blue felt candidate
+    blue_mask = cv2.inRange(hsv, (90, 40, 30), (135, 255, 255))
+    contours, _ = cv2.findContours(blue_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return None
+
+    candidates = []
+    for c in contours:
+        area = cv2.contourArea(c)
+        if area >= 20000:
+            bx, by, bw, bh = cv2.boundingRect(c)
+            if bh > 0:
+                asp = bw / bh
+                if 1.45 <= asp <= 2.25:
+                    candidates.append((area, bx, by, bw, bh))
+
+    if not candidates:
+        return None
+
+    candidates.sort(reverse=True)
+    _, fx, fy, fw, fh = candidates[0]
+
+    # 2. Golden rim boundary around felt
+    golden_mask = cv2.inRange(hsv, (12, 50, 90), (35, 255, 255))
+
+    # Left band:
+    left_band = golden_mask[int(fy + 0.25 * fh) : int(fy + 0.75 * fh), max(0, fx - 50) : fx + 50]
+    left_pts = np.where(left_band > 0)
+    if len(left_pts[1]) < 20:
+        return None
+    rim_x1 = max(0, fx - 50) + int(np.min(left_pts[1]))
+
+    # Right band:
+    right_band = golden_mask[int(fy + 0.25 * fh) : int(fy + 0.75 * fh), fx + fw - 50 : min(W, fx + fw + 50)]
+    right_pts = np.where(right_band > 0)
+    if len(right_pts[1]) < 20:
+        return None
+    rim_x2 = (fx + fw - 50) + int(np.max(right_pts[1]))
+
+    # Top band:
+    top_band = golden_mask[max(0, fy - 50) : fy + 100, int(fx + 0.25 * fw) : int(fx + 0.75 * fw)]
+    top_pts = np.where(top_band > 0)
+    if len(top_pts[0]) < 20:
+        return None
+    rim_y1 = max(0, fy - 50) + int(np.min(top_pts[0]))
+
+    # Bottom band:
+    bot_band = golden_mask[fy + fh - 100 : min(H, fy + fh + 50), int(fx + 0.25 * fw) : int(fx + 0.75 * fw)]
+    bot_pts = np.where(bot_band > 0)
+    if len(bot_pts[0]) < 20:
+        return None
+    rim_y2 = (fy + fh - 100) + int(np.max(bot_pts[0]))
+
+    rim_w = rim_x2 - rim_x1
+    rim_h = rim_y2 - rim_y1
+
+    # 3. Hard size and aspect ratio checks
+    if rim_w < 300 or rim_h < 160:
+        return None
+
+    aspect = rim_w / rim_h
+    if not (1.55 <= aspect <= 2.15):
+        return None
+
+    # 4. Verified blue interior felt dominance in center 40% box
+    c_y1 = int(rim_y1 + 0.30 * rim_h)
+    c_y2 = int(rim_y1 + 0.70 * rim_h)
+    c_x1 = int(rim_x1 + 0.30 * rim_w)
+    c_x2 = int(rim_x1 + 0.70 * rim_w)
+    if c_y2 <= c_y1 or c_x2 <= c_x1:
+        return None
+
+    center_roi = hsv[c_y1:c_y2, c_x1:c_x2]
+    blue_center_mask = (center_roi[:, :, 0] >= 90) & (center_roi[:, :, 0] <= 135) & (center_roi[:, :, 1] >= 40)
+    blue_ratio = np.count_nonzero(blue_center_mask) / (center_roi.shape[0] * center_roi.shape[1])
+    if blue_ratio < 0.50:
+        return None
+
+    return (rim_x1 + sx_offset, rim_y1 + sy_offset, rim_w, rim_h)
+
+
+def compute_table_rect_from_rim(
+    rim_rect: tuple[int, int, int, int],
+    rim_rel: list[float] | None = None,
+    canonical_size: tuple[int, int] = (1757, 997),
+) -> tuple[int, int, int, int]:
+    """Compute table rect (tx, ty, tw, th) from detected golden rim rect and relative offset."""
+    if rim_rel is None or len(rim_rel) < 4:
+        rim_rel = [0.1816, 0.0963, 0.6460, 0.6780]
+    ox, oy, ow, oh = rim_rect
+    rx, ry, rw, rh = rim_rel[:4]
+    scale = ow / (canonical_size[0] * rw)
+    tw = int(round(canonical_size[0] * scale))
+    th = int(round(canonical_size[1] * scale))
+    tx = int(round(ox - rx * tw))
+    ty = int(round(oy - ry * th))
+    return (tx, ty, tw, th)

@@ -11,10 +11,12 @@ import pytest
 
 from vision.anchor import (
     compute_table_rect,
+    compute_table_rect_from_rim,
     compute_unclipped_table_rect,
     crop_rois,
     find_all_anchors,
     find_anchor,
+    find_golden_rim,
     find_right_anchor,
 )
 from vision.capture import OfflineReplayCapture
@@ -943,6 +945,87 @@ def test_compute_unclipped_table_rect_wide_monitor_with_right_panel() -> None:
     assert found_ra is not None
     assert abs(found_ra[0] - rx_true) <= 2
     assert abs(found_ra[1] - ry_true) <= 2
+
+
+def test_find_golden_rim_and_table_rect() -> None:
+    """Verify detection of Stake golden rim ellipse, rejection of false positives, and unclipped rect calculation."""
+    # 1. Synthesize frame with valid golden rim ellipse and blue felt interior
+    frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
+    frame[:] = (20, 20, 20)
+
+    # Blue felt interior: center (960, 500), axes (550, 280), angle 0
+    # In HSV: blue felt has H in [90, 135], S in [40, 255], V in [30, 255] -> BGR (140, 80, 30)
+    cv2.ellipse(frame, (960, 500), (550, 280), 0, 0, 360, (140, 80, 30), -1)
+
+    # Golden rim: outer border drawn with thickness 10
+    # In HSV: golden/orange has H in [12, 35], S in [50, 255], V in [90, 255] -> BGR (30, 140, 210)
+    cv2.ellipse(frame, (960, 500), (550, 280), 0, 0, 360, (30, 140, 210), 10)
+
+    rim = find_golden_rim(frame)
+    assert rim is not None, "Valid golden rim ellipse with blue felt interior must be detected"
+    rx, ry, rw, rh = rim
+    assert abs((rx + rw // 2) - 960) <= 10
+    assert abs((ry + rh // 2) - 500) <= 10
+    assert abs(rw - 1100) <= 30
+    assert abs(rh - 560) <= 30
+
+    # Compute unclipped table rect from rim
+    canonical_size = (1757, 997)
+    golden_rim_rel = [0.1816, 0.0963, 0.6460, 0.6780]
+    table_rect = compute_table_rect_from_rim(rim, rim_rel=golden_rim_rel, canonical_size=canonical_size)
+    tx, ty, tw, th = table_rect
+    assert tw > 1600 and tw < 1800
+    assert th > 900 and th < 1100
+
+    # 2. False positive rejection A: Orange box without blue felt interior
+    frame_no_blue = np.zeros((1080, 1920, 3), dtype=np.uint8)
+    cv2.ellipse(frame_no_blue, (960, 500), (550, 280), 0, 0, 360, (30, 140, 210), 10)
+    assert find_golden_rim(frame_no_blue) is None, "Orange ellipse without blue interior felt must be rejected"
+
+    # 3. False positive rejection B: Wrong aspect ratio (e.g. circle aspect ratio 1.0)
+    frame_circle = np.zeros((1080, 1920, 3), dtype=np.uint8)
+    cv2.ellipse(frame_circle, (960, 500), (350, 350), 0, 0, 360, (140, 80, 30), -1)
+    cv2.ellipse(frame_circle, (960, 500), (350, 350), 0, 0, 360, (30, 140, 210), 10)
+    assert find_golden_rim(frame_circle) is None, "Circular element (ratio 1.0) must be rejected"
+
+
+def test_opponents_signature_same_vs_different(tmp_path: Path) -> None:
+    """Verify compute_opponents_signature distinguishes tournament tables without hand ID headers."""
+    pipeline = VisionPipeline()
+    CW, CH = pipeline.canonical_table_size
+
+    # Create synthetic canonical table A
+    table_a1 = np.full((CH, CW, 3), 40, dtype=np.uint8)
+    # Seat 1 avatar area: y in [0.20*CH..0.28*CH], x in [0.25*CW..0.38*CW]
+    cv2.rectangle(table_a1, (int(0.26 * CW), int(0.21 * CH)), (int(0.36 * CW), int(0.27 * CH)), (200, 150, 50), -1)
+    cv2.circle(table_a1, (int(0.31 * CW), int(0.24 * CH)), 15, (255, 255, 255), -1)
+    # Seat 2 avatar area: x in [0.62*CW..0.75*CW]
+    cv2.rectangle(table_a1, (int(0.63 * CW), int(0.21 * CH)), (int(0.73 * CW), int(0.27 * CH)), (50, 200, 150), -1)
+
+    sig_a1 = pipeline.compute_opponents_signature(table_a1)
+    assert sig_a1 is not None
+
+    # Frame a2 is same opponents with slight noise
+    table_a2 = table_a1.copy()
+    noise = np.random.randint(-2, 3, size=table_a1.shape, dtype=np.int16)
+    table_a2 = np.clip(table_a2.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+    sig_a2 = pipeline.compute_opponents_signature(table_a2)
+    assert sig_a2 is not None
+
+    match_same = cv2.matchTemplate(sig_a1, sig_a2, cv2.TM_CCOEFF_NORMED)[0][0]
+    assert match_same >= 0.95, f"Expected high similarity for same opponents, got {match_same}"
+
+    # Create synthetic canonical table B with different opponents
+    table_b = np.full((CH, CW, 3), 40, dtype=np.uint8)
+    cv2.putText(table_b, "OPPONENT_X", (int(0.26 * CW), int(0.25 * CH)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+    cv2.circle(table_b, (int(0.68 * CW), int(0.24 * CH)), 20, (0, 0, 255), -1)
+
+    sig_b = pipeline.compute_opponents_signature(table_b)
+    assert sig_b is not None
+
+    match_diff = cv2.matchTemplate(sig_a1, sig_b, cv2.TM_CCOEFF_NORMED)[0][0]
+    assert match_diff < 0.65, f"Expected low similarity for different opponents, got {match_diff}"
+
 
 
 

@@ -1255,4 +1255,171 @@ def test_table_adjust_signal_and_drag_mode(qapp) -> None:
     overlay.close()
 
 
+def test_hud_calibration_edit_confirm_cancel_and_auto_hide(qapp) -> None:
+    """Verify calibration panel is hidden by default, edit mode styling, confirm with 3s auto-hide, and cancel revert."""
+    from ui.hud import HudBridge, HudOverlay
+
+    bridge = HudBridge()
+    hud = HudOverlay(bridge=bridge)
+    hud.show()
+
+    # 1. Panel is default hidden
+    assert hud.editing_table_id is None
+    assert hud.calibration_panel.isHidden() is True
+    assert hud._debug_overlay.editing_table_id is None
+
+    # 2. Start calibration on table_1
+    hud.start_table_calibration("table_1")
+    assert hud.editing_table_id == "table_1"
+    assert hud.calibration_panel.isHidden() is False
+    assert hud._debug_overlay.editing_table_id == "table_1"
+    assert hud._debug_overlay.isVisible() is True
+
+    # Adjust values
+    hud.adjust_table_dx(1)   # +5 px
+    hud.adjust_table_dy(-1)  # -5 px
+    hud.adjust_table_stretch_x(0.02) # +2%
+    assert hud.managed_tables["table_1"]["adjust"] == (5, -5, 1.02, 1.0)
+
+    # 3. Cancel calibration -> reverts to original (0, 0, 1.0, 1.0) and hides panel
+    hud.cancel_table_calibration()
+    assert hud.editing_table_id is None
+    assert hud.calibration_panel.isHidden() is True
+    assert hud._debug_overlay.editing_table_id is None
+    assert hud.managed_tables["table_1"]["adjust"] == (0, 0, 1.0, 1.0)
+
+    # 4. Start calibration again, make changes, and Confirm
+    hud.start_table_calibration("table_1")
+    assert hud.editing_table_id == "table_1"
+    hud.adjust_table_dx(2)  # +10 px
+    hud.adjust_table_stretch_y(0.03) # +3%
+    assert hud.managed_tables["table_1"]["adjust"] == (10, 0, 1.0, 1.03)
+
+    # Confirm saves in RAM, removes editing mode, leaves overlay visible for auto-hide
+    hud.confirm_table_calibration()
+    assert hud.editing_table_id is None
+    assert hud.calibration_panel.isHidden() is True
+    assert hud._debug_overlay.editing_table_id is None
+    assert hud.managed_tables["table_1"]["adjust"] == (10, 0, 1.0, 1.03)
+    assert hud._debug_overlay.isVisible() is True
+
+    # Trigger auto-hide timeout handler
+    hud._on_confirm_timer_done()
+    assert hud._debug_overlay.isHidden() is True
+
+    hud.close()
+
+
+def test_hud_buy_in_switch_and_manual_table_add_remove(qapp) -> None:
+    """Verify live buy-in switching and manual multi-table management without multiplication."""
+    from ui.hud import HudBridge, HudOverlay
+
+    bridge = HudBridge()
+    hud = HudOverlay(bridge=bridge)
+    hud.show()
+
+    received_buy_in: list[float] = []
+    bridge.buy_in_changed.connect(lambda v: received_buy_in.append(v))
+
+    received_tables_added: list[tuple[str, Any]] = []
+    bridge.table_added.connect(lambda tid, reg: received_tables_added.append((tid, reg)))
+
+    received_tables_removed: list[str] = []
+    bridge.table_removed_by_user.connect(lambda tid: received_tables_removed.append(tid))
+
+    # 1. Buy-in live switching
+    assert hud.buy_in == 2.0
+    hud.set_buy_in(0.50)
+    assert hud.buy_in == 0.50
+    assert received_buy_in[-1] == 0.50
+
+    hud.set_buy_in(5.0)
+    assert hud.buy_in == 5.0
+    assert received_buy_in[-1] == 5.0
+
+    hud.set_buy_in(10.0)
+    assert hud.buy_in == 10.0
+    assert received_buy_in[-1] == 10.0
+
+    # 2. Managed tables: initial only table_1
+    assert "table_1" in hud.managed_tables
+    assert len(hud.managed_tables) == 1
+
+    # Adding table_2 explicitly
+    hud.add_table("table_2", search_region=(100, 100, 800, 600))
+    assert "table_2" in hud.managed_tables
+    assert len(hud.managed_tables) == 2
+    assert len(received_tables_added) == 1
+    assert received_tables_added[0] == ("table_2", (100, 100, 800, 600))
+
+    # Removing table_2 by user
+    hud.remove_table_by_user("table_2")
+    assert "table_2" not in hud.managed_tables
+    assert len(hud.managed_tables) == 1
+    assert received_tables_removed == ["table_2"]
+
+    # Block removing last remaining table
+    hud.remove_table_by_user("table_1")
+    assert "table_1" in hud.managed_tables
+    assert len(hud.managed_tables) == 1
+
+    hud.close()
+
+
+def test_action_bar_overlay_positioning(qapp) -> None:
+    """Verify ActionBarOverlay badge calculation for FOLD (left 1/3), CALL (middle 1/3), BET_30 (right 1/3)."""
+    from PySide6.QtGui import QPixmap
+    from ui.hud import ActionBarOverlay, HudBridge
+
+    bridge = HudBridge()
+    overlay = ActionBarOverlay(bridge=bridge)
+    overlay.show()
+
+    # Given actions_rect of width 300 at x=900, y=200, h=60
+    actions_rect = (900, 200, 300, 60)
+    dpr = 1.0
+
+    # 1. FOLD: must be positioned in the left 1/3 (x = 900, w = 100)
+    bx_fold, by_fold, bw_fold, bh_fold = overlay.get_badge_rect_for_action("FOLD", actions_rect, dpr=dpr)
+    assert abs(bx_fold - 900.0) < 0.1
+    assert abs(bw_fold - 100.0) < 0.1
+    assert abs(by_fold - 264.0) < 0.1
+
+    # 2. CALL: must be positioned in the middle 1/3 (x = 1000, w = 100)
+    bx_call, by_call, bw_call, bh_call = overlay.get_badge_rect_for_action("CALL", actions_rect, dpr=dpr)
+    assert abs(bx_call - 1000.0) < 0.1
+    assert abs(bw_call - 100.0) < 0.1
+
+    # 3. CHECK: must also be in middle 1/3
+    bx_chk, by_chk, bw_chk, bh_chk = overlay.get_badge_rect_for_action("CHECK", actions_rect, dpr=dpr)
+    assert abs(bx_chk - 1000.0) < 0.1
+
+    # 4. BET_30 / RAISE / ALL_IN: must be positioned in the right 1/3 (x = 1100, w = 100)
+    bx_bet, by_bet, bw_bet, bh_bet = overlay.get_badge_rect_for_action("BET_30", actions_rect, dpr=dpr)
+    assert abs(bx_bet - 1100.0) < 0.1
+    assert abs(bw_bet - 100.0) < 0.1
+
+    # Also test bottom-of-screen overflow positioning (flips above actions_rect)
+    overflow_rect = (900, 2000, 300, 60)
+    _, by_over, _, _ = overlay.get_badge_rect_for_action("BET_30", overflow_rect, dpr=dpr)
+    assert abs(by_over - (2000.0 - 28.0 - 4.0)) < 0.1
+
+    # 5. Receive bridge signal with amount chips and execute offscreen render
+    payload = {
+        "table_id": "table_1",
+        "actions_rect": actions_rect,
+        "action": "BET_30",
+        "amount_chips": 60,
+        "ev_bb": 1.45,
+        "is_plan": False,
+    }
+    bridge.action_bar_updated.emit(payload)
+    assert overlay._action_data.get("table_1") == payload
+
+    pixmap = QPixmap(1920, 1080)
+    overlay.render(pixmap)
+    overlay.close()
+
+
+
 

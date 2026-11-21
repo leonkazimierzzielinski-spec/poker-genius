@@ -1,5 +1,58 @@
 # Poker Genius — Dziennik Postępu Prac (Progress Log)
 
+## V11 — Kotwiczenie o Złotą Obwódkę Stołu, Jawne Zarządzanie Stołami, Kalibracja z Zatwierdzaniem, Buy-in Live i Pasek „Tylko Akcja” (2026-11-21)
+
+### 1. Wdrożone zmiany i nowa architektura
+1. **Detektor złotej obwódki stołu (`vision/anchor.py`, `vision/pipeline.py`, `config.json`):**
+   - Zaimplementowano `find_golden_rim(frame, search_rect=None)` w HSV z twardą 4-łukową weryfikacją pewności (proporcje owalu `1.55 <= aspect <= 2.15`, minimalne wymiary `300x160 px`, dominacja niebieskiego sukna `>= 50%` w środku, obecność złotych pikseli na wszystkich 4 łukach).
+   - Zaimplementowano `compute_table_rect_from_rim(rim_rect, rim_rel, canonical_size)` do przeliczania wykrytego obrysu na kanoniczne `table_rect`.
+   - Bezpieczny priorytet dwupunktowej kotwicy z fallbackiem do złotej obwódki (`anchor` -> `golden_rim` -> `search_region`), co zapewnia 100% precyzji zarówno w standardowych oknach, jak i przy braku/ukryciu paska ikon.
+   - Poszerzono ROI `hero_card_2` do `[0.4950, 0.6744, 0.0420, 0.0880]` oraz `seat_2_stack` w lewo do `[0.6580, 0.2780, 0.0550, 0.0400]` w `config.json`, eliminując obcinanie pochylonych kart i 3-cyfrowych stacków przeciwnika.
+2. **Koniec auto-dodawania stołów i rozdzielanie historii blindów po sygnaturze przeciwników (`vision/pipeline.py`, `main.py`):**
+   - Usunięto samoczynne mnożenie stołów `table_1..table_6` z nagłówka `#105...` (który na Stake jest numerem rozdania, a nie turnieju). W HUD domyślnie istnieje wyłącznie `table_1`.
+   - Nowe stoły (`+ Dodaj stół`) pojawiają się wyłącznie na jawne życzenie użytkownika.
+   - Dodano `VisionPipeline.compute_opponents_signature(table_image, effective_rect)`: wycina miniaturowy wzorzec awatarów/nicków `Seat 1` i `Seat 2`. W `main.py` przy wykryciu zmiany turnieju w jednym oknie (podobieństwo `< 0.85`) historia blindów walidatora jest cicho resetowana bez tworzenia nowych kafli w HUD.
+3. **Panel kalibracji per stół z zatwierdzaniem i 3-sekundowym auto-ukryciem (`ui/hud.py`, `main.py`):**
+   - Panel kalibracji jest domyślnie całkowicie schowany. Kliknięcie `✎ Kalibruj` przy danym stole rozwija kontrolki (`◀ ▲ ▼ ▶`, `↔ -/+`, `↕ -/+`, `- / +`, `✋ Przesuń`) i podświetla ramki wybranego stołu na `DebugRoiOverlay` w jaskrawym pomarańczowym kolorze edycji (`#f39c12`) z etykietą `✎ [TRYB EDYCJI - {tid}]`.
+   - Przycisk `✔ Zatwierdź`: stosuje offsety wyłącznie w pamięci RAM (brak zapisu na dysk), przełącza ramki na standardowy cyjan na 3 sekundy, po czym automatycznie chowa panel i nakładkę diagnostyczną.
+   - Przycisk `✕ Anuluj`: natychmiast cofa przesunięcia do stanu sprzed rozpoczęcia edycji.
+4. **Szybki wybór stawki Buy-in na żywo (`ui/hud.py`, `main.py`):**
+   - Dodano przyciski wyboru wpisowego `$0.50`, `$2`, `$5`, `$10` w HUD, emitujące sygnał `hud_bridge.buy_in_changed(float)` i aktualizujące `decision_maker.buy_in` w locie bez restartu aplikacji.
+5. **Pasek „Tylko Akcja” pod przyciskami gry (`ActionBarOverlay`) (`ui/hud.py`, `main.py`):**
+   - Zaimplementowano bezramkowe, przezroczyste, click-through okno `ActionBarOverlay(QWidget)` z `WDA_EXCLUDEFROMCAPTURE` wywoływane przyciskiem `⚡ Tylko akcja` lub skrótem `Ctrl+Shift+A`.
+   - Wyrównuje 3 kolumny akcji bezpośrednio pod przyciskami stołu: lewa (`FOLD`), środkowa (`CHECK` / `CALL <kwota>`), prawa (`BET <kwota>` / `RAISE <kwota>` / `ALL_IN`).
+   - Podświetla zalecaną decyzję (zielony/żółty/czerwony) wraz z wartością EV i kwotą żetonów, a w trybie podglądu wyświetla elegancką etykietę `PLAN: <AKCJA>`.
+
+### 2. Wyniki weryfikacji na nagraniach testowych i symulacji panelu Bet Slip
+
+| Nagranie / Test | Klatka | Rozdzielczość | Wykryte `table_rect` | Karty Hero | Karty Board | Pot | Decyzja | Status |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `2026-11-19 211257` | `1827` | `1858x1248` | `(-198, 7, 2253x1278)` | `['Kh', '2s']` | `[]` | `70` | `CALL` | **VALID** |
+| `2026-11-19 211257` | `2604` | `1858x1248` | `(-198, 7, 2253x1278)` | `['Kh', '2s']` | `['7d', 'Td', 'Th', '2h']` | `218` | `CHECK` | **VALID** |
+| `2026-11-19 211257` | `3643` | `1858x1248` | `(-198, 7, 2253x1278)` | `['Jc', '4d']` | `[]` | `30` | `FOLD` | **VALID** |
+| `2026-11-19 211257` | `3880` | `1858x1248` | `(-198, 7, 2253x1278)` | `['Jc', '4d']` | `[]` | `206` | `FOLD` | **VALID** |
+| `2026-11-19 211257` | `4757` | `1858x1248` | `(-198, 7, 2253x1278)` | `['7s', '7d']` | `['Qc', '7c', '7h']` | `682` | `CALL` | **VALID** |
+| `2026-11-18 224127` | `0` | `1772x1126` | `(13, 32, 1757x997)` | `['2s', 'Tc']` | `[]` | `80` | `PLAN: FOLD` | **VALID** |
+| `2026-11-18 224127` | `765` | `1772x1126` | `(13, 32, 1757x997)` | `['Kd', '3c']` | `[]` | `30` | `FOLD` | **VALID** |
+| `2026-11-18 224127` | `2370` | `1772x1126` | `(13, 32, 1757x997)` | `['7c', '5s']` | `[]` | `90` | `CALL` | **VALID** |
+| `2026-11-18 224127` | `4950` | `1772x1126` | `(13, 32, 1757x997)` | `['5h', 'Jh']` | `['Jd', '2s', '9h']` | `60` | `PLAN: BET_30` | **VALID** |
+| `2 gry na raz` | `1383` | `1706x1022` | `(-22, -9, 1757x997)` | `['Ks', '9s']` | `['3s', 'Ac', 'Ah']` | `80` | `CHECK` | **VALID** |
+| `2 gry na raz` | `1627` | `1706x1022` | `(-22, -9, 1757x997)` | `['Ks', '9s']` | `['3s', 'Ac', 'Ah']` | `240` | `CALL` | **VALID** |
+| `2 gry na raz` | `2418` | `1706x1022` | `(-22, -9, 1757x997)` | `['4d', 'Qs']` | `[]` | `50` | `PLAN: WAIT` | **VALID** |
+| `2 gry na raz` | `2605` | `1706x1022` | `(-22, -9, 1757x997)` | `['4d', 'Qs']` | `['5d', '8c', 'Jh']` | `50` | `PLAN: WAIT` | **VALID** |
+| **Sztuczny Bet Slip (+800px)** | `211257 f2604` | `2658x1248` | `(-198, 7, 2253x1278)` | `['Kh', '2s']` | `['7d', 'Td', 'Th', '2h']` | `218` | `CHECK` | **VALID (100%)** |
+
+### 3. Wyniki testów jednostkowych (`pytest -v tests/`)
+- Liczba testów: **103 passed in 5.42s (100% sukcesu)**.
+- Nowe testy:
+  1. `tests/test_vision.py::test_find_golden_rim_and_table_rect`: weryfikuje detekcję złotej obwódki owalu z wnętrzem sukna oraz odrzucanie fałszywych detekcji (brak niebieskiego środka, błędne proporcje).
+  2. `tests/test_vision.py::test_opponents_signature_same_vs_different`: weryfikuje rozróżnianie składu przeciwników po sygnaturze awatarów/nicków (`>= 0.95` dla tych samych, `< 0.65` dla różnych).
+  3. `tests/test_ui_and_main.py::test_hud_calibration_edit_confirm_cancel_and_auto_hide`: weryfikuje tryb edycji kalibracji, pomarańczowe podświetlenie, przycisk Zatwierdź z 3-sekundowym timerem auto-ukrycia i Anuluj.
+  4. `tests/test_ui_and_main.py::test_hud_buy_in_switch_and_manual_table_add_remove`: weryfikuje przełączanie wpisowego ($0.50..$10) oraz ręczne dodawanie/usuwanie stołów w HUD bez samowolnego auto-dodawania.
+  5. `tests/test_ui_and_main.py::test_action_bar_overlay_positioning`: weryfikuje pozycjonowanie, 3 kolumny akcji i tryb `PLAN:` w nakładce `ActionBarOverlay`.
+
+---
+
 ## V10 — Dwupunktowe kotwiczenie stołu (anchor_right), usunięcie błędu centrowania i ręczne dostrajanie ramki w HUD (2026-11-21)
 
 ### 1. Diagnoza źródłowej przyczyny przesunięcia na żywo o ~400 px

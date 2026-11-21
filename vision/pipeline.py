@@ -17,9 +17,11 @@ except ImportError:
 
 from vision.anchor import (
     compute_table_rect,
+    compute_table_rect_from_rim,
     compute_unclipped_table_rect,
     crop_rois,
     find_anchor,
+    find_golden_rim,
     find_right_anchor,
 )
 from vision.card_recognizer import CardRecognizer
@@ -44,6 +46,9 @@ class VisionPipeline:
         self.table_offset_rel: list[float] = self.anchor_config.get(
             "table_offset_rel", [0.0, 0.0, 1.0, 1.0]
         )
+        self.golden_rim_rel: list[float] = self.anchor_config.get(
+            "golden_rim_rel", [0.1816, 0.0963, 0.6460, 0.6780]
+        )
         self.canonical_table_size: tuple[int, int] = tuple(
             self.config.get("canonical_table_size", [1757, 997])
         )
@@ -59,6 +64,7 @@ class VisionPipeline:
         self._table_counter: int = 0
         self._last_anchor_scale: float | None = None
         self.last_evicted_table_id: str | None = None
+        self._last_canonical_table: np.ndarray | None = None
 
         self.dealer_template: np.ndarray | None = None
         d_path = Path("data/templates/dealer.png")
@@ -202,6 +208,26 @@ class VisionPipeline:
             self._table_last_seen[lru_id] = self._table_counter
             return lru_id
 
+    def compute_opponents_signature(
+        self, table_image: np.ndarray, effective_rect: tuple[int, int, int, int] | None = None
+    ) -> np.ndarray | None:
+        """Compute compact binary/grayscale signature of Seat 1 and Seat 2 opponent nickname/avatar areas.
+
+        Used to differentiate tournaments across hands without relying on volatile hand ID headers.
+        """
+        if table_image is None or table_image.size == 0:
+            return None
+        CW, CH = self.canonical_table_size
+        s1 = table_image[int(0.20 * CH) : int(0.28 * CH), int(0.25 * CW) : int(0.38 * CW)]
+        s2 = table_image[int(0.20 * CH) : int(0.28 * CH), int(0.62 * CW) : int(0.75 * CW)]
+        if s1.size == 0 or s2.size == 0:
+            return None
+        combined = np.hstack([s1, s2])
+        gray = cv2.cvtColor(combined, cv2.COLOR_BGR2GRAY)
+        sig = cv2.resize(gray, (64, 16), interpolation=cv2.INTER_AREA)
+        norm_sig = cv2.equalizeHist(sig).astype(np.float32)
+        return norm_sig
+
     def process_frame(
         self,
         frame: np.ndarray,
@@ -225,6 +251,7 @@ class VisionPipeline:
 
         # Detect table bounds or fallback to full frame
         if table_rect is None:
+            # 1. Primary anchor template matching (dual-anchor unclipped rect)
             if self.anchor_template is not None:
                 anchor = find_anchor(
                     frame,
@@ -257,18 +284,43 @@ class VisionPipeline:
                     table_image = self._warp_to_canonical(frame, unclipped_rect)
                     effective_rect = (0, 0, CW, CH)
                 else:
+                    # 2. Golden rim detection fallback (precision 1-2px when anchor is hidden/scrolled)
+                    rim = find_golden_rim(frame)
+                    if rim is not None:
+                        anchor_found = True
+                        unclipped_rect = compute_table_rect_from_rim(
+                            rim,
+                            rim_rel=self.golden_rim_rel,
+                            canonical_size=self.canonical_table_size,
+                        )
+                        table_image = self._warp_to_canonical(frame, unclipped_rect)
+                        effective_rect = (0, 0, CW, CH)
+                    else:
+                        table_rect = (0, 0, frame.shape[1], frame.shape[0])
+                        table_image = frame
+                        effective_rect = table_rect
+            else:
+                rim = find_golden_rim(frame)
+                if rim is not None:
+                    anchor_found = True
+                    unclipped_rect = compute_table_rect_from_rim(
+                        rim,
+                        rim_rel=self.golden_rim_rel,
+                        canonical_size=self.canonical_table_size,
+                    )
+                    table_image = self._warp_to_canonical(frame, unclipped_rect)
+                    effective_rect = (0, 0, CW, CH)
+                else:
                     table_rect = (0, 0, frame.shape[1], frame.shape[0])
                     table_image = frame
                     effective_rect = table_rect
-            else:
-                table_rect = (0, 0, frame.shape[1], frame.shape[0])
-                table_image = frame
-                effective_rect = table_rect
         else:
             # Provided table_rect (from main.py unclipped rect or manual ROI)
             anchor_found = has_anchor if has_anchor is not None else True
             table_image = self._warp_to_canonical(frame, table_rect)
             effective_rect = (0, 0, CW, CH)
+
+        self._last_canonical_table = table_image
 
         # Resolve table_id based on game ID header if default table_1 and allowed
         if allow_table_resolution and table_id == "table_1":
