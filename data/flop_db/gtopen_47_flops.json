@@ -5076,5 +5076,5083 @@
         "ALL_IN": 1.3403
       }
     }
+  },
+  "SB_vs_BB_LIMPED": {
+    "Ah 7d 2c": {
+      "strategy": {
+        "CHECK": 0.2698,
+        "BET_30": 0.4087,
+        "BET_MED": 0.3195,
+        "ALL_IN": 0.002
+      },
+      "evs": {
+        "CHECK": 0.8633,
+        "BET_30": 0.9211,
+        "BET_MED": 0.8849,
+        "ALL_IN": -0.2779
+      },
+      "CHECK": 0.8633,
+      "BET_30": 0.9211,
+      "BET_MED": 0.8849,
+      "ALL_IN": -0.2779,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.1974,
+          "BET_30": 0.4311,
+          "BET_MED": 0.3697,
+          "ALL_IN": 0.0018
+        },
+        "evs": {
+          "CHECK": 4.4791,
+          "BET_30": 4.6333,
+          "BET_MED": 4.6558,
+          "ALL_IN": 3.7653
+        },
+        "CHECK": 4.4791,
+        "BET_30": 4.6333,
+        "BET_MED": 4.6558,
+        "ALL_IN": 3.7653
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.1654,
+          "BET_30": 0.4237,
+          "BET_MED": 0.4019,
+          "ALL_IN": 0.009
+        },
+        "evs": {
+          "CHECK": 2.9561,
+          "BET_30": 3.0692,
+          "BET_MED": 3.0915,
+          "ALL_IN": 2.6279
+        },
+        "CHECK": 2.9561,
+        "BET_30": 3.0692,
+        "BET_MED": 3.0915,
+        "ALL_IN": 2.6279
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.3052,
+          "BET_30": 0.4205,
+          "BET_MED": 0.2725,
+          "ALL_IN": 0.0018
+        },
+        "evs": {
+          "CHECK": 1.2329,
+          "BET_30": 1.2966,
+          "BET_MED": 1.2195,
+          "ALL_IN": 0.1039
+        },
+        "CHECK": 1.2329,
+        "BET_30": 1.2966,
+        "BET_MED": 1.2195,
+        "ALL_IN": 0.1039
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.2698,
+          "BET_30": 0.4087,
+          "BET_MED": 0.3195,
+          "ALL_IN": 0.002
+        },
+        "evs": {
+          "CHECK": 0.8633,
+          "BET_30": 0.9211,
+          "BET_MED": 0.8849,
+          "ALL_IN": -0.2779
+        },
+        "CHECK": 0.8633,
+        "BET_30": 0.9211,
+        "BET_MED": 0.8849,
+        "ALL_IN": -0.2779
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.276,
+          "BET_30": 0.4002,
+          "BET_MED": 0.3228,
+          "ALL_IN": 0.001
+        },
+        "evs": {
+          "CHECK": 0.1796,
+          "BET_30": 0.221,
+          "BET_MED": 0.1892,
+          "ALL_IN": -1.1235
+        },
+        "CHECK": 0.1796,
+        "BET_30": 0.221,
+        "BET_MED": 0.1892,
+        "ALL_IN": -1.1235
+      }
+    },
+    "Jh Ts 8s": {
+      "strategy": {
+        "CHECK": 0.4277,
+        "BET_30": 0.372,
+        "BET_MED": 0.1991,
+        "ALL_IN": 0.0012
+      },
+      "evs": {
+        "CHECK": 0.9227,
+        "BET_30": 0.8728,
+        "BET_MED": 0.8299,
+        "ALL_IN": 0.1835
+      },
+      "CHECK": 0.9227,
+      "BET_30": 0.8728,
+      "BET_MED": 0.8299,
+      "ALL_IN": 0.1835,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.1995,
+          "BET_30": 0.4484,
+          "BET_MED": 0.3506,
+          "ALL_IN": 0.0015
+        },
+        "evs": {
+          "CHECK": 3.6015,
+          "BET_30": 3.566,
+          "BET_MED": 3.5242,
+          "ALL_IN": 3.0941
+        },
+        "CHECK": 3.6015,
+        "BET_30": 3.566,
+        "BET_MED": 3.5242,
+        "ALL_IN": 3.0941
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.3532,
+          "BET_30": 0.3706,
+          "BET_MED": 0.2701,
+          "ALL_IN": 0.0061
+        },
+        "evs": {
+          "CHECK": 1.8138,
+          "BET_30": 1.7849,
+          "BET_MED": 1.7252,
+          "ALL_IN": 1.4403
+        },
+        "CHECK": 1.8138,
+        "BET_30": 1.7849,
+        "BET_MED": 1.7252,
+        "ALL_IN": 1.4403
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.4091,
+          "BET_30": 0.424,
+          "BET_MED": 0.1664,
+          "ALL_IN": 0.0005
+        },
+        "evs": {
+          "CHECK": 0.8156,
+          "BET_30": 0.7695,
+          "BET_MED": 0.6966,
+          "ALL_IN": 0.0303
+        },
+        "CHECK": 0.8156,
+        "BET_30": 0.7695,
+        "BET_MED": 0.6966,
+        "ALL_IN": 0.0303
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.339,
+          "BET_30": 0.4228,
+          "BET_MED": 0.2377,
+          "ALL_IN": 0.0005
+        },
+        "evs": {
+          "CHECK": 0.7427,
+          "BET_30": 0.72,
+          "BET_MED": 0.6979,
+          "ALL_IN": 0.1547
+        },
+        "CHECK": 0.7427,
+        "BET_30": 0.72,
+        "BET_MED": 0.6979,
+        "ALL_IN": 0.1547
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.7246,
+          "BET_30": 0.18,
+          "BET_MED": 0.0954,
+          "ALL_IN": 0.0
+        },
+        "evs": {
+          "CHECK": 0.0469,
+          "BET_30": -0.0734,
+          "BET_MED": -0.0944,
+          "ALL_IN": -1.1742
+        },
+        "CHECK": 0.0469,
+        "BET_30": -0.0734,
+        "BET_MED": -0.0944,
+        "ALL_IN": -1.1742
+      }
+    },
+    "Kd Kh 4c": {
+      "strategy": {
+        "CHECK": 0.2169,
+        "BET_30": 0.4351,
+        "BET_MED": 0.3467,
+        "ALL_IN": 0.0013
+      },
+      "evs": {
+        "CHECK": 0.8461,
+        "BET_30": 0.9066,
+        "BET_MED": 0.8789,
+        "ALL_IN": -0.5057
+      },
+      "CHECK": 0.8461,
+      "BET_30": 0.9066,
+      "BET_MED": 0.8789,
+      "ALL_IN": -0.5057,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.1811,
+          "BET_30": 0.4447,
+          "BET_MED": 0.3722,
+          "ALL_IN": 0.0021
+        },
+        "evs": {
+          "CHECK": 2.5901,
+          "BET_30": 2.6941,
+          "BET_MED": 2.6645,
+          "ALL_IN": 2.1528
+        },
+        "CHECK": 2.5901,
+        "BET_30": 2.6941,
+        "BET_MED": 2.6645,
+        "ALL_IN": 2.1528
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.2169,
+          "BET_30": 0.4351,
+          "BET_MED": 0.3467,
+          "ALL_IN": 0.0013
+        },
+        "evs": {
+          "CHECK": 0.8461,
+          "BET_30": 0.9066,
+          "BET_MED": 0.8789,
+          "ALL_IN": -0.5057
+        },
+        "CHECK": 0.8461,
+        "BET_30": 0.9066,
+        "BET_MED": 0.8789,
+        "ALL_IN": -0.5057
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.229,
+          "BET_30": 0.4319,
+          "BET_MED": 0.3382,
+          "ALL_IN": 0.001
+        },
+        "evs": {
+          "CHECK": 0.2596,
+          "BET_30": 0.3054,
+          "BET_MED": 0.2783,
+          "ALL_IN": -1.4
+        },
+        "CHECK": 0.2596,
+        "BET_30": 0.3054,
+        "BET_MED": 0.2783,
+        "ALL_IN": -1.4
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.2169,
+          "BET_30": 0.4351,
+          "BET_MED": 0.3467,
+          "ALL_IN": 0.0013
+        },
+        "evs": {
+          "CHECK": 0.8461,
+          "BET_30": 0.9066,
+          "BET_MED": 0.8789,
+          "ALL_IN": -0.5057
+        },
+        "CHECK": 0.8461,
+        "BET_30": 0.9066,
+        "BET_MED": 0.8789,
+        "ALL_IN": -0.5057
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.2169,
+          "BET_30": 0.4351,
+          "BET_MED": 0.3467,
+          "ALL_IN": 0.0013
+        },
+        "evs": {
+          "CHECK": 0.8461,
+          "BET_30": 0.9066,
+          "BET_MED": 0.8789,
+          "ALL_IN": -0.5057
+        },
+        "CHECK": 0.8461,
+        "BET_30": 0.9066,
+        "BET_MED": 0.8789,
+        "ALL_IN": -0.5057
+      }
+    },
+    "As Kd Qs": {
+      "strategy": {
+        "CHECK": 0.4213,
+        "BET_30": 0.3626,
+        "BET_MED": 0.2153,
+        "ALL_IN": 0.0008
+      },
+      "evs": {
+        "CHECK": 0.937,
+        "BET_30": 0.895,
+        "BET_MED": 0.8328,
+        "ALL_IN": -0.1797
+      },
+      "CHECK": 0.937,
+      "BET_30": 0.895,
+      "BET_MED": 0.8328,
+      "ALL_IN": -0.1797,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.2053,
+          "BET_30": 0.3992,
+          "BET_MED": 0.3944,
+          "ALL_IN": 0.0011
+        },
+        "evs": {
+          "CHECK": 3.8654,
+          "BET_30": 3.8637,
+          "BET_MED": 3.8207,
+          "ALL_IN": 3.4862
+        },
+        "CHECK": 3.8654,
+        "BET_30": 3.8637,
+        "BET_MED": 3.8207,
+        "ALL_IN": 3.4862
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.3025,
+          "BET_30": 0.3776,
+          "BET_MED": 0.315,
+          "ALL_IN": 0.0049
+        },
+        "evs": {
+          "CHECK": 2.1957,
+          "BET_30": 2.1335,
+          "BET_MED": 2.0574,
+          "ALL_IN": 1.8354
+        },
+        "CHECK": 2.1957,
+        "BET_30": 2.1335,
+        "BET_MED": 2.0574,
+        "ALL_IN": 1.8354
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.473,
+          "BET_30": 0.3815,
+          "BET_MED": 0.145,
+          "ALL_IN": 0.0004
+        },
+        "evs": {
+          "CHECK": 1.398,
+          "BET_30": 1.3104,
+          "BET_MED": 1.1981,
+          "ALL_IN": 0.0559
+        },
+        "CHECK": 1.398,
+        "BET_30": 1.3104,
+        "BET_MED": 1.1981,
+        "ALL_IN": 0.0559
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.3036,
+          "BET_30": 0.409,
+          "BET_MED": 0.2869,
+          "ALL_IN": 0.0005
+        },
+        "evs": {
+          "CHECK": 0.7171,
+          "BET_30": 0.653,
+          "BET_MED": 0.6214,
+          "ALL_IN": -0.2198
+        },
+        "CHECK": 0.7171,
+        "BET_30": 0.653,
+        "BET_MED": 0.6214,
+        "ALL_IN": -0.2198
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.5246,
+          "BET_30": 0.309,
+          "BET_MED": 0.1663,
+          "ALL_IN": 0.0
+        },
+        "evs": {
+          "CHECK": 0.0342,
+          "BET_30": 0.0404,
+          "BET_MED": -0.0051,
+          "ALL_IN": -1.3504
+        },
+        "CHECK": 0.0342,
+        "BET_30": 0.0404,
+        "BET_MED": -0.0051,
+        "ALL_IN": -1.3504
+      }
+    },
+    "9s 8d 7c": {
+      "strategy": {
+        "CHECK": 0.3509,
+        "BET_30": 0.3833,
+        "BET_MED": 0.2622,
+        "ALL_IN": 0.0036
+      },
+      "evs": {
+        "CHECK": 0.8751,
+        "BET_30": 0.9041,
+        "BET_MED": 0.8691,
+        "ALL_IN": -0.1156
+      },
+      "CHECK": 0.8751,
+      "BET_30": 0.9041,
+      "BET_MED": 0.8691,
+      "ALL_IN": -0.1156,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.1778,
+          "BET_30": 0.4567,
+          "BET_MED": 0.3624,
+          "ALL_IN": 0.0031
+        },
+        "evs": {
+          "CHECK": 4.0455,
+          "BET_30": 4.252,
+          "BET_MED": 4.282,
+          "ALL_IN": 3.764
+        },
+        "CHECK": 4.0455,
+        "BET_30": 4.252,
+        "BET_MED": 4.282,
+        "ALL_IN": 3.764
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.346,
+          "BET_30": 0.3306,
+          "BET_MED": 0.3103,
+          "ALL_IN": 0.0131
+        },
+        "evs": {
+          "CHECK": 1.594,
+          "BET_30": 1.6372,
+          "BET_MED": 1.6147,
+          "ALL_IN": 1.3905
+        },
+        "CHECK": 1.594,
+        "BET_30": 1.6372,
+        "BET_MED": 1.6147,
+        "ALL_IN": 1.3905
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.3734,
+          "BET_30": 0.3826,
+          "BET_MED": 0.2418,
+          "ALL_IN": 0.0022
+        },
+        "evs": {
+          "CHECK": 0.6883,
+          "BET_30": 0.6702,
+          "BET_MED": 0.5952,
+          "ALL_IN": -0.428
+        },
+        "CHECK": 0.6883,
+        "BET_30": 0.6702,
+        "BET_MED": 0.5952,
+        "ALL_IN": -0.428
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.2893,
+          "BET_30": 0.4297,
+          "BET_MED": 0.2781,
+          "ALL_IN": 0.0029
+        },
+        "evs": {
+          "CHECK": 0.4789,
+          "BET_30": 0.5293,
+          "BET_MED": 0.5088,
+          "ALL_IN": -0.4484
+        },
+        "CHECK": 0.4789,
+        "BET_30": 0.5293,
+        "BET_MED": 0.5088,
+        "ALL_IN": -0.4484
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.5634,
+          "BET_30": 0.2704,
+          "BET_MED": 0.166,
+          "ALL_IN": 0.0003
+        },
+        "evs": {
+          "CHECK": 0.0152,
+          "BET_30": -0.0176,
+          "BET_MED": -0.05,
+          "ALL_IN": -1.9822
+        },
+        "CHECK": 0.0152,
+        "BET_30": -0.0176,
+        "BET_MED": -0.05,
+        "ALL_IN": -1.9822
+      }
+    },
+    "Qd 9d 4c": {
+      "strategy": {
+        "CHECK": 0.3366,
+        "BET_30": 0.41,
+        "BET_MED": 0.252,
+        "ALL_IN": 0.0014
+      },
+      "evs": {
+        "CHECK": 0.9121,
+        "BET_30": 0.9002,
+        "BET_MED": 0.8569,
+        "ALL_IN": -0.0038
+      },
+      "CHECK": 0.9121,
+      "BET_30": 0.9002,
+      "BET_MED": 0.8569,
+      "ALL_IN": -0.0038,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.1043,
+          "BET_30": 0.4923,
+          "BET_MED": 0.4026,
+          "ALL_IN": 0.0008
+        },
+        "evs": {
+          "CHECK": 3.945,
+          "BET_30": 3.9925,
+          "BET_MED": 3.9768,
+          "ALL_IN": 3.3114
+        },
+        "CHECK": 3.945,
+        "BET_30": 3.9925,
+        "BET_MED": 3.9768,
+        "ALL_IN": 3.3114
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.2692,
+          "BET_30": 0.3844,
+          "BET_MED": 0.3384,
+          "ALL_IN": 0.008
+        },
+        "evs": {
+          "CHECK": 2.391,
+          "BET_30": 2.3649,
+          "BET_MED": 2.3076,
+          "ALL_IN": 2.0639
+        },
+        "CHECK": 2.391,
+        "BET_30": 2.3649,
+        "BET_MED": 2.3076,
+        "ALL_IN": 2.0639
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.3343,
+          "BET_30": 0.4508,
+          "BET_MED": 0.2141,
+          "ALL_IN": 0.0009
+        },
+        "evs": {
+          "CHECK": 0.9741,
+          "BET_30": 0.9623,
+          "BET_MED": 0.889,
+          "ALL_IN": -0.0443
+        },
+        "CHECK": 0.9741,
+        "BET_30": 0.9623,
+        "BET_MED": 0.889,
+        "ALL_IN": -0.0443
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.2829,
+          "BET_30": 0.4482,
+          "BET_MED": 0.2678,
+          "ALL_IN": 0.0011
+        },
+        "evs": {
+          "CHECK": 1.3326,
+          "BET_30": 1.3421,
+          "BET_MED": 1.3185,
+          "ALL_IN": 0.5971
+        },
+        "CHECK": 1.3326,
+        "BET_30": 1.3421,
+        "BET_MED": 1.3185,
+        "ALL_IN": 0.5971
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.3896,
+          "BET_30": 0.364,
+          "BET_MED": 0.2463,
+          "ALL_IN": 0.0001
+        },
+        "evs": {
+          "CHECK": 0.0926,
+          "BET_30": 0.0745,
+          "BET_MED": 0.0553,
+          "ALL_IN": -0.9656
+        },
+        "CHECK": 0.0926,
+        "BET_30": 0.0745,
+        "BET_MED": 0.0553,
+        "ALL_IN": -0.9656
+      }
+    },
+    "Ks 7s 2d": {
+      "strategy": {
+        "CHECK": 0.3021,
+        "BET_30": 0.4214,
+        "BET_MED": 0.2756,
+        "ALL_IN": 0.0009
+      },
+      "evs": {
+        "CHECK": 0.896,
+        "BET_30": 0.9089,
+        "BET_MED": 0.8702,
+        "ALL_IN": -0.2093
+      },
+      "CHECK": 0.896,
+      "BET_30": 0.9089,
+      "BET_MED": 0.8702,
+      "ALL_IN": -0.2093,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.1616,
+          "BET_30": 0.4385,
+          "BET_MED": 0.3992,
+          "ALL_IN": 0.0008
+        },
+        "evs": {
+          "CHECK": 4.1493,
+          "BET_30": 4.185,
+          "BET_MED": 4.1814,
+          "ALL_IN": 3.5373
+        },
+        "CHECK": 4.1493,
+        "BET_30": 4.185,
+        "BET_MED": 4.1814,
+        "ALL_IN": 3.5373
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.2373,
+          "BET_30": 0.4014,
+          "BET_MED": 0.3568,
+          "ALL_IN": 0.0044
+        },
+        "evs": {
+          "CHECK": 2.6453,
+          "BET_30": 2.6382,
+          "BET_MED": 2.5809,
+          "ALL_IN": 2.3451
+        },
+        "CHECK": 2.6453,
+        "BET_30": 2.6382,
+        "BET_MED": 2.5809,
+        "ALL_IN": 2.3451
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.2791,
+          "BET_30": 0.473,
+          "BET_MED": 0.247,
+          "ALL_IN": 0.0009
+        },
+        "evs": {
+          "CHECK": 0.9956,
+          "BET_30": 1.0088,
+          "BET_MED": 0.9377,
+          "ALL_IN": -0.1952
+        },
+        "CHECK": 0.9956,
+        "BET_30": 1.0088,
+        "BET_MED": 0.9377,
+        "ALL_IN": -0.1952
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.2078,
+          "BET_30": 0.4522,
+          "BET_MED": 0.3391,
+          "ALL_IN": 0.0009
+        },
+        "evs": {
+          "CHECK": 1.8501,
+          "BET_30": 1.929,
+          "BET_MED": 1.9065,
+          "ALL_IN": 1.0132
+        },
+        "CHECK": 1.8501,
+        "BET_30": 1.929,
+        "BET_MED": 1.9065,
+        "ALL_IN": 1.0132
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.3527,
+          "BET_30": 0.3815,
+          "BET_MED": 0.2657,
+          "ALL_IN": 0.0001
+        },
+        "evs": {
+          "CHECK": 0.1124,
+          "BET_30": 0.1226,
+          "BET_MED": 0.1102,
+          "ALL_IN": -1.1682
+        },
+        "CHECK": 0.1124,
+        "BET_30": 0.1226,
+        "BET_MED": 0.1102,
+        "ALL_IN": -1.1682
+      }
+    },
+    "Jc 8c 3c": {
+      "strategy": {
+        "CHECK": 0.5222,
+        "BET_30": 0.3582,
+        "BET_MED": 0.1194,
+        "ALL_IN": 0.0002
+      },
+      "evs": {
+        "CHECK": 0.9098,
+        "BET_30": 0.8692,
+        "BET_MED": 0.8192,
+        "ALL_IN": -0.025
+      },
+      "CHECK": 0.9098,
+      "BET_30": 0.8692,
+      "BET_MED": 0.8192,
+      "ALL_IN": -0.025,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.3717,
+          "BET_30": 0.4183,
+          "BET_MED": 0.2099,
+          "ALL_IN": 0.0002
+        },
+        "evs": {
+          "CHECK": 3.7034,
+          "BET_30": 3.654,
+          "BET_MED": 3.6088,
+          "ALL_IN": 3.0638
+        },
+        "CHECK": 3.7034,
+        "BET_30": 3.654,
+        "BET_MED": 3.6088,
+        "ALL_IN": 3.0638
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.4444,
+          "BET_30": 0.4016,
+          "BET_MED": 0.1531,
+          "ALL_IN": 0.0009
+        },
+        "evs": {
+          "CHECK": 1.6351,
+          "BET_30": 1.5961,
+          "BET_MED": 1.5427,
+          "ALL_IN": 1.0696
+        },
+        "CHECK": 1.6351,
+        "BET_30": 1.5961,
+        "BET_MED": 1.5427,
+        "ALL_IN": 1.0696
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.4638,
+          "BET_30": 0.4452,
+          "BET_MED": 0.0909,
+          "ALL_IN": 0.0001
+        },
+        "evs": {
+          "CHECK": 0.7198,
+          "BET_30": 0.6876,
+          "BET_MED": 0.6179,
+          "ALL_IN": -0.1596
+        },
+        "CHECK": 0.7198,
+        "BET_30": 0.6876,
+        "BET_MED": 0.6179,
+        "ALL_IN": -0.1596
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.4046,
+          "BET_30": 0.422,
+          "BET_MED": 0.1733,
+          "ALL_IN": 0.0001
+        },
+        "evs": {
+          "CHECK": 0.8604,
+          "BET_30": 0.8314,
+          "BET_MED": 0.8,
+          "ALL_IN": 0.0818
+        },
+        "CHECK": 0.8604,
+        "BET_30": 0.8314,
+        "BET_MED": 0.8,
+        "ALL_IN": 0.0818
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.8131,
+          "BET_30": 0.1342,
+          "BET_MED": 0.0527,
+          "ALL_IN": 0.0
+        },
+        "evs": {
+          "CHECK": 0.0432,
+          "BET_30": -0.0199,
+          "BET_MED": -0.065,
+          "ALL_IN": -1.4085
+        },
+        "CHECK": 0.0432,
+        "BET_30": -0.0199,
+        "BET_MED": -0.065,
+        "ALL_IN": -1.4085
+      }
+    },
+    "6h 5d 4c": {
+      "strategy": {
+        "CHECK": 0.3575,
+        "BET_30": 0.3757,
+        "BET_MED": 0.2611,
+        "ALL_IN": 0.0056
+      },
+      "evs": {
+        "CHECK": 0.8649,
+        "BET_30": 0.9184,
+        "BET_MED": 0.8792,
+        "ALL_IN": 0.0907
+      },
+      "CHECK": 0.8649,
+      "BET_30": 0.9184,
+      "BET_MED": 0.8792,
+      "ALL_IN": 0.0907,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.1546,
+          "BET_30": 0.4707,
+          "BET_MED": 0.3707,
+          "ALL_IN": 0.004
+        },
+        "evs": {
+          "CHECK": 4.3183,
+          "BET_30": 4.5864,
+          "BET_MED": 4.613,
+          "ALL_IN": 4.0104
+        },
+        "CHECK": 4.3183,
+        "BET_30": 4.5864,
+        "BET_MED": 4.613,
+        "ALL_IN": 4.0104
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.3706,
+          "BET_30": 0.3051,
+          "BET_MED": 0.3036,
+          "ALL_IN": 0.0207
+        },
+        "evs": {
+          "CHECK": 1.5608,
+          "BET_30": 1.5629,
+          "BET_MED": 1.5379,
+          "ALL_IN": 1.4038
+        },
+        "CHECK": 1.5608,
+        "BET_30": 1.5629,
+        "BET_MED": 1.5379,
+        "ALL_IN": 1.4038
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.3764,
+          "BET_30": 0.3942,
+          "BET_MED": 0.227,
+          "ALL_IN": 0.0025
+        },
+        "evs": {
+          "CHECK": 0.5775,
+          "BET_30": 0.6271,
+          "BET_MED": 0.538,
+          "ALL_IN": -0.2043
+        },
+        "CHECK": 0.5775,
+        "BET_30": 0.6271,
+        "BET_MED": 0.538,
+        "ALL_IN": -0.2043
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.3317,
+          "BET_30": 0.4016,
+          "BET_MED": 0.2622,
+          "ALL_IN": 0.0045
+        },
+        "evs": {
+          "CHECK": 0.4343,
+          "BET_30": 0.4922,
+          "BET_MED": 0.4571,
+          "ALL_IN": -0.3709
+        },
+        "CHECK": 0.4343,
+        "BET_30": 0.4922,
+        "BET_MED": 0.4571,
+        "ALL_IN": -0.3709
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.4808,
+          "BET_30": 0.292,
+          "BET_MED": 0.2269,
+          "ALL_IN": 0.0003
+        },
+        "evs": {
+          "CHECK": 0.0799,
+          "BET_30": 0.0714,
+          "BET_MED": 0.0746,
+          "ALL_IN": -1.4873
+        },
+        "CHECK": 0.0799,
+        "BET_30": 0.0714,
+        "BET_MED": 0.0746,
+        "ALL_IN": -1.4873
+      }
+    },
+    "Ac Td 5s": {
+      "strategy": {
+        "CHECK": 0.3006,
+        "BET_30": 0.3819,
+        "BET_MED": 0.3127,
+        "ALL_IN": 0.0048
+      },
+      "evs": {
+        "CHECK": 0.8584,
+        "BET_30": 0.9207,
+        "BET_MED": 0.8779,
+        "ALL_IN": -0.2049
+      },
+      "CHECK": 0.8584,
+      "BET_30": 0.9207,
+      "BET_MED": 0.8779,
+      "ALL_IN": -0.2049,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.2367,
+          "BET_30": 0.3957,
+          "BET_MED": 0.3617,
+          "ALL_IN": 0.006
+        },
+        "evs": {
+          "CHECK": 4.3602,
+          "BET_30": 4.7591,
+          "BET_MED": 4.7267,
+          "ALL_IN": 3.6768
+        },
+        "CHECK": 4.3602,
+        "BET_30": 4.7591,
+        "BET_MED": 4.7267,
+        "ALL_IN": 3.6768
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.2253,
+          "BET_30": 0.3768,
+          "BET_MED": 0.3748,
+          "ALL_IN": 0.0231
+        },
+        "evs": {
+          "CHECK": 2.7666,
+          "BET_30": 3.0986,
+          "BET_MED": 3.0646,
+          "ALL_IN": 2.4559
+        },
+        "CHECK": 2.7666,
+        "BET_30": 3.0986,
+        "BET_MED": 3.0646,
+        "ALL_IN": 2.4559
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.3673,
+          "BET_30": 0.3606,
+          "BET_MED": 0.2679,
+          "ALL_IN": 0.0041
+        },
+        "evs": {
+          "CHECK": 1.263,
+          "BET_30": 1.2963,
+          "BET_MED": 1.1779,
+          "ALL_IN": 0.172
+        },
+        "CHECK": 1.263,
+        "BET_30": 1.2963,
+        "BET_MED": 1.1779,
+        "ALL_IN": 0.172
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.5025,
+          "BET_30": 0.3424,
+          "BET_MED": 0.1516,
+          "ALL_IN": 0.0035
+        },
+        "evs": {
+          "CHECK": 1.2318,
+          "BET_30": 1.2282,
+          "BET_MED": 1.0593,
+          "ALL_IN": 0.0848
+        },
+        "CHECK": 1.2318,
+        "BET_30": 1.2282,
+        "BET_MED": 1.0593,
+        "ALL_IN": 0.0848
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.2733,
+          "BET_30": 0.3944,
+          "BET_MED": 0.3304,
+          "ALL_IN": 0.0019
+        },
+        "evs": {
+          "CHECK": 0.1227,
+          "BET_30": 0.1365,
+          "BET_MED": 0.1344,
+          "ALL_IN": -1.0769
+        },
+        "CHECK": 0.1227,
+        "BET_30": 0.1365,
+        "BET_MED": 0.1344,
+        "ALL_IN": -1.0769
+      }
+    },
+    "Kh 9c 2s": {
+      "strategy": {
+        "CHECK": 0.2739,
+        "BET_30": 0.3953,
+        "BET_MED": 0.3273,
+        "ALL_IN": 0.0035
+      },
+      "evs": {
+        "CHECK": 0.8648,
+        "BET_30": 0.9351,
+        "BET_MED": 0.8836,
+        "ALL_IN": -0.3611
+      },
+      "CHECK": 0.8648,
+      "BET_30": 0.9351,
+      "BET_MED": 0.8836,
+      "ALL_IN": -0.3611,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.2223,
+          "BET_30": 0.3939,
+          "BET_MED": 0.3809,
+          "ALL_IN": 0.0029
+        },
+        "evs": {
+          "CHECK": 4.4695,
+          "BET_30": 4.6629,
+          "BET_MED": 4.7241,
+          "ALL_IN": 3.7664
+        },
+        "CHECK": 4.4695,
+        "BET_30": 4.6629,
+        "BET_MED": 4.7241,
+        "ALL_IN": 3.7664
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.2051,
+          "BET_30": 0.3731,
+          "BET_MED": 0.4074,
+          "ALL_IN": 0.0144
+        },
+        "evs": {
+          "CHECK": 2.7757,
+          "BET_30": 2.9146,
+          "BET_MED": 2.9758,
+          "ALL_IN": 2.5552
+        },
+        "CHECK": 2.7757,
+        "BET_30": 2.9146,
+        "BET_MED": 2.9758,
+        "ALL_IN": 2.5552
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.2637,
+          "BET_30": 0.4347,
+          "BET_MED": 0.2979,
+          "ALL_IN": 0.0038
+        },
+        "evs": {
+          "CHECK": 0.9716,
+          "BET_30": 1.0016,
+          "BET_MED": 0.9121,
+          "ALL_IN": -0.3237
+        },
+        "CHECK": 0.9716,
+        "BET_30": 1.0016,
+        "BET_MED": 0.9121,
+        "ALL_IN": -0.3237
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.2444,
+          "BET_30": 0.4482,
+          "BET_MED": 0.3001,
+          "ALL_IN": 0.0074
+        },
+        "evs": {
+          "CHECK": 1.1257,
+          "BET_30": 1.0285,
+          "BET_MED": 0.9703,
+          "ALL_IN": -0.0382
+        },
+        "CHECK": 1.1257,
+        "BET_30": 1.0285,
+        "BET_MED": 0.9703,
+        "ALL_IN": -0.0382
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.3049,
+          "BET_30": 0.3633,
+          "BET_MED": 0.3314,
+          "ALL_IN": 0.0004
+        },
+        "evs": {
+          "CHECK": 0.0507,
+          "BET_30": 0.145,
+          "BET_MED": 0.091,
+          "ALL_IN": -1.3988
+        },
+        "CHECK": 0.0507,
+        "BET_30": 0.145,
+        "BET_MED": 0.091,
+        "ALL_IN": -1.3988
+      }
+    },
+    "Qh Jd 8c": {
+      "strategy": {
+        "CHECK": 0.3228,
+        "BET_30": 0.3975,
+        "BET_MED": 0.275,
+        "ALL_IN": 0.0046
+      },
+      "evs": {
+        "CHECK": 0.8885,
+        "BET_30": 0.9069,
+        "BET_MED": 0.8628,
+        "ALL_IN": -0.203
+      },
+      "CHECK": 0.8885,
+      "BET_30": 0.9069,
+      "BET_MED": 0.8628,
+      "ALL_IN": -0.203,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.1993,
+          "BET_30": 0.4413,
+          "BET_MED": 0.3495,
+          "ALL_IN": 0.0099
+        },
+        "evs": {
+          "CHECK": 4.1917,
+          "BET_30": 4.5883,
+          "BET_MED": 4.4876,
+          "ALL_IN": 3.7968
+        },
+        "CHECK": 4.1917,
+        "BET_30": 4.5883,
+        "BET_MED": 4.4876,
+        "ALL_IN": 3.7968
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.2902,
+          "BET_30": 0.3876,
+          "BET_MED": 0.307,
+          "ALL_IN": 0.0152
+        },
+        "evs": {
+          "CHECK": 2.177,
+          "BET_30": 2.4219,
+          "BET_MED": 2.3255,
+          "ALL_IN": 2.0147
+        },
+        "CHECK": 2.177,
+        "BET_30": 2.4219,
+        "BET_MED": 2.3255,
+        "ALL_IN": 2.0147
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.3096,
+          "BET_30": 0.4157,
+          "BET_MED": 0.2702,
+          "ALL_IN": 0.0045
+        },
+        "evs": {
+          "CHECK": 0.9244,
+          "BET_30": 0.9096,
+          "BET_MED": 0.8202,
+          "ALL_IN": -0.1509
+        },
+        "CHECK": 0.9244,
+        "BET_30": 0.9096,
+        "BET_MED": 0.8202,
+        "ALL_IN": -0.1509
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.2285,
+          "BET_30": 0.4454,
+          "BET_MED": 0.3229,
+          "ALL_IN": 0.0033
+        },
+        "evs": {
+          "CHECK": 0.6609,
+          "BET_30": 0.6128,
+          "BET_MED": 0.5952,
+          "ALL_IN": -0.3485
+        },
+        "CHECK": 0.6609,
+        "BET_30": 0.6128,
+        "BET_MED": 0.5952,
+        "ALL_IN": -0.3485
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.4462,
+          "BET_30": 0.3353,
+          "BET_MED": 0.2176,
+          "ALL_IN": 0.0008
+        },
+        "evs": {
+          "CHECK": 0.0144,
+          "BET_30": -0.0228,
+          "BET_MED": -0.0075,
+          "ALL_IN": -1.635
+        },
+        "CHECK": 0.0144,
+        "BET_30": -0.0228,
+        "BET_MED": -0.0075,
+        "ALL_IN": -1.635
+      }
+    },
+    "8s 8d 3c": {
+      "strategy": {
+        "CHECK": 0.1977,
+        "BET_30": 0.4404,
+        "BET_MED": 0.3597,
+        "ALL_IN": 0.0021
+      },
+      "evs": {
+        "CHECK": 0.8203,
+        "BET_30": 0.926,
+        "BET_MED": 0.9044,
+        "ALL_IN": -0.4497
+      },
+      "CHECK": 0.8203,
+      "BET_30": 0.926,
+      "BET_MED": 0.9044,
+      "ALL_IN": -0.4497,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.1763,
+          "BET_30": 0.4338,
+          "BET_MED": 0.3863,
+          "ALL_IN": 0.0036
+        },
+        "evs": {
+          "CHECK": 2.5474,
+          "BET_30": 2.7552,
+          "BET_MED": 2.7235,
+          "ALL_IN": 2.243
+        },
+        "CHECK": 2.5474,
+        "BET_30": 2.7552,
+        "BET_MED": 2.7235,
+        "ALL_IN": 2.243
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.1977,
+          "BET_30": 0.4404,
+          "BET_MED": 0.3597,
+          "ALL_IN": 0.0021
+        },
+        "evs": {
+          "CHECK": 0.8203,
+          "BET_30": 0.926,
+          "BET_MED": 0.9044,
+          "ALL_IN": -0.4497
+        },
+        "CHECK": 0.8203,
+        "BET_30": 0.926,
+        "BET_MED": 0.9044,
+        "ALL_IN": -0.4497
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.2049,
+          "BET_30": 0.4426,
+          "BET_MED": 0.3508,
+          "ALL_IN": 0.0017
+        },
+        "evs": {
+          "CHECK": 0.2394,
+          "BET_30": 0.3107,
+          "BET_MED": 0.2926,
+          "ALL_IN": -1.3555
+        },
+        "CHECK": 0.2394,
+        "BET_30": 0.3107,
+        "BET_MED": 0.2926,
+        "ALL_IN": -1.3555
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.1977,
+          "BET_30": 0.4404,
+          "BET_MED": 0.3597,
+          "ALL_IN": 0.0021
+        },
+        "evs": {
+          "CHECK": 0.8203,
+          "BET_30": 0.926,
+          "BET_MED": 0.9044,
+          "ALL_IN": -0.4497
+        },
+        "CHECK": 0.8203,
+        "BET_30": 0.926,
+        "BET_MED": 0.9044,
+        "ALL_IN": -0.4497
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.1977,
+          "BET_30": 0.4404,
+          "BET_MED": 0.3597,
+          "ALL_IN": 0.0021
+        },
+        "evs": {
+          "CHECK": 0.8203,
+          "BET_30": 0.926,
+          "BET_MED": 0.9044,
+          "ALL_IN": -0.4497
+        },
+        "CHECK": 0.8203,
+        "BET_30": 0.926,
+        "BET_MED": 0.9044,
+        "ALL_IN": -0.4497
+      }
+    },
+    "As 5s 2d": {
+      "strategy": {
+        "CHECK": 0.2816,
+        "BET_30": 0.4311,
+        "BET_MED": 0.2861,
+        "ALL_IN": 0.0011
+      },
+      "evs": {
+        "CHECK": 0.8753,
+        "BET_30": 0.9037,
+        "BET_MED": 0.8645,
+        "ALL_IN": -0.0545
+      },
+      "CHECK": 0.8753,
+      "BET_30": 0.9037,
+      "BET_MED": 0.8645,
+      "ALL_IN": -0.0545,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.1311,
+          "BET_30": 0.4611,
+          "BET_MED": 0.4066,
+          "ALL_IN": 0.0012
+        },
+        "evs": {
+          "CHECK": 4.0661,
+          "BET_30": 4.1478,
+          "BET_MED": 4.1593,
+          "ALL_IN": 3.5615
+        },
+        "CHECK": 4.0661,
+        "BET_30": 4.1478,
+        "BET_MED": 4.1593,
+        "ALL_IN": 3.5615
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.2318,
+          "BET_30": 0.4133,
+          "BET_MED": 0.3501,
+          "ALL_IN": 0.0048
+        },
+        "evs": {
+          "CHECK": 2.4708,
+          "BET_30": 2.4716,
+          "BET_MED": 2.439,
+          "ALL_IN": 2.0891
+        },
+        "CHECK": 2.4708,
+        "BET_30": 2.4716,
+        "BET_MED": 2.439,
+        "ALL_IN": 2.0891
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.2703,
+          "BET_30": 0.4719,
+          "BET_MED": 0.2568,
+          "ALL_IN": 0.001
+        },
+        "evs": {
+          "CHECK": 1.0071,
+          "BET_30": 1.0922,
+          "BET_MED": 1.0345,
+          "ALL_IN": 0.1417
+        },
+        "CHECK": 1.0071,
+        "BET_30": 1.0922,
+        "BET_MED": 1.0345,
+        "ALL_IN": 0.1417
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.2327,
+          "BET_30": 0.4561,
+          "BET_MED": 0.3105,
+          "ALL_IN": 0.0007
+        },
+        "evs": {
+          "CHECK": 1.3607,
+          "BET_30": 1.4301,
+          "BET_MED": 1.4116,
+          "ALL_IN": 0.5429
+        },
+        "CHECK": 1.3607,
+        "BET_30": 1.4301,
+        "BET_MED": 1.4116,
+        "ALL_IN": 0.5429
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.3146,
+          "BET_30": 0.4097,
+          "BET_MED": 0.2751,
+          "ALL_IN": 0.0006
+        },
+        "evs": {
+          "CHECK": 0.1882,
+          "BET_30": 0.1858,
+          "BET_MED": 0.1474,
+          "ALL_IN": -0.9248
+        },
+        "CHECK": 0.1882,
+        "BET_30": 0.1858,
+        "BET_MED": 0.1474,
+        "ALL_IN": -0.9248
+      }
+    },
+    "Td 9d 6c": {
+      "strategy": {
+        "CHECK": 0.3469,
+        "BET_30": 0.4044,
+        "BET_MED": 0.246,
+        "ALL_IN": 0.0028
+      },
+      "evs": {
+        "CHECK": 0.9167,
+        "BET_30": 0.8949,
+        "BET_MED": 0.8436,
+        "ALL_IN": 0.0864
+      },
+      "CHECK": 0.9167,
+      "BET_30": 0.8949,
+      "BET_MED": 0.8436,
+      "ALL_IN": 0.0864,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.0907,
+          "BET_30": 0.5123,
+          "BET_MED": 0.3952,
+          "ALL_IN": 0.0018
+        },
+        "evs": {
+          "CHECK": 3.8365,
+          "BET_30": 3.9927,
+          "BET_MED": 3.9874,
+          "ALL_IN": 3.3882
+        },
+        "CHECK": 3.8365,
+        "BET_30": 3.9927,
+        "BET_MED": 3.9874,
+        "ALL_IN": 3.3882
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.292,
+          "BET_30": 0.3731,
+          "BET_MED": 0.3216,
+          "ALL_IN": 0.0133
+        },
+        "evs": {
+          "CHECK": 1.9,
+          "BET_30": 1.9008,
+          "BET_MED": 1.8471,
+          "ALL_IN": 1.6566
+        },
+        "CHECK": 1.9,
+        "BET_30": 1.9008,
+        "BET_MED": 1.8471,
+        "ALL_IN": 1.6566
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.361,
+          "BET_30": 0.4231,
+          "BET_MED": 0.2145,
+          "ALL_IN": 0.0015
+        },
+        "evs": {
+          "CHECK": 0.8664,
+          "BET_30": 0.8273,
+          "BET_MED": 0.7334,
+          "ALL_IN": -0.1099
+        },
+        "CHECK": 0.8664,
+        "BET_30": 0.8273,
+        "BET_MED": 0.7334,
+        "ALL_IN": -0.1099
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.2819,
+          "BET_30": 0.4541,
+          "BET_MED": 0.2621,
+          "ALL_IN": 0.0019
+        },
+        "evs": {
+          "CHECK": 0.7814,
+          "BET_30": 0.7785,
+          "BET_MED": 0.7582,
+          "ALL_IN": 0.1252
+        },
+        "CHECK": 0.7814,
+        "BET_30": 0.7785,
+        "BET_MED": 0.7582,
+        "ALL_IN": 0.1252
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.4848,
+          "BET_30": 0.3132,
+          "BET_MED": 0.2019,
+          "ALL_IN": 0.0001
+        },
+        "evs": {
+          "CHECK": 0.066,
+          "BET_30": -0.0012,
+          "BET_MED": -0.0376,
+          "ALL_IN": -1.1573
+        },
+        "CHECK": 0.066,
+        "BET_30": -0.0012,
+        "BET_MED": -0.0376,
+        "ALL_IN": -1.1573
+      }
+    },
+    "Ks Js 9c": {
+      "strategy": {
+        "CHECK": 0.3918,
+        "BET_30": 0.3576,
+        "BET_MED": 0.2484,
+        "ALL_IN": 0.0023
+      },
+      "evs": {
+        "CHECK": 0.9224,
+        "BET_30": 0.8912,
+        "BET_MED": 0.8297,
+        "ALL_IN": -0.1767
+      },
+      "CHECK": 0.9224,
+      "BET_30": 0.8912,
+      "BET_MED": 0.8297,
+      "ALL_IN": -0.1767,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.1563,
+          "BET_30": 0.4363,
+          "BET_MED": 0.4049,
+          "ALL_IN": 0.0026
+        },
+        "evs": {
+          "CHECK": 3.9115,
+          "BET_30": 4.0152,
+          "BET_MED": 4.0375,
+          "ALL_IN": 3.517
+        },
+        "CHECK": 3.9115,
+        "BET_30": 4.0152,
+        "BET_MED": 4.0375,
+        "ALL_IN": 3.517
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.3011,
+          "BET_30": 0.3494,
+          "BET_MED": 0.338,
+          "ALL_IN": 0.0115
+        },
+        "evs": {
+          "CHECK": 2.0927,
+          "BET_30": 2.1036,
+          "BET_MED": 2.0627,
+          "ALL_IN": 1.8423
+        },
+        "CHECK": 2.0927,
+        "BET_30": 2.1036,
+        "BET_MED": 2.0627,
+        "ALL_IN": 1.8423
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.3547,
+          "BET_30": 0.3784,
+          "BET_MED": 0.2654,
+          "ALL_IN": 0.0015
+        },
+        "evs": {
+          "CHECK": 0.9695,
+          "BET_30": 0.9216,
+          "BET_MED": 0.8229,
+          "ALL_IN": -0.2107
+        },
+        "CHECK": 0.9695,
+        "BET_30": 0.9216,
+        "BET_MED": 0.8229,
+        "ALL_IN": -0.2107
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.2808,
+          "BET_30": 0.409,
+          "BET_MED": 0.3087,
+          "ALL_IN": 0.0016
+        },
+        "evs": {
+          "CHECK": 0.768,
+          "BET_30": 0.7303,
+          "BET_MED": 0.6981,
+          "ALL_IN": -0.1622
+        },
+        "CHECK": 0.768,
+        "BET_30": 0.7303,
+        "BET_MED": 0.6981,
+        "ALL_IN": -0.1622
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.6305,
+          "BET_30": 0.2683,
+          "BET_MED": 0.101,
+          "ALL_IN": 0.0001
+        },
+        "evs": {
+          "CHECK": 0.0038,
+          "BET_30": -0.0397,
+          "BET_MED": -0.104,
+          "ALL_IN": -1.6342
+        },
+        "CHECK": 0.0038,
+        "BET_30": -0.0397,
+        "BET_MED": -0.104,
+        "ALL_IN": -1.6342
+      }
+    },
+    "7c 7d 7s": {
+      "strategy": {
+        "CHECK": 0.2108,
+        "BET_30": 0.4671,
+        "BET_MED": 0.3187,
+        "ALL_IN": 0.0034
+      },
+      "evs": {
+        "CHECK": 0.8662,
+        "BET_30": 0.9181,
+        "BET_MED": 0.8866,
+        "ALL_IN": -0.02
+      },
+      "CHECK": 0.8662,
+      "BET_30": 0.9181,
+      "BET_MED": 0.8866,
+      "ALL_IN": -0.02,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.2108,
+          "BET_30": 0.4671,
+          "BET_MED": 0.3187,
+          "ALL_IN": 0.0034
+        },
+        "evs": {
+          "CHECK": 0.8662,
+          "BET_30": 0.9181,
+          "BET_MED": 0.8866,
+          "ALL_IN": -0.02
+        },
+        "CHECK": 0.8662,
+        "BET_30": 0.9181,
+        "BET_MED": 0.8866,
+        "ALL_IN": -0.02
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.2108,
+          "BET_30": 0.4671,
+          "BET_MED": 0.3187,
+          "ALL_IN": 0.0034
+        },
+        "evs": {
+          "CHECK": 0.8662,
+          "BET_30": 0.9181,
+          "BET_MED": 0.8866,
+          "ALL_IN": -0.02
+        },
+        "CHECK": 0.8662,
+        "BET_30": 0.9181,
+        "BET_MED": 0.8866,
+        "ALL_IN": -0.02
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.2108,
+          "BET_30": 0.4671,
+          "BET_MED": 0.3187,
+          "ALL_IN": 0.0034
+        },
+        "evs": {
+          "CHECK": 0.8662,
+          "BET_30": 0.9181,
+          "BET_MED": 0.8866,
+          "ALL_IN": -0.02
+        },
+        "CHECK": 0.8662,
+        "BET_30": 0.9181,
+        "BET_MED": 0.8866,
+        "ALL_IN": -0.02
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.2108,
+          "BET_30": 0.4671,
+          "BET_MED": 0.3187,
+          "ALL_IN": 0.0034
+        },
+        "evs": {
+          "CHECK": 0.8662,
+          "BET_30": 0.9181,
+          "BET_MED": 0.8866,
+          "ALL_IN": -0.02
+        },
+        "CHECK": 0.8662,
+        "BET_30": 0.9181,
+        "BET_MED": 0.8866,
+        "ALL_IN": -0.02
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.2108,
+          "BET_30": 0.4671,
+          "BET_MED": 0.3187,
+          "ALL_IN": 0.0034
+        },
+        "evs": {
+          "CHECK": 0.8662,
+          "BET_30": 0.9181,
+          "BET_MED": 0.8866,
+          "ALL_IN": -0.02
+        },
+        "CHECK": 0.8662,
+        "BET_30": 0.9181,
+        "BET_MED": 0.8866,
+        "ALL_IN": -0.02
+      }
+    },
+    "Ac Qc 2s": {
+      "strategy": {
+        "CHECK": 0.3434,
+        "BET_30": 0.4162,
+        "BET_MED": 0.2398,
+        "ALL_IN": 0.0006
+      },
+      "evs": {
+        "CHECK": 0.9117,
+        "BET_30": 0.8968,
+        "BET_MED": 0.8509,
+        "ALL_IN": -0.2022
+      },
+      "CHECK": 0.9117,
+      "BET_30": 0.8968,
+      "BET_MED": 0.8509,
+      "ALL_IN": -0.2022,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.1229,
+          "BET_30": 0.4701,
+          "BET_MED": 0.4066,
+          "ALL_IN": 0.0004
+        },
+        "evs": {
+          "CHECK": 3.9551,
+          "BET_30": 3.979,
+          "BET_MED": 3.9546,
+          "ALL_IN": 3.4607
+        },
+        "CHECK": 3.9551,
+        "BET_30": 3.979,
+        "BET_MED": 3.9546,
+        "ALL_IN": 3.4607
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.2664,
+          "BET_30": 0.4035,
+          "BET_MED": 0.3264,
+          "ALL_IN": 0.0037
+        },
+        "evs": {
+          "CHECK": 2.582,
+          "BET_30": 2.5292,
+          "BET_MED": 2.4718,
+          "ALL_IN": 2.2708
+        },
+        "CHECK": 2.582,
+        "BET_30": 2.5292,
+        "BET_MED": 2.4718,
+        "ALL_IN": 2.2708
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.3562,
+          "BET_30": 0.4525,
+          "BET_MED": 0.1909,
+          "ALL_IN": 0.0004
+        },
+        "evs": {
+          "CHECK": 1.314,
+          "BET_30": 1.3,
+          "BET_MED": 1.2236,
+          "ALL_IN": 0.0844
+        },
+        "CHECK": 1.314,
+        "BET_30": 1.3,
+        "BET_MED": 1.2236,
+        "ALL_IN": 0.0844
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.303,
+          "BET_30": 0.4699,
+          "BET_MED": 0.2266,
+          "ALL_IN": 0.0005
+        },
+        "evs": {
+          "CHECK": 1.4495,
+          "BET_30": 1.4675,
+          "BET_MED": 1.4221,
+          "ALL_IN": 0.4361
+        },
+        "CHECK": 1.4495,
+        "BET_30": 1.4675,
+        "BET_MED": 1.4221,
+        "ALL_IN": 0.4361
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.3703,
+          "BET_30": 0.3905,
+          "BET_MED": 0.239,
+          "ALL_IN": 0.0001
+        },
+        "evs": {
+          "CHECK": 0.1512,
+          "BET_30": 0.1363,
+          "BET_MED": 0.1057,
+          "ALL_IN": -1.1102
+        },
+        "CHECK": 0.1512,
+        "BET_30": 0.1363,
+        "BET_MED": 0.1057,
+        "ALL_IN": -1.1102
+      }
+    },
+    "Kh 8d 4c": {
+      "strategy": {
+        "CHECK": 0.3303,
+        "BET_30": 0.3941,
+        "BET_MED": 0.2747,
+        "ALL_IN": 0.0009
+      },
+      "evs": {
+        "CHECK": 0.8984,
+        "BET_30": 0.9,
+        "BET_MED": 0.8572,
+        "ALL_IN": -0.2042
+      },
+      "CHECK": 0.8984,
+      "BET_30": 0.9,
+      "BET_MED": 0.8572,
+      "ALL_IN": -0.2042,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.1836,
+          "BET_30": 0.4112,
+          "BET_MED": 0.4045,
+          "ALL_IN": 0.0007
+        },
+        "evs": {
+          "CHECK": 4.3339,
+          "BET_30": 4.3681,
+          "BET_MED": 4.3811,
+          "ALL_IN": 3.5952
+        },
+        "CHECK": 4.3339,
+        "BET_30": 4.3681,
+        "BET_MED": 4.3811,
+        "ALL_IN": 3.5952
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.233,
+          "BET_30": 0.3817,
+          "BET_MED": 0.3815,
+          "ALL_IN": 0.0038
+        },
+        "evs": {
+          "CHECK": 2.7686,
+          "BET_30": 2.741,
+          "BET_MED": 2.7076,
+          "ALL_IN": 2.3892
+        },
+        "CHECK": 2.7686,
+        "BET_30": 2.741,
+        "BET_MED": 2.7076,
+        "ALL_IN": 2.3892
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.3124,
+          "BET_30": 0.4393,
+          "BET_MED": 0.2473,
+          "ALL_IN": 0.0009
+        },
+        "evs": {
+          "CHECK": 1.0231,
+          "BET_30": 1.0246,
+          "BET_MED": 0.9578,
+          "ALL_IN": -0.1917
+        },
+        "CHECK": 1.0231,
+        "BET_30": 1.0246,
+        "BET_MED": 0.9578,
+        "ALL_IN": -0.1917
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.1644,
+          "BET_30": 0.4572,
+          "BET_MED": 0.3783,
+          "ALL_IN": 0.0001
+        },
+        "evs": {
+          "CHECK": 0.785,
+          "BET_30": 0.7921,
+          "BET_MED": 0.7732,
+          "ALL_IN": -0.2569
+        },
+        "CHECK": 0.785,
+        "BET_30": 0.7921,
+        "BET_MED": 0.7732,
+        "ALL_IN": -0.2569
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.3935,
+          "BET_30": 0.3526,
+          "BET_MED": 0.2537,
+          "ALL_IN": 0.0002
+        },
+        "evs": {
+          "CHECK": 0.1246,
+          "BET_30": 0.1307,
+          "BET_MED": 0.0996,
+          "ALL_IN": -1.0877
+        },
+        "CHECK": 0.1246,
+        "BET_30": 0.1307,
+        "BET_MED": 0.0996,
+        "ALL_IN": -1.0877
+      }
+    },
+    "Qc 7c 3s": {
+      "strategy": {
+        "CHECK": 0.3583,
+        "BET_30": 0.4031,
+        "BET_MED": 0.2382,
+        "ALL_IN": 0.0005
+      },
+      "evs": {
+        "CHECK": 0.9024,
+        "BET_30": 0.8861,
+        "BET_MED": 0.8468,
+        "ALL_IN": -0.0312
+      },
+      "CHECK": 0.9024,
+      "BET_30": 0.8861,
+      "BET_MED": 0.8468,
+      "ALL_IN": -0.0312,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.1513,
+          "BET_30": 0.4635,
+          "BET_MED": 0.3848,
+          "ALL_IN": 0.0004
+        },
+        "evs": {
+          "CHECK": 4.0255,
+          "BET_30": 4.0579,
+          "BET_MED": 4.0288,
+          "ALL_IN": 3.3739
+        },
+        "CHECK": 4.0255,
+        "BET_30": 4.0579,
+        "BET_MED": 4.0288,
+        "ALL_IN": 3.3739
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.3295,
+          "BET_30": 0.3675,
+          "BET_MED": 0.3006,
+          "ALL_IN": 0.0024
+        },
+        "evs": {
+          "CHECK": 2.4929,
+          "BET_30": 2.4423,
+          "BET_MED": 2.3917,
+          "ALL_IN": 2.1445
+        },
+        "CHECK": 2.4929,
+        "BET_30": 2.4423,
+        "BET_MED": 2.3917,
+        "ALL_IN": 2.1445
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.3168,
+          "BET_30": 0.4741,
+          "BET_MED": 0.2086,
+          "ALL_IN": 0.0004
+        },
+        "evs": {
+          "CHECK": 0.9641,
+          "BET_30": 0.9622,
+          "BET_MED": 0.906,
+          "ALL_IN": -0.0743
+        },
+        "CHECK": 0.9641,
+        "BET_30": 0.9622,
+        "BET_MED": 0.906,
+        "ALL_IN": -0.0743
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.1996,
+          "BET_30": 0.456,
+          "BET_MED": 0.3441,
+          "ALL_IN": 0.0002
+        },
+        "evs": {
+          "CHECK": 1.2763,
+          "BET_30": 1.288,
+          "BET_MED": 1.2746,
+          "ALL_IN": 0.4393
+        },
+        "CHECK": 1.2763,
+        "BET_30": 1.288,
+        "BET_MED": 1.2746,
+        "ALL_IN": 0.4393
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.4453,
+          "BET_30": 0.3378,
+          "BET_MED": 0.2168,
+          "ALL_IN": 0.0001
+        },
+        "evs": {
+          "CHECK": 0.1304,
+          "BET_30": 0.1024,
+          "BET_MED": 0.0749,
+          "ALL_IN": -0.9078
+        },
+        "CHECK": 0.1304,
+        "BET_30": 0.1024,
+        "BET_MED": 0.0749,
+        "ALL_IN": -0.9078
+      }
+    },
+    "Jd 6d 2c": {
+      "strategy": {
+        "CHECK": 0.3506,
+        "BET_30": 0.4065,
+        "BET_MED": 0.2425,
+        "ALL_IN": 0.0004
+      },
+      "evs": {
+        "CHECK": 0.8941,
+        "BET_30": 0.8831,
+        "BET_MED": 0.8502,
+        "ALL_IN": 0.0396
+      },
+      "CHECK": 0.8941,
+      "BET_30": 0.8831,
+      "BET_MED": 0.8502,
+      "ALL_IN": 0.0396,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.1301,
+          "BET_30": 0.4716,
+          "BET_MED": 0.398,
+          "ALL_IN": 0.0003
+        },
+        "evs": {
+          "CHECK": 4.0607,
+          "BET_30": 4.1104,
+          "BET_MED": 4.084,
+          "ALL_IN": 3.3142
+        },
+        "CHECK": 4.0607,
+        "BET_30": 4.1104,
+        "BET_MED": 4.084,
+        "ALL_IN": 3.3142
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.35,
+          "BET_30": 0.3546,
+          "BET_MED": 0.2933,
+          "ALL_IN": 0.0022
+        },
+        "evs": {
+          "CHECK": 2.4334,
+          "BET_30": 2.4083,
+          "BET_MED": 2.364,
+          "ALL_IN": 2.0742
+        },
+        "CHECK": 2.4334,
+        "BET_30": 2.4083,
+        "BET_MED": 2.364,
+        "ALL_IN": 2.0742
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.2944,
+          "BET_30": 0.4944,
+          "BET_MED": 0.2108,
+          "ALL_IN": 0.0003
+        },
+        "evs": {
+          "CHECK": 0.9279,
+          "BET_30": 0.9375,
+          "BET_MED": 0.8878,
+          "ALL_IN": -0.0465
+        },
+        "CHECK": 0.9279,
+        "BET_30": 0.9375,
+        "BET_MED": 0.8878,
+        "ALL_IN": -0.0465
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.2016,
+          "BET_30": 0.4545,
+          "BET_MED": 0.3437,
+          "ALL_IN": 0.0002
+        },
+        "evs": {
+          "CHECK": 1.2639,
+          "BET_30": 1.2783,
+          "BET_MED": 1.2641,
+          "ALL_IN": 0.4599
+        },
+        "CHECK": 1.2639,
+        "BET_30": 1.2783,
+        "BET_MED": 1.2641,
+        "ALL_IN": 0.4599
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.4412,
+          "BET_30": 0.3334,
+          "BET_MED": 0.2253,
+          "ALL_IN": 0.0001
+        },
+        "evs": {
+          "CHECK": 0.1389,
+          "BET_30": 0.1055,
+          "BET_MED": 0.086,
+          "ALL_IN": -0.7696
+        },
+        "CHECK": 0.1389,
+        "BET_30": 0.1055,
+        "BET_MED": 0.086,
+        "ALL_IN": -0.7696
+      }
+    },
+    "Ts 7s 4d": {
+      "strategy": {
+        "CHECK": 0.4291,
+        "BET_30": 0.3666,
+        "BET_MED": 0.2033,
+        "ALL_IN": 0.001
+      },
+      "evs": {
+        "CHECK": 0.9034,
+        "BET_30": 0.8642,
+        "BET_MED": 0.8138,
+        "ALL_IN": 0.2933
+      },
+      "CHECK": 0.9034,
+      "BET_30": 0.8642,
+      "BET_MED": 0.8138,
+      "ALL_IN": 0.2933,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.0504,
+          "BET_30": 0.5588,
+          "BET_MED": 0.3903,
+          "ALL_IN": 0.0005
+        },
+        "evs": {
+          "CHECK": 3.6999,
+          "BET_30": 3.8637,
+          "BET_MED": 3.817,
+          "ALL_IN": 3.1074
+        },
+        "CHECK": 3.6999,
+        "BET_30": 3.8637,
+        "BET_MED": 3.817,
+        "ALL_IN": 3.1074
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.4062,
+          "BET_30": 0.3244,
+          "BET_MED": 0.2637,
+          "ALL_IN": 0.0057
+        },
+        "evs": {
+          "CHECK": 2.1436,
+          "BET_30": 2.0872,
+          "BET_MED": 2.0457,
+          "ALL_IN": 1.8353
+        },
+        "CHECK": 2.1436,
+        "BET_30": 2.0872,
+        "BET_MED": 2.0457,
+        "ALL_IN": 1.8353
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.4018,
+          "BET_30": 0.4319,
+          "BET_MED": 0.1658,
+          "ALL_IN": 0.0005
+        },
+        "evs": {
+          "CHECK": 0.8712,
+          "BET_30": 0.845,
+          "BET_MED": 0.779,
+          "ALL_IN": 0.1597
+        },
+        "CHECK": 0.8712,
+        "BET_30": 0.845,
+        "BET_MED": 0.779,
+        "ALL_IN": 0.1597
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.3449,
+          "BET_30": 0.3947,
+          "BET_MED": 0.26,
+          "ALL_IN": 0.0005
+        },
+        "evs": {
+          "CHECK": 1.11,
+          "BET_30": 1.0996,
+          "BET_MED": 1.0835,
+          "ALL_IN": 0.567
+        },
+        "CHECK": 1.11,
+        "BET_30": 1.0996,
+        "BET_MED": 1.0835,
+        "ALL_IN": 0.567
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.5359,
+          "BET_30": 0.2857,
+          "BET_MED": 0.1782,
+          "ALL_IN": 0.0002
+        },
+        "evs": {
+          "CHECK": 0.1546,
+          "BET_30": 0.0776,
+          "BET_MED": 0.0243,
+          "ALL_IN": -0.4912
+        },
+        "CHECK": 0.1546,
+        "BET_30": 0.0776,
+        "BET_MED": 0.0243,
+        "ALL_IN": -0.4912
+      }
+    },
+    "9c 6c 3s": {
+      "strategy": {
+        "CHECK": 0.4195,
+        "BET_30": 0.3698,
+        "BET_MED": 0.21,
+        "ALL_IN": 0.0007
+      },
+      "evs": {
+        "CHECK": 0.8927,
+        "BET_30": 0.8684,
+        "BET_MED": 0.822,
+        "ALL_IN": 0.2461
+      },
+      "CHECK": 0.8927,
+      "BET_30": 0.8684,
+      "BET_MED": 0.822,
+      "ALL_IN": 0.2461,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.0337,
+          "BET_30": 0.5734,
+          "BET_MED": 0.3924,
+          "ALL_IN": 0.0004
+        },
+        "evs": {
+          "CHECK": 3.7427,
+          "BET_30": 3.9802,
+          "BET_MED": 3.9428,
+          "ALL_IN": 3.1979
+        },
+        "CHECK": 3.7427,
+        "BET_30": 3.9802,
+        "BET_MED": 3.9428,
+        "ALL_IN": 3.1979
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.4198,
+          "BET_30": 0.3116,
+          "BET_MED": 0.2653,
+          "ALL_IN": 0.0033
+        },
+        "evs": {
+          "CHECK": 2.1401,
+          "BET_30": 2.0892,
+          "BET_MED": 2.055,
+          "ALL_IN": 1.8537
+        },
+        "CHECK": 2.1401,
+        "BET_30": 2.0892,
+        "BET_MED": 2.055,
+        "ALL_IN": 1.8537
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.3969,
+          "BET_30": 0.4302,
+          "BET_MED": 0.1724,
+          "ALL_IN": 0.0005
+        },
+        "evs": {
+          "CHECK": 0.8298,
+          "BET_30": 0.8142,
+          "BET_MED": 0.7474,
+          "ALL_IN": 0.054
+        },
+        "CHECK": 0.8298,
+        "BET_30": 0.8142,
+        "BET_MED": 0.7474,
+        "ALL_IN": 0.054
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.3251,
+          "BET_30": 0.4057,
+          "BET_MED": 0.2688,
+          "ALL_IN": 0.0004
+        },
+        "evs": {
+          "CHECK": 1.0789,
+          "BET_30": 1.0762,
+          "BET_MED": 1.0628,
+          "ALL_IN": 0.46
+        },
+        "CHECK": 1.0789,
+        "BET_30": 1.0762,
+        "BET_MED": 1.0628,
+        "ALL_IN": 0.46
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.5181,
+          "BET_30": 0.2971,
+          "BET_MED": 0.1847,
+          "ALL_IN": 0.0002
+        },
+        "evs": {
+          "CHECK": 0.1574,
+          "BET_30": 0.1014,
+          "BET_MED": 0.0554,
+          "ALL_IN": -0.5145
+        },
+        "CHECK": 0.1574,
+        "BET_30": 0.1014,
+        "BET_MED": 0.0554,
+        "ALL_IN": -0.5145
+      }
+    },
+    "8h 5d 2c": {
+      "strategy": {
+        "CHECK": 0.3515,
+        "BET_30": 0.3706,
+        "BET_MED": 0.2752,
+        "ALL_IN": 0.0027
+      },
+      "evs": {
+        "CHECK": 0.8771,
+        "BET_30": 0.8902,
+        "BET_MED": 0.8586,
+        "ALL_IN": 0.199
+      },
+      "CHECK": 0.8771,
+      "BET_30": 0.8902,
+      "BET_MED": 0.8586,
+      "ALL_IN": 0.199,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.0704,
+          "BET_30": 0.5455,
+          "BET_MED": 0.3824,
+          "ALL_IN": 0.0018
+        },
+        "evs": {
+          "CHECK": 4.1503,
+          "BET_30": 4.538,
+          "BET_MED": 4.5483,
+          "ALL_IN": 3.4018
+        },
+        "CHECK": 4.1503,
+        "BET_30": 4.538,
+        "BET_MED": 4.5483,
+        "ALL_IN": 3.4018
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.2835,
+          "BET_30": 0.3456,
+          "BET_MED": 0.3602,
+          "ALL_IN": 0.0108
+        },
+        "evs": {
+          "CHECK": 2.3947,
+          "BET_30": 2.3379,
+          "BET_MED": 2.3545,
+          "ALL_IN": 2.1229
+        },
+        "CHECK": 2.3947,
+        "BET_30": 2.3379,
+        "BET_MED": 2.3545,
+        "ALL_IN": 2.1229
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.3392,
+          "BET_30": 0.4096,
+          "BET_MED": 0.2491,
+          "ALL_IN": 0.002
+        },
+        "evs": {
+          "CHECK": 0.8254,
+          "BET_30": 0.8415,
+          "BET_MED": 0.7709,
+          "ALL_IN": -0.0368
+        },
+        "CHECK": 0.8254,
+        "BET_30": 0.8415,
+        "BET_MED": 0.7709,
+        "ALL_IN": -0.0368
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.3465,
+          "BET_30": 0.3869,
+          "BET_MED": 0.2632,
+          "ALL_IN": 0.0033
+        },
+        "evs": {
+          "CHECK": 0.894,
+          "BET_30": 0.9414,
+          "BET_MED": 0.9244,
+          "ALL_IN": 0.3456
+        },
+        "CHECK": 0.894,
+        "BET_30": 0.9414,
+        "BET_MED": 0.9244,
+        "ALL_IN": 0.3456
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.4083,
+          "BET_30": 0.3271,
+          "BET_MED": 0.264,
+          "ALL_IN": 0.0006
+        },
+        "evs": {
+          "CHECK": 0.1543,
+          "BET_30": 0.1509,
+          "BET_MED": 0.1308,
+          "ALL_IN": -0.5244
+        },
+        "CHECK": 0.1543,
+        "BET_30": 0.1509,
+        "BET_MED": 0.1308,
+        "ALL_IN": -0.5244
+      }
+    },
+    "7d 4d 2c": {
+      "strategy": {
+        "CHECK": 0.4168,
+        "BET_30": 0.3561,
+        "BET_MED": 0.2264,
+        "ALL_IN": 0.0007
+      },
+      "evs": {
+        "CHECK": 0.885,
+        "BET_30": 0.8749,
+        "BET_MED": 0.8457,
+        "ALL_IN": 0.2857
+      },
+      "CHECK": 0.885,
+      "BET_30": 0.8749,
+      "BET_MED": 0.8457,
+      "ALL_IN": 0.2857,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.0226,
+          "BET_30": 0.5551,
+          "BET_MED": 0.4219,
+          "ALL_IN": 0.0004
+        },
+        "evs": {
+          "CHECK": 3.8794,
+          "BET_30": 4.0406,
+          "BET_MED": 4.0279,
+          "ALL_IN": 3.1865
+        },
+        "CHECK": 3.8794,
+        "BET_30": 4.0406,
+        "BET_MED": 4.0279,
+        "ALL_IN": 3.1865
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.4258,
+          "BET_30": 0.2941,
+          "BET_MED": 0.2768,
+          "ALL_IN": 0.0033
+        },
+        "evs": {
+          "CHECK": 2.0825,
+          "BET_30": 2.0567,
+          "BET_MED": 2.0354,
+          "ALL_IN": 1.7679
+        },
+        "CHECK": 2.0825,
+        "BET_30": 2.0567,
+        "BET_MED": 2.0354,
+        "ALL_IN": 1.7679
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.3872,
+          "BET_30": 0.4222,
+          "BET_MED": 0.1901,
+          "ALL_IN": 0.0005
+        },
+        "evs": {
+          "CHECK": 0.8583,
+          "BET_30": 0.8556,
+          "BET_MED": 0.8074,
+          "ALL_IN": 0.138
+        },
+        "CHECK": 0.8583,
+        "BET_30": 0.8556,
+        "BET_MED": 0.8074,
+        "ALL_IN": 0.138
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.3031,
+          "BET_30": 0.4061,
+          "BET_MED": 0.2903,
+          "ALL_IN": 0.0004
+        },
+        "evs": {
+          "CHECK": 1.3338,
+          "BET_30": 1.3449,
+          "BET_MED": 1.3345,
+          "ALL_IN": 0.7083
+        },
+        "CHECK": 1.3338,
+        "BET_30": 1.3449,
+        "BET_MED": 1.3345,
+        "ALL_IN": 0.7083
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.4984,
+          "BET_30": 0.2936,
+          "BET_MED": 0.2079,
+          "ALL_IN": 0.0001
+        },
+        "evs": {
+          "CHECK": 0.1426,
+          "BET_30": 0.1131,
+          "BET_MED": 0.0911,
+          "ALL_IN": -0.4395
+        },
+        "CHECK": 0.1426,
+        "BET_30": 0.1131,
+        "BET_MED": 0.0911,
+        "ALL_IN": -0.4395
+      }
+    },
+    "6c 4c 2s": {
+      "strategy": {
+        "CHECK": 0.4068,
+        "BET_30": 0.3601,
+        "BET_MED": 0.2322,
+        "ALL_IN": 0.0008
+      },
+      "evs": {
+        "CHECK": 0.8761,
+        "BET_30": 0.874,
+        "BET_MED": 0.8476,
+        "ALL_IN": 0.223
+      },
+      "CHECK": 0.8761,
+      "BET_30": 0.874,
+      "BET_MED": 0.8476,
+      "ALL_IN": 0.223,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.0875,
+          "BET_30": 0.5023,
+          "BET_MED": 0.4099,
+          "ALL_IN": 0.0004
+        },
+        "evs": {
+          "CHECK": 4.0302,
+          "BET_30": 4.0943,
+          "BET_MED": 4.0915,
+          "ALL_IN": 3.4283
+        },
+        "CHECK": 4.0302,
+        "BET_30": 4.0943,
+        "BET_MED": 4.0915,
+        "ALL_IN": 3.4283
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.4341,
+          "BET_30": 0.2878,
+          "BET_MED": 0.274,
+          "ALL_IN": 0.0041
+        },
+        "evs": {
+          "CHECK": 1.7781,
+          "BET_30": 1.7856,
+          "BET_MED": 1.7638,
+          "ALL_IN": 1.5228
+        },
+        "CHECK": 1.7781,
+        "BET_30": 1.7856,
+        "BET_MED": 1.7638,
+        "ALL_IN": 1.5228
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.357,
+          "BET_30": 0.4501,
+          "BET_MED": 0.1925,
+          "ALL_IN": 0.0003
+        },
+        "evs": {
+          "CHECK": 0.7627,
+          "BET_30": 0.7826,
+          "BET_MED": 0.7401,
+          "ALL_IN": -0.049
+        },
+        "CHECK": 0.7627,
+        "BET_30": 0.7826,
+        "BET_MED": 0.7401,
+        "ALL_IN": -0.049
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.3123,
+          "BET_30": 0.399,
+          "BET_MED": 0.2883,
+          "ALL_IN": 0.0004
+        },
+        "evs": {
+          "CHECK": 0.7227,
+          "BET_30": 0.7301,
+          "BET_MED": 0.7156,
+          "ALL_IN": 0.1597
+        },
+        "CHECK": 0.7227,
+        "BET_30": 0.7301,
+        "BET_MED": 0.7156,
+        "ALL_IN": 0.1597
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.6004,
+          "BET_30": 0.23,
+          "BET_MED": 0.1695,
+          "ALL_IN": 0.0001
+        },
+        "evs": {
+          "CHECK": 0.112,
+          "BET_30": 0.0575,
+          "BET_MED": 0.0318,
+          "ALL_IN": -0.6735
+        },
+        "CHECK": 0.112,
+        "BET_30": 0.0575,
+        "BET_MED": 0.0318,
+        "ALL_IN": -0.6735
+      }
+    },
+    "5d 3d 2c": {
+      "strategy": {
+        "CHECK": 0.3751,
+        "BET_30": 0.4002,
+        "BET_MED": 0.2238,
+        "ALL_IN": 0.001
+      },
+      "evs": {
+        "CHECK": 0.8824,
+        "BET_30": 0.8784,
+        "BET_MED": 0.8401,
+        "ALL_IN": 0.2823
+      },
+      "CHECK": 0.8824,
+      "BET_30": 0.8784,
+      "BET_MED": 0.8401,
+      "ALL_IN": 0.2823,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.1769,
+          "BET_30": 0.4734,
+          "BET_MED": 0.3492,
+          "ALL_IN": 0.0005
+        },
+        "evs": {
+          "CHECK": 3.9167,
+          "BET_30": 3.9237,
+          "BET_MED": 3.8817,
+          "ALL_IN": 3.2546
+        },
+        "CHECK": 3.9167,
+        "BET_30": 3.9237,
+        "BET_MED": 3.8817,
+        "ALL_IN": 3.2546
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.3401,
+          "BET_30": 0.3671,
+          "BET_MED": 0.2885,
+          "ALL_IN": 0.0043
+        },
+        "evs": {
+          "CHECK": 1.488,
+          "BET_30": 1.5092,
+          "BET_MED": 1.4831,
+          "ALL_IN": 1.1865
+        },
+        "CHECK": 1.488,
+        "BET_30": 1.5092,
+        "BET_MED": 1.4831,
+        "ALL_IN": 1.1865
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.3072,
+          "BET_30": 0.5107,
+          "BET_MED": 0.1816,
+          "ALL_IN": 0.0005
+        },
+        "evs": {
+          "CHECK": 0.7146,
+          "BET_30": 0.7304,
+          "BET_MED": 0.6806,
+          "ALL_IN": 0.1563
+        },
+        "CHECK": 0.7146,
+        "BET_30": 0.7304,
+        "BET_MED": 0.6806,
+        "ALL_IN": 0.1563
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.2634,
+          "BET_30": 0.4429,
+          "BET_MED": 0.2931,
+          "ALL_IN": 0.0006
+        },
+        "evs": {
+          "CHECK": 0.8608,
+          "BET_30": 0.8745,
+          "BET_MED": 0.8547,
+          "ALL_IN": 0.3821
+        },
+        "CHECK": 0.8608,
+        "BET_30": 0.8745,
+        "BET_MED": 0.8547,
+        "ALL_IN": 0.3821
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.6077,
+          "BET_30": 0.2433,
+          "BET_MED": 0.1489,
+          "ALL_IN": 0.0
+        },
+        "evs": {
+          "CHECK": 0.0981,
+          "BET_30": 0.0406,
+          "BET_MED": -0.0062,
+          "ALL_IN": -0.8032
+        },
+        "CHECK": 0.0981,
+        "BET_30": 0.0406,
+        "BET_MED": -0.0062,
+        "ALL_IN": -0.8032
+      }
+    },
+    "As Ah 8d": {
+      "strategy": {
+        "CHECK": 0.2728,
+        "BET_30": 0.4105,
+        "BET_MED": 0.3149,
+        "ALL_IN": 0.0018
+      },
+      "evs": {
+        "CHECK": 0.8705,
+        "BET_30": 0.9136,
+        "BET_MED": 0.8698,
+        "ALL_IN": -0.514
+      },
+      "CHECK": 0.8705,
+      "BET_30": 0.9136,
+      "BET_MED": 0.8698,
+      "ALL_IN": -0.514,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.2535,
+          "BET_30": 0.4193,
+          "BET_MED": 0.3241,
+          "ALL_IN": 0.003
+        },
+        "evs": {
+          "CHECK": 2.6567,
+          "BET_30": 2.7109,
+          "BET_MED": 2.6449,
+          "ALL_IN": 1.9842
+        },
+        "CHECK": 2.6567,
+        "BET_30": 2.7109,
+        "BET_MED": 2.6449,
+        "ALL_IN": 1.9842
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.2728,
+          "BET_30": 0.4105,
+          "BET_MED": 0.3149,
+          "ALL_IN": 0.0018
+        },
+        "evs": {
+          "CHECK": 0.8705,
+          "BET_30": 0.9136,
+          "BET_MED": 0.8698,
+          "ALL_IN": -0.514
+        },
+        "CHECK": 0.8705,
+        "BET_30": 0.9136,
+        "BET_MED": 0.8698,
+        "ALL_IN": -0.514
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.2793,
+          "BET_30": 0.4076,
+          "BET_MED": 0.3118,
+          "ALL_IN": 0.0013
+        },
+        "evs": {
+          "CHECK": 0.2697,
+          "BET_30": 0.3091,
+          "BET_MED": 0.2728,
+          "ALL_IN": -1.3543
+        },
+        "CHECK": 0.2697,
+        "BET_30": 0.3091,
+        "BET_MED": 0.2728,
+        "ALL_IN": -1.3543
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.2728,
+          "BET_30": 0.4105,
+          "BET_MED": 0.3149,
+          "ALL_IN": 0.0018
+        },
+        "evs": {
+          "CHECK": 0.8705,
+          "BET_30": 0.9136,
+          "BET_MED": 0.8698,
+          "ALL_IN": -0.514
+        },
+        "CHECK": 0.8705,
+        "BET_30": 0.9136,
+        "BET_MED": 0.8698,
+        "ALL_IN": -0.514
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.2728,
+          "BET_30": 0.4105,
+          "BET_MED": 0.3149,
+          "ALL_IN": 0.0018
+        },
+        "evs": {
+          "CHECK": 0.8705,
+          "BET_30": 0.9136,
+          "BET_MED": 0.8698,
+          "ALL_IN": -0.514
+        },
+        "CHECK": 0.8705,
+        "BET_30": 0.9136,
+        "BET_MED": 0.8698,
+        "ALL_IN": -0.514
+      }
+    },
+    "Ks Kh 7d": {
+      "strategy": {
+        "CHECK": 0.2737,
+        "BET_30": 0.4219,
+        "BET_MED": 0.3034,
+        "ALL_IN": 0.001
+      },
+      "evs": {
+        "CHECK": 0.8775,
+        "BET_30": 0.899,
+        "BET_MED": 0.8592,
+        "ALL_IN": -0.497
+      },
+      "CHECK": 0.8775,
+      "BET_30": 0.899,
+      "BET_MED": 0.8592,
+      "ALL_IN": -0.497,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.24,
+          "BET_30": 0.4314,
+          "BET_MED": 0.327,
+          "ALL_IN": 0.0017
+        },
+        "evs": {
+          "CHECK": 2.6388,
+          "BET_30": 2.6663,
+          "BET_MED": 2.6102,
+          "ALL_IN": 1.9844
+        },
+        "CHECK": 2.6388,
+        "BET_30": 2.6663,
+        "BET_MED": 2.6102,
+        "ALL_IN": 1.9844
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.2737,
+          "BET_30": 0.4219,
+          "BET_MED": 0.3034,
+          "ALL_IN": 0.001
+        },
+        "evs": {
+          "CHECK": 0.8775,
+          "BET_30": 0.899,
+          "BET_MED": 0.8592,
+          "ALL_IN": -0.497
+        },
+        "CHECK": 0.8775,
+        "BET_30": 0.899,
+        "BET_MED": 0.8592,
+        "ALL_IN": -0.497
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.2851,
+          "BET_30": 0.4188,
+          "BET_MED": 0.2954,
+          "ALL_IN": 0.0008
+        },
+        "evs": {
+          "CHECK": 0.2851,
+          "BET_30": 0.3045,
+          "BET_MED": 0.2702,
+          "ALL_IN": -1.3317
+        },
+        "CHECK": 0.2851,
+        "BET_30": 0.3045,
+        "BET_MED": 0.2702,
+        "ALL_IN": -1.3317
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.2737,
+          "BET_30": 0.4219,
+          "BET_MED": 0.3034,
+          "ALL_IN": 0.001
+        },
+        "evs": {
+          "CHECK": 0.8775,
+          "BET_30": 0.899,
+          "BET_MED": 0.8592,
+          "ALL_IN": -0.497
+        },
+        "CHECK": 0.8775,
+        "BET_30": 0.899,
+        "BET_MED": 0.8592,
+        "ALL_IN": -0.497
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.2737,
+          "BET_30": 0.4219,
+          "BET_MED": 0.3034,
+          "ALL_IN": 0.001
+        },
+        "evs": {
+          "CHECK": 0.8775,
+          "BET_30": 0.899,
+          "BET_MED": 0.8592,
+          "ALL_IN": -0.497
+        },
+        "CHECK": 0.8775,
+        "BET_30": 0.899,
+        "BET_MED": 0.8592,
+        "ALL_IN": -0.497
+      }
+    },
+    "Qs Qh 6d": {
+      "strategy": {
+        "CHECK": 0.2538,
+        "BET_30": 0.421,
+        "BET_MED": 0.324,
+        "ALL_IN": 0.0012
+      },
+      "evs": {
+        "CHECK": 0.8626,
+        "BET_30": 0.9004,
+        "BET_MED": 0.8631,
+        "ALL_IN": -0.5169
+      },
+      "CHECK": 0.8626,
+      "BET_30": 0.9004,
+      "BET_MED": 0.8631,
+      "ALL_IN": -0.5169,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.2203,
+          "BET_30": 0.4226,
+          "BET_MED": 0.3551,
+          "ALL_IN": 0.002
+        },
+        "evs": {
+          "CHECK": 2.6094,
+          "BET_30": 2.6609,
+          "BET_MED": 2.6189,
+          "ALL_IN": 2.0719
+        },
+        "CHECK": 2.6094,
+        "BET_30": 2.6609,
+        "BET_MED": 2.6189,
+        "ALL_IN": 2.0719
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.2538,
+          "BET_30": 0.421,
+          "BET_MED": 0.324,
+          "ALL_IN": 0.0012
+        },
+        "evs": {
+          "CHECK": 0.8626,
+          "BET_30": 0.9004,
+          "BET_MED": 0.8631,
+          "ALL_IN": -0.5169
+        },
+        "CHECK": 0.8626,
+        "BET_30": 0.9004,
+        "BET_MED": 0.8631,
+        "ALL_IN": -0.5169
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.2651,
+          "BET_30": 0.4204,
+          "BET_MED": 0.3136,
+          "ALL_IN": 0.0009
+        },
+        "evs": {
+          "CHECK": 0.275,
+          "BET_30": 0.3083,
+          "BET_MED": 0.2725,
+          "ALL_IN": -1.3876
+        },
+        "CHECK": 0.275,
+        "BET_30": 0.3083,
+        "BET_MED": 0.2725,
+        "ALL_IN": -1.3876
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.2538,
+          "BET_30": 0.421,
+          "BET_MED": 0.324,
+          "ALL_IN": 0.0012
+        },
+        "evs": {
+          "CHECK": 0.8626,
+          "BET_30": 0.9004,
+          "BET_MED": 0.8631,
+          "ALL_IN": -0.5169
+        },
+        "CHECK": 0.8626,
+        "BET_30": 0.9004,
+        "BET_MED": 0.8631,
+        "ALL_IN": -0.5169
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.2538,
+          "BET_30": 0.421,
+          "BET_MED": 0.324,
+          "ALL_IN": 0.0012
+        },
+        "evs": {
+          "CHECK": 0.8626,
+          "BET_30": 0.9004,
+          "BET_MED": 0.8631,
+          "ALL_IN": -0.5169
+        },
+        "CHECK": 0.8626,
+        "BET_30": 0.9004,
+        "BET_MED": 0.8631,
+        "ALL_IN": -0.5169
+      }
+    },
+    "Js Jh 5d": {
+      "strategy": {
+        "CHECK": 0.2361,
+        "BET_30": 0.425,
+        "BET_MED": 0.3375,
+        "ALL_IN": 0.0014
+      },
+      "evs": {
+        "CHECK": 0.8604,
+        "BET_30": 0.906,
+        "BET_MED": 0.8723,
+        "ALL_IN": -0.5006
+      },
+      "CHECK": 0.8604,
+      "BET_30": 0.906,
+      "BET_MED": 0.8723,
+      "ALL_IN": -0.5006,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.2004,
+          "BET_30": 0.4317,
+          "BET_MED": 0.3656,
+          "ALL_IN": 0.0023
+        },
+        "evs": {
+          "CHECK": 2.6058,
+          "BET_30": 2.6876,
+          "BET_MED": 2.6466,
+          "ALL_IN": 2.1262
+        },
+        "CHECK": 2.6058,
+        "BET_30": 2.6876,
+        "BET_MED": 2.6466,
+        "ALL_IN": 2.1262
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.2361,
+          "BET_30": 0.425,
+          "BET_MED": 0.3375,
+          "ALL_IN": 0.0014
+        },
+        "evs": {
+          "CHECK": 0.8604,
+          "BET_30": 0.906,
+          "BET_MED": 0.8723,
+          "ALL_IN": -0.5006
+        },
+        "CHECK": 0.8604,
+        "BET_30": 0.906,
+        "BET_MED": 0.8723,
+        "ALL_IN": -0.5006
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.2481,
+          "BET_30": 0.4228,
+          "BET_MED": 0.3281,
+          "ALL_IN": 0.0011
+        },
+        "evs": {
+          "CHECK": 0.2732,
+          "BET_30": 0.3067,
+          "BET_MED": 0.2755,
+          "ALL_IN": -1.3841
+        },
+        "CHECK": 0.2732,
+        "BET_30": 0.3067,
+        "BET_MED": 0.2755,
+        "ALL_IN": -1.3841
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.2361,
+          "BET_30": 0.425,
+          "BET_MED": 0.3375,
+          "ALL_IN": 0.0014
+        },
+        "evs": {
+          "CHECK": 0.8604,
+          "BET_30": 0.906,
+          "BET_MED": 0.8723,
+          "ALL_IN": -0.5006
+        },
+        "CHECK": 0.8604,
+        "BET_30": 0.906,
+        "BET_MED": 0.8723,
+        "ALL_IN": -0.5006
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.2361,
+          "BET_30": 0.425,
+          "BET_MED": 0.3375,
+          "ALL_IN": 0.0014
+        },
+        "evs": {
+          "CHECK": 0.8604,
+          "BET_30": 0.906,
+          "BET_MED": 0.8723,
+          "ALL_IN": -0.5006
+        },
+        "CHECK": 0.8604,
+        "BET_30": 0.906,
+        "BET_MED": 0.8723,
+        "ALL_IN": -0.5006
+      }
+    },
+    "Ts Th 4d": {
+      "strategy": {
+        "CHECK": 0.2337,
+        "BET_30": 0.4283,
+        "BET_MED": 0.3368,
+        "ALL_IN": 0.0012
+      },
+      "evs": {
+        "CHECK": 0.8513,
+        "BET_30": 0.903,
+        "BET_MED": 0.8738,
+        "ALL_IN": -0.459
+      },
+      "CHECK": 0.8513,
+      "BET_30": 0.903,
+      "BET_MED": 0.8738,
+      "ALL_IN": -0.459,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.1857,
+          "BET_30": 0.4374,
+          "BET_MED": 0.3748,
+          "ALL_IN": 0.0021
+        },
+        "evs": {
+          "CHECK": 2.578,
+          "BET_30": 2.6637,
+          "BET_MED": 2.6353,
+          "ALL_IN": 2.1485
+        },
+        "CHECK": 2.578,
+        "BET_30": 2.6637,
+        "BET_MED": 2.6353,
+        "ALL_IN": 2.1485
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.2337,
+          "BET_30": 0.4283,
+          "BET_MED": 0.3368,
+          "ALL_IN": 0.0012
+        },
+        "evs": {
+          "CHECK": 0.8513,
+          "BET_30": 0.903,
+          "BET_MED": 0.8738,
+          "ALL_IN": -0.459
+        },
+        "CHECK": 0.8513,
+        "BET_30": 0.903,
+        "BET_MED": 0.8738,
+        "ALL_IN": -0.459
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.2498,
+          "BET_30": 0.4253,
+          "BET_MED": 0.324,
+          "ALL_IN": 0.0009
+        },
+        "evs": {
+          "CHECK": 0.2705,
+          "BET_30": 0.3107,
+          "BET_MED": 0.2813,
+          "ALL_IN": -1.336
+        },
+        "CHECK": 0.2705,
+        "BET_30": 0.3107,
+        "BET_MED": 0.2813,
+        "ALL_IN": -1.336
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.2337,
+          "BET_30": 0.4283,
+          "BET_MED": 0.3368,
+          "ALL_IN": 0.0012
+        },
+        "evs": {
+          "CHECK": 0.8513,
+          "BET_30": 0.903,
+          "BET_MED": 0.8738,
+          "ALL_IN": -0.459
+        },
+        "CHECK": 0.8513,
+        "BET_30": 0.903,
+        "BET_MED": 0.8738,
+        "ALL_IN": -0.459
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.2337,
+          "BET_30": 0.4283,
+          "BET_MED": 0.3368,
+          "ALL_IN": 0.0012
+        },
+        "evs": {
+          "CHECK": 0.8513,
+          "BET_30": 0.903,
+          "BET_MED": 0.8738,
+          "ALL_IN": -0.459
+        },
+        "CHECK": 0.8513,
+        "BET_30": 0.903,
+        "BET_MED": 0.8738,
+        "ALL_IN": -0.459
+      }
+    },
+    "9s 9h 3d": {
+      "strategy": {
+        "CHECK": 0.1995,
+        "BET_30": 0.4431,
+        "BET_MED": 0.3557,
+        "ALL_IN": 0.0017
+      },
+      "evs": {
+        "CHECK": 0.8324,
+        "BET_30": 0.9172,
+        "BET_MED": 0.8923,
+        "ALL_IN": -0.4293
+      },
+      "CHECK": 0.8324,
+      "BET_30": 0.9172,
+      "BET_MED": 0.8923,
+      "ALL_IN": -0.4293,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.1616,
+          "BET_30": 0.4442,
+          "BET_MED": 0.3914,
+          "ALL_IN": 0.0029
+        },
+        "evs": {
+          "CHECK": 2.5669,
+          "BET_30": 2.7169,
+          "BET_MED": 2.6838,
+          "ALL_IN": 2.2143
+        },
+        "CHECK": 2.5669,
+        "BET_30": 2.7169,
+        "BET_MED": 2.6838,
+        "ALL_IN": 2.2143
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.1995,
+          "BET_30": 0.4431,
+          "BET_MED": 0.3557,
+          "ALL_IN": 0.0017
+        },
+        "evs": {
+          "CHECK": 0.8324,
+          "BET_30": 0.9172,
+          "BET_MED": 0.8923,
+          "ALL_IN": -0.4293
+        },
+        "CHECK": 0.8324,
+        "BET_30": 0.9172,
+        "BET_MED": 0.8923,
+        "ALL_IN": -0.4293
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.2123,
+          "BET_30": 0.4427,
+          "BET_MED": 0.3436,
+          "ALL_IN": 0.0013
+        },
+        "evs": {
+          "CHECK": 0.249,
+          "BET_30": 0.3118,
+          "BET_MED": 0.2897,
+          "ALL_IN": -1.3185
+        },
+        "CHECK": 0.249,
+        "BET_30": 0.3118,
+        "BET_MED": 0.2897,
+        "ALL_IN": -1.3185
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.1995,
+          "BET_30": 0.4431,
+          "BET_MED": 0.3557,
+          "ALL_IN": 0.0017
+        },
+        "evs": {
+          "CHECK": 0.8324,
+          "BET_30": 0.9172,
+          "BET_MED": 0.8923,
+          "ALL_IN": -0.4293
+        },
+        "CHECK": 0.8324,
+        "BET_30": 0.9172,
+        "BET_MED": 0.8923,
+        "ALL_IN": -0.4293
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.1995,
+          "BET_30": 0.4431,
+          "BET_MED": 0.3557,
+          "ALL_IN": 0.0017
+        },
+        "evs": {
+          "CHECK": 0.8324,
+          "BET_30": 0.9172,
+          "BET_MED": 0.8923,
+          "ALL_IN": -0.4293
+        },
+        "CHECK": 0.8324,
+        "BET_30": 0.9172,
+        "BET_MED": 0.8923,
+        "ALL_IN": -0.4293
+      }
+    },
+    "7s 7h 2d": {
+      "strategy": {
+        "CHECK": 0.2145,
+        "BET_30": 0.4318,
+        "BET_MED": 0.3523,
+        "ALL_IN": 0.0013
+      },
+      "evs": {
+        "CHECK": 0.8299,
+        "BET_30": 0.9154,
+        "BET_MED": 0.8925,
+        "ALL_IN": -0.3606
+      },
+      "CHECK": 0.8299,
+      "BET_30": 0.9154,
+      "BET_MED": 0.8925,
+      "ALL_IN": -0.3606,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.1564,
+          "BET_30": 0.4414,
+          "BET_MED": 0.4,
+          "ALL_IN": 0.0022
+        },
+        "evs": {
+          "CHECK": 2.5701,
+          "BET_30": 2.7112,
+          "BET_MED": 2.6887,
+          "ALL_IN": 2.1841
+        },
+        "CHECK": 2.5701,
+        "BET_30": 2.7112,
+        "BET_MED": 2.6887,
+        "ALL_IN": 2.1841
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.2145,
+          "BET_30": 0.4318,
+          "BET_MED": 0.3523,
+          "ALL_IN": 0.0013
+        },
+        "evs": {
+          "CHECK": 0.8299,
+          "BET_30": 0.9154,
+          "BET_MED": 0.8925,
+          "ALL_IN": -0.3606
+        },
+        "CHECK": 0.8299,
+        "BET_30": 0.9154,
+        "BET_MED": 0.8925,
+        "ALL_IN": -0.3606
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.2341,
+          "BET_30": 0.4286,
+          "BET_MED": 0.3363,
+          "ALL_IN": 0.001
+        },
+        "evs": {
+          "CHECK": 0.2445,
+          "BET_30": 0.3114,
+          "BET_MED": 0.2883,
+          "ALL_IN": -1.2165
+        },
+        "CHECK": 0.2445,
+        "BET_30": 0.3114,
+        "BET_MED": 0.2883,
+        "ALL_IN": -1.2165
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.2145,
+          "BET_30": 0.4318,
+          "BET_MED": 0.3523,
+          "ALL_IN": 0.0013
+        },
+        "evs": {
+          "CHECK": 0.8299,
+          "BET_30": 0.9154,
+          "BET_MED": 0.8925,
+          "ALL_IN": -0.3606
+        },
+        "CHECK": 0.8299,
+        "BET_30": 0.9154,
+        "BET_MED": 0.8925,
+        "ALL_IN": -0.3606
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.2145,
+          "BET_30": 0.4318,
+          "BET_MED": 0.3523,
+          "ALL_IN": 0.0013
+        },
+        "evs": {
+          "CHECK": 0.8299,
+          "BET_30": 0.9154,
+          "BET_MED": 0.8925,
+          "ALL_IN": -0.3606
+        },
+        "CHECK": 0.8299,
+        "BET_30": 0.9154,
+        "BET_MED": 0.8925,
+        "ALL_IN": -0.3606
+      }
+    },
+    "4s 4h 2d": {
+      "strategy": {
+        "CHECK": 0.2209,
+        "BET_30": 0.4492,
+        "BET_MED": 0.3289,
+        "ALL_IN": 0.0009
+      },
+      "evs": {
+        "CHECK": 0.8298,
+        "BET_30": 0.9079,
+        "BET_MED": 0.8789,
+        "ALL_IN": -0.2821
+      },
+      "CHECK": 0.8298,
+      "BET_30": 0.9079,
+      "BET_MED": 0.8789,
+      "ALL_IN": -0.2821,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.1513,
+          "BET_30": 0.4621,
+          "BET_MED": 0.3851,
+          "ALL_IN": 0.0015
+        },
+        "evs": {
+          "CHECK": 2.4696,
+          "BET_30": 2.6021,
+          "BET_MED": 2.562,
+          "ALL_IN": 2.0261
+        },
+        "CHECK": 2.4696,
+        "BET_30": 2.6021,
+        "BET_MED": 2.562,
+        "ALL_IN": 2.0261
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.2209,
+          "BET_30": 0.4492,
+          "BET_MED": 0.3289,
+          "ALL_IN": 0.0009
+        },
+        "evs": {
+          "CHECK": 0.8298,
+          "BET_30": 0.9079,
+          "BET_MED": 0.8789,
+          "ALL_IN": -0.2821
+        },
+        "CHECK": 0.8298,
+        "BET_30": 0.9079,
+        "BET_MED": 0.8789,
+        "ALL_IN": -0.2821
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.2444,
+          "BET_30": 0.4449,
+          "BET_MED": 0.31,
+          "ALL_IN": 0.0007
+        },
+        "evs": {
+          "CHECK": 0.2783,
+          "BET_30": 0.338,
+          "BET_MED": 0.3128,
+          "ALL_IN": -1.0586
+        },
+        "CHECK": 0.2783,
+        "BET_30": 0.338,
+        "BET_MED": 0.3128,
+        "ALL_IN": -1.0586
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.2209,
+          "BET_30": 0.4492,
+          "BET_MED": 0.3289,
+          "ALL_IN": 0.0009
+        },
+        "evs": {
+          "CHECK": 0.8298,
+          "BET_30": 0.9079,
+          "BET_MED": 0.8789,
+          "ALL_IN": -0.2821
+        },
+        "CHECK": 0.8298,
+        "BET_30": 0.9079,
+        "BET_MED": 0.8789,
+        "ALL_IN": -0.2821
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.2209,
+          "BET_30": 0.4492,
+          "BET_MED": 0.3289,
+          "ALL_IN": 0.0009
+        },
+        "evs": {
+          "CHECK": 0.8298,
+          "BET_30": 0.9079,
+          "BET_MED": 0.8789,
+          "ALL_IN": -0.2821
+        },
+        "CHECK": 0.8298,
+        "BET_30": 0.9079,
+        "BET_MED": 0.8789,
+        "ALL_IN": -0.2821
+      }
+    },
+    "Ac Kc Qc": {
+      "strategy": {
+        "CHECK": 0.6685,
+        "BET_30": 0.2634,
+        "BET_MED": 0.068,
+        "ALL_IN": 0.0001
+      },
+      "evs": {
+        "CHECK": 0.9238,
+        "BET_30": 0.8628,
+        "BET_MED": 0.8269,
+        "ALL_IN": -0.2482
+      },
+      "CHECK": 0.9238,
+      "BET_30": 0.8628,
+      "BET_MED": 0.8269,
+      "ALL_IN": -0.2482,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.469,
+          "BET_30": 0.3618,
+          "BET_MED": 0.1691,
+          "ALL_IN": 0.0001
+        },
+        "evs": {
+          "CHECK": 3.4975,
+          "BET_30": 3.4438,
+          "BET_MED": 3.4164,
+          "ALL_IN": 3.2843
+        },
+        "CHECK": 3.4975,
+        "BET_30": 3.4438,
+        "BET_MED": 3.4164,
+        "ALL_IN": 3.2843
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.5636,
+          "BET_30": 0.3551,
+          "BET_MED": 0.0812,
+          "ALL_IN": 0.0002
+        },
+        "evs": {
+          "CHECK": 1.5526,
+          "BET_30": 1.4993,
+          "BET_MED": 1.4572,
+          "ALL_IN": 1.0632
+        },
+        "CHECK": 1.5526,
+        "BET_30": 1.4993,
+        "BET_MED": 1.4572,
+        "ALL_IN": 1.0632
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.6999,
+          "BET_30": 0.2763,
+          "BET_MED": 0.0238,
+          "ALL_IN": 0.0001
+        },
+        "evs": {
+          "CHECK": 1.0239,
+          "BET_30": 0.9627,
+          "BET_MED": 0.8973,
+          "ALL_IN": -0.0277
+        },
+        "CHECK": 1.0239,
+        "BET_30": 0.9627,
+        "BET_MED": 0.8973,
+        "ALL_IN": -0.0277
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.5268,
+          "BET_30": 0.3604,
+          "BET_MED": 0.1127,
+          "ALL_IN": 0.0
+        },
+        "evs": {
+          "CHECK": 0.6073,
+          "BET_30": 0.5723,
+          "BET_MED": 0.5529,
+          "ALL_IN": -0.4871
+        },
+        "CHECK": 0.6073,
+        "BET_30": 0.5723,
+        "BET_MED": 0.5529,
+        "ALL_IN": -0.4871
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.9867,
+          "BET_30": 0.0096,
+          "BET_MED": 0.0037,
+          "ALL_IN": 0.0
+        },
+        "evs": {
+          "CHECK": 0.0369,
+          "BET_30": -0.0721,
+          "BET_MED": -0.0999,
+          "ALL_IN": -2.0943
+        },
+        "CHECK": 0.0369,
+        "BET_30": -0.0721,
+        "BET_MED": -0.0999,
+        "ALL_IN": -2.0943
+      }
+    },
+    "Kd Qd Jd": {
+      "strategy": {
+        "CHECK": 0.6653,
+        "BET_30": 0.2539,
+        "BET_MED": 0.0807,
+        "ALL_IN": 0.0
+      },
+      "evs": {
+        "CHECK": 0.9199,
+        "BET_30": 0.8571,
+        "BET_MED": 0.8287,
+        "ALL_IN": -0.2162
+      },
+      "CHECK": 0.9199,
+      "BET_30": 0.8571,
+      "BET_MED": 0.8287,
+      "ALL_IN": -0.2162,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.4708,
+          "BET_30": 0.3531,
+          "BET_MED": 0.176,
+          "ALL_IN": 0.0001
+        },
+        "evs": {
+          "CHECK": 3.3518,
+          "BET_30": 3.3015,
+          "BET_MED": 3.2776,
+          "ALL_IN": 2.9587
+        },
+        "CHECK": 3.3518,
+        "BET_30": 3.3015,
+        "BET_MED": 3.2776,
+        "ALL_IN": 2.9587
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.5603,
+          "BET_30": 0.3444,
+          "BET_MED": 0.0952,
+          "ALL_IN": 0.0001
+        },
+        "evs": {
+          "CHECK": 1.3914,
+          "BET_30": 1.3472,
+          "BET_MED": 1.3143,
+          "ALL_IN": 0.7413
+        },
+        "CHECK": 1.3914,
+        "BET_30": 1.3472,
+        "BET_MED": 1.3143,
+        "ALL_IN": 0.7413
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.688,
+          "BET_30": 0.2834,
+          "BET_MED": 0.0285,
+          "ALL_IN": 0.0
+        },
+        "evs": {
+          "CHECK": 0.8858,
+          "BET_30": 0.8313,
+          "BET_MED": 0.7708,
+          "ALL_IN": -0.1396
+        },
+        "CHECK": 0.8858,
+        "BET_30": 0.8313,
+        "BET_MED": 0.7708,
+        "ALL_IN": -0.1396
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.5904,
+          "BET_30": 0.2896,
+          "BET_MED": 0.12,
+          "ALL_IN": 0.0
+        },
+        "evs": {
+          "CHECK": 0.5911,
+          "BET_30": 0.5541,
+          "BET_MED": 0.5375,
+          "ALL_IN": -0.5104
+        },
+        "CHECK": 0.5911,
+        "BET_30": 0.5541,
+        "BET_MED": 0.5375,
+        "ALL_IN": -0.5104
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.9949,
+          "BET_30": 0.0033,
+          "BET_MED": 0.0017,
+          "ALL_IN": 0.0
+        },
+        "evs": {
+          "CHECK": 0.0235,
+          "BET_30": -0.1341,
+          "BET_MED": -0.1405,
+          "ALL_IN": -2.1288
+        },
+        "CHECK": 0.0235,
+        "BET_30": -0.1341,
+        "BET_MED": -0.1405,
+        "ALL_IN": -2.1288
+      }
+    },
+    "Ts 9s 8s": {
+      "strategy": {
+        "CHECK": 0.4414,
+        "BET_30": 0.4237,
+        "BET_MED": 0.1348,
+        "ALL_IN": 0.0001
+      },
+      "evs": {
+        "CHECK": 0.9015,
+        "BET_30": 0.855,
+        "BET_MED": 0.8209,
+        "ALL_IN": -0.062
+      },
+      "CHECK": 0.9015,
+      "BET_30": 0.855,
+      "BET_MED": 0.8209,
+      "ALL_IN": -0.062,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.2844,
+          "BET_30": 0.4936,
+          "BET_MED": 0.2219,
+          "ALL_IN": 0.0001
+        },
+        "evs": {
+          "CHECK": 3.2447,
+          "BET_30": 3.2292,
+          "BET_MED": 3.1872,
+          "ALL_IN": 2.6957
+        },
+        "CHECK": 3.2447,
+        "BET_30": 3.2292,
+        "BET_MED": 3.1872,
+        "ALL_IN": 2.6957
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.3313,
+          "BET_30": 0.5181,
+          "BET_MED": 0.1503,
+          "ALL_IN": 0.0003
+        },
+        "evs": {
+          "CHECK": 1.1947,
+          "BET_30": 1.1773,
+          "BET_MED": 1.134,
+          "ALL_IN": 0.4781
+        },
+        "CHECK": 1.1947,
+        "BET_30": 1.1773,
+        "BET_MED": 1.134,
+        "ALL_IN": 0.4781
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.5289,
+          "BET_30": 0.4087,
+          "BET_MED": 0.0623,
+          "ALL_IN": 0.0001
+        },
+        "evs": {
+          "CHECK": 0.6039,
+          "BET_30": 0.555,
+          "BET_MED": 0.5018,
+          "ALL_IN": -0.4098
+        },
+        "CHECK": 0.6039,
+        "BET_30": 0.555,
+        "BET_MED": 0.5018,
+        "ALL_IN": -0.4098
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.3568,
+          "BET_30": 0.4641,
+          "BET_MED": 0.179,
+          "ALL_IN": 0.0001
+        },
+        "evs": {
+          "CHECK": 0.5749,
+          "BET_30": 0.5501,
+          "BET_MED": 0.5279,
+          "ALL_IN": -0.3505
+        },
+        "CHECK": 0.5749,
+        "BET_30": 0.5501,
+        "BET_MED": 0.5279,
+        "ALL_IN": -0.3505
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.9909,
+          "BET_30": 0.0057,
+          "BET_MED": 0.0034,
+          "ALL_IN": 0.0
+        },
+        "evs": {
+          "CHECK": 0.0098,
+          "BET_30": -0.2381,
+          "BET_MED": -0.2436,
+          "ALL_IN": -1.9601
+        },
+        "CHECK": 0.0098,
+        "BET_30": -0.2381,
+        "BET_MED": -0.2436,
+        "ALL_IN": -1.9601
+      }
+    },
+    "7s 6s 5s": {
+      "strategy": {
+        "CHECK": 0.4327,
+        "BET_30": 0.4308,
+        "BET_MED": 0.1364,
+        "ALL_IN": 0.0001
+      },
+      "evs": {
+        "CHECK": 0.8844,
+        "BET_30": 0.8623,
+        "BET_MED": 0.825,
+        "ALL_IN": -0.0002
+      },
+      "CHECK": 0.8844,
+      "BET_30": 0.8623,
+      "BET_MED": 0.825,
+      "ALL_IN": -0.0002,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.2701,
+          "BET_30": 0.5095,
+          "BET_MED": 0.2203,
+          "ALL_IN": 0.0
+        },
+        "evs": {
+          "CHECK": 3.215,
+          "BET_30": 3.2258,
+          "BET_MED": 3.1903,
+          "ALL_IN": 2.7328
+        },
+        "CHECK": 3.215,
+        "BET_30": 3.2258,
+        "BET_MED": 3.1903,
+        "ALL_IN": 2.7328
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.3409,
+          "BET_30": 0.5234,
+          "BET_MED": 0.1355,
+          "ALL_IN": 0.0002
+        },
+        "evs": {
+          "CHECK": 1.0865,
+          "BET_30": 1.0896,
+          "BET_MED": 1.0437,
+          "ALL_IN": 0.4597
+        },
+        "CHECK": 1.0865,
+        "BET_30": 1.0896,
+        "BET_MED": 1.0437,
+        "ALL_IN": 0.4597
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.4814,
+          "BET_30": 0.4311,
+          "BET_MED": 0.0874,
+          "ALL_IN": 0.0
+        },
+        "evs": {
+          "CHECK": 0.5321,
+          "BET_30": 0.5147,
+          "BET_MED": 0.471,
+          "ALL_IN": -0.3546
+        },
+        "CHECK": 0.5321,
+        "BET_30": 0.5147,
+        "BET_MED": 0.471,
+        "ALL_IN": -0.3546
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.3722,
+          "BET_30": 0.4581,
+          "BET_MED": 0.1697,
+          "ALL_IN": 0.0
+        },
+        "evs": {
+          "CHECK": 0.5983,
+          "BET_30": 0.5886,
+          "BET_MED": 0.5632,
+          "ALL_IN": -0.3046
+        },
+        "CHECK": 0.5983,
+        "BET_30": 0.5886,
+        "BET_MED": 0.5632,
+        "ALL_IN": -0.3046
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.9946,
+          "BET_30": 0.0036,
+          "BET_MED": 0.0017,
+          "ALL_IN": 0.0
+        },
+        "evs": {
+          "CHECK": 0.0174,
+          "BET_30": -0.1798,
+          "BET_MED": -0.2482,
+          "ALL_IN": -1.786
+        },
+        "CHECK": 0.0174,
+        "BET_30": -0.1798,
+        "BET_MED": -0.2482,
+        "ALL_IN": -1.786
+      }
+    },
+    "4c 3c 2c": {
+      "strategy": {
+        "CHECK": 0.4255,
+        "BET_30": 0.4445,
+        "BET_MED": 0.1299,
+        "ALL_IN": 0.0001
+      },
+      "evs": {
+        "CHECK": 0.8825,
+        "BET_30": 0.8601,
+        "BET_MED": 0.8207,
+        "ALL_IN": -0.0032
+      },
+      "CHECK": 0.8825,
+      "BET_30": 0.8601,
+      "BET_MED": 0.8207,
+      "ALL_IN": -0.0032,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.2979,
+          "BET_30": 0.5057,
+          "BET_MED": 0.1963,
+          "ALL_IN": 0.0
+        },
+        "evs": {
+          "CHECK": 3.4278,
+          "BET_30": 3.4424,
+          "BET_MED": 3.4016,
+          "ALL_IN": 2.8601
+        },
+        "CHECK": 3.4278,
+        "BET_30": 3.4424,
+        "BET_MED": 3.4016,
+        "ALL_IN": 2.8601
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.3098,
+          "BET_30": 0.549,
+          "BET_MED": 0.1409,
+          "ALL_IN": 0.0002
+        },
+        "evs": {
+          "CHECK": 1.1567,
+          "BET_30": 1.1658,
+          "BET_MED": 1.1182,
+          "ALL_IN": 0.5444
+        },
+        "CHECK": 1.1567,
+        "BET_30": 1.1658,
+        "BET_MED": 1.1182,
+        "ALL_IN": 0.5444
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.3382,
+          "BET_30": 0.562,
+          "BET_MED": 0.0998,
+          "ALL_IN": 0.0
+        },
+        "evs": {
+          "CHECK": 0.5185,
+          "BET_30": 0.5266,
+          "BET_MED": 0.4849,
+          "ALL_IN": -0.2583
+        },
+        "CHECK": 0.5185,
+        "BET_30": 0.5266,
+        "BET_MED": 0.4849,
+        "ALL_IN": -0.2583
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.3102,
+          "BET_30": 0.4996,
+          "BET_MED": 0.1902,
+          "ALL_IN": 0.0
+        },
+        "evs": {
+          "CHECK": 0.7317,
+          "BET_30": 0.7332,
+          "BET_MED": 0.7087,
+          "ALL_IN": -0.0566
+        },
+        "CHECK": 0.7317,
+        "BET_30": 0.7332,
+        "BET_MED": 0.7087,
+        "ALL_IN": -0.0566
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.9903,
+          "BET_30": 0.0062,
+          "BET_MED": 0.0036,
+          "ALL_IN": 0.0
+        },
+        "evs": {
+          "CHECK": 0.0236,
+          "BET_30": -0.1492,
+          "BET_MED": -0.2072,
+          "ALL_IN": -1.6864
+        },
+        "CHECK": 0.0236,
+        "BET_30": -0.1492,
+        "BET_MED": -0.2072,
+        "ALL_IN": -1.6864
+      }
+    },
+    "Ah Ad Ac": {
+      "strategy": {
+        "CHECK": 0.2334,
+        "BET_30": 0.4604,
+        "BET_MED": 0.3033,
+        "ALL_IN": 0.0028
+      },
+      "evs": {
+        "CHECK": 0.8676,
+        "BET_30": 0.917,
+        "BET_MED": 0.8848,
+        "ALL_IN": -0.0137
+      },
+      "CHECK": 0.8676,
+      "BET_30": 0.917,
+      "BET_MED": 0.8848,
+      "ALL_IN": -0.0137,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.2334,
+          "BET_30": 0.4604,
+          "BET_MED": 0.3033,
+          "ALL_IN": 0.0028
+        },
+        "evs": {
+          "CHECK": 0.8676,
+          "BET_30": 0.917,
+          "BET_MED": 0.8848,
+          "ALL_IN": -0.0137
+        },
+        "CHECK": 0.8676,
+        "BET_30": 0.917,
+        "BET_MED": 0.8848,
+        "ALL_IN": -0.0137
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.2334,
+          "BET_30": 0.4604,
+          "BET_MED": 0.3033,
+          "ALL_IN": 0.0028
+        },
+        "evs": {
+          "CHECK": 0.8676,
+          "BET_30": 0.917,
+          "BET_MED": 0.8848,
+          "ALL_IN": -0.0137
+        },
+        "CHECK": 0.8676,
+        "BET_30": 0.917,
+        "BET_MED": 0.8848,
+        "ALL_IN": -0.0137
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.2334,
+          "BET_30": 0.4604,
+          "BET_MED": 0.3033,
+          "ALL_IN": 0.0028
+        },
+        "evs": {
+          "CHECK": 0.8676,
+          "BET_30": 0.917,
+          "BET_MED": 0.8848,
+          "ALL_IN": -0.0137
+        },
+        "CHECK": 0.8676,
+        "BET_30": 0.917,
+        "BET_MED": 0.8848,
+        "ALL_IN": -0.0137
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.2334,
+          "BET_30": 0.4604,
+          "BET_MED": 0.3033,
+          "ALL_IN": 0.0028
+        },
+        "evs": {
+          "CHECK": 0.8676,
+          "BET_30": 0.917,
+          "BET_MED": 0.8848,
+          "ALL_IN": -0.0137
+        },
+        "CHECK": 0.8676,
+        "BET_30": 0.917,
+        "BET_MED": 0.8848,
+        "ALL_IN": -0.0137
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.2334,
+          "BET_30": 0.4604,
+          "BET_MED": 0.3033,
+          "ALL_IN": 0.0028
+        },
+        "evs": {
+          "CHECK": 0.8676,
+          "BET_30": 0.917,
+          "BET_MED": 0.8848,
+          "ALL_IN": -0.0137
+        },
+        "CHECK": 0.8676,
+        "BET_30": 0.917,
+        "BET_MED": 0.8848,
+        "ALL_IN": -0.0137
+      }
+    },
+    "Kh Kd Ks": {
+      "strategy": {
+        "CHECK": 0.2382,
+        "BET_30": 0.4609,
+        "BET_MED": 0.2988,
+        "ALL_IN": 0.0022
+      },
+      "evs": {
+        "CHECK": 0.8663,
+        "BET_30": 0.9105,
+        "BET_MED": 0.879,
+        "ALL_IN": 0.0003
+      },
+      "CHECK": 0.8663,
+      "BET_30": 0.9105,
+      "BET_MED": 0.879,
+      "ALL_IN": 0.0003,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.2382,
+          "BET_30": 0.4609,
+          "BET_MED": 0.2988,
+          "ALL_IN": 0.0022
+        },
+        "evs": {
+          "CHECK": 0.8663,
+          "BET_30": 0.9105,
+          "BET_MED": 0.879,
+          "ALL_IN": 0.0003
+        },
+        "CHECK": 0.8663,
+        "BET_30": 0.9105,
+        "BET_MED": 0.879,
+        "ALL_IN": 0.0003
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.2382,
+          "BET_30": 0.4609,
+          "BET_MED": 0.2988,
+          "ALL_IN": 0.0022
+        },
+        "evs": {
+          "CHECK": 0.8663,
+          "BET_30": 0.9105,
+          "BET_MED": 0.879,
+          "ALL_IN": 0.0003
+        },
+        "CHECK": 0.8663,
+        "BET_30": 0.9105,
+        "BET_MED": 0.879,
+        "ALL_IN": 0.0003
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.2382,
+          "BET_30": 0.4609,
+          "BET_MED": 0.2988,
+          "ALL_IN": 0.0022
+        },
+        "evs": {
+          "CHECK": 0.8663,
+          "BET_30": 0.9105,
+          "BET_MED": 0.879,
+          "ALL_IN": 0.0003
+        },
+        "CHECK": 0.8663,
+        "BET_30": 0.9105,
+        "BET_MED": 0.879,
+        "ALL_IN": 0.0003
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.2382,
+          "BET_30": 0.4609,
+          "BET_MED": 0.2988,
+          "ALL_IN": 0.0022
+        },
+        "evs": {
+          "CHECK": 0.8663,
+          "BET_30": 0.9105,
+          "BET_MED": 0.879,
+          "ALL_IN": 0.0003
+        },
+        "CHECK": 0.8663,
+        "BET_30": 0.9105,
+        "BET_MED": 0.879,
+        "ALL_IN": 0.0003
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.2382,
+          "BET_30": 0.4609,
+          "BET_MED": 0.2988,
+          "ALL_IN": 0.0022
+        },
+        "evs": {
+          "CHECK": 0.8663,
+          "BET_30": 0.9105,
+          "BET_MED": 0.879,
+          "ALL_IN": 0.0003
+        },
+        "CHECK": 0.8663,
+        "BET_30": 0.9105,
+        "BET_MED": 0.879,
+        "ALL_IN": 0.0003
+      }
+    },
+    "Qh Qd Qs": {
+      "strategy": {
+        "CHECK": 0.2114,
+        "BET_30": 0.4638,
+        "BET_MED": 0.3204,
+        "ALL_IN": 0.0044
+      },
+      "evs": {
+        "CHECK": 0.8655,
+        "BET_30": 0.9317,
+        "BET_MED": 0.8981,
+        "ALL_IN": -0.0696
+      },
+      "CHECK": 0.8655,
+      "BET_30": 0.9317,
+      "BET_MED": 0.8981,
+      "ALL_IN": -0.0696,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.2114,
+          "BET_30": 0.4638,
+          "BET_MED": 0.3204,
+          "ALL_IN": 0.0044
+        },
+        "evs": {
+          "CHECK": 0.8655,
+          "BET_30": 0.9317,
+          "BET_MED": 0.8981,
+          "ALL_IN": -0.0696
+        },
+        "CHECK": 0.8655,
+        "BET_30": 0.9317,
+        "BET_MED": 0.8981,
+        "ALL_IN": -0.0696
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.2114,
+          "BET_30": 0.4638,
+          "BET_MED": 0.3204,
+          "ALL_IN": 0.0044
+        },
+        "evs": {
+          "CHECK": 0.8655,
+          "BET_30": 0.9317,
+          "BET_MED": 0.8981,
+          "ALL_IN": -0.0696
+        },
+        "CHECK": 0.8655,
+        "BET_30": 0.9317,
+        "BET_MED": 0.8981,
+        "ALL_IN": -0.0696
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.2114,
+          "BET_30": 0.4638,
+          "BET_MED": 0.3204,
+          "ALL_IN": 0.0044
+        },
+        "evs": {
+          "CHECK": 0.8655,
+          "BET_30": 0.9317,
+          "BET_MED": 0.8981,
+          "ALL_IN": -0.0696
+        },
+        "CHECK": 0.8655,
+        "BET_30": 0.9317,
+        "BET_MED": 0.8981,
+        "ALL_IN": -0.0696
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.2114,
+          "BET_30": 0.4638,
+          "BET_MED": 0.3204,
+          "ALL_IN": 0.0044
+        },
+        "evs": {
+          "CHECK": 0.8655,
+          "BET_30": 0.9317,
+          "BET_MED": 0.8981,
+          "ALL_IN": -0.0696
+        },
+        "CHECK": 0.8655,
+        "BET_30": 0.9317,
+        "BET_MED": 0.8981,
+        "ALL_IN": -0.0696
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.2114,
+          "BET_30": 0.4638,
+          "BET_MED": 0.3204,
+          "ALL_IN": 0.0044
+        },
+        "evs": {
+          "CHECK": 0.8655,
+          "BET_30": 0.9317,
+          "BET_MED": 0.8981,
+          "ALL_IN": -0.0696
+        },
+        "CHECK": 0.8655,
+        "BET_30": 0.9317,
+        "BET_MED": 0.8981,
+        "ALL_IN": -0.0696
+      }
+    },
+    "Jh Jd Js": {
+      "strategy": {
+        "CHECK": 0.2118,
+        "BET_30": 0.4576,
+        "BET_MED": 0.3267,
+        "ALL_IN": 0.0038
+      },
+      "evs": {
+        "CHECK": 0.8648,
+        "BET_30": 0.9294,
+        "BET_MED": 0.8946,
+        "ALL_IN": -0.0735
+      },
+      "CHECK": 0.8648,
+      "BET_30": 0.9294,
+      "BET_MED": 0.8946,
+      "ALL_IN": -0.0735,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.2118,
+          "BET_30": 0.4576,
+          "BET_MED": 0.3267,
+          "ALL_IN": 0.0038
+        },
+        "evs": {
+          "CHECK": 0.8648,
+          "BET_30": 0.9294,
+          "BET_MED": 0.8946,
+          "ALL_IN": -0.0735
+        },
+        "CHECK": 0.8648,
+        "BET_30": 0.9294,
+        "BET_MED": 0.8946,
+        "ALL_IN": -0.0735
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.2118,
+          "BET_30": 0.4576,
+          "BET_MED": 0.3267,
+          "ALL_IN": 0.0038
+        },
+        "evs": {
+          "CHECK": 0.8648,
+          "BET_30": 0.9294,
+          "BET_MED": 0.8946,
+          "ALL_IN": -0.0735
+        },
+        "CHECK": 0.8648,
+        "BET_30": 0.9294,
+        "BET_MED": 0.8946,
+        "ALL_IN": -0.0735
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.2118,
+          "BET_30": 0.4576,
+          "BET_MED": 0.3267,
+          "ALL_IN": 0.0038
+        },
+        "evs": {
+          "CHECK": 0.8648,
+          "BET_30": 0.9294,
+          "BET_MED": 0.8946,
+          "ALL_IN": -0.0735
+        },
+        "CHECK": 0.8648,
+        "BET_30": 0.9294,
+        "BET_MED": 0.8946,
+        "ALL_IN": -0.0735
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.2118,
+          "BET_30": 0.4576,
+          "BET_MED": 0.3267,
+          "ALL_IN": 0.0038
+        },
+        "evs": {
+          "CHECK": 0.8648,
+          "BET_30": 0.9294,
+          "BET_MED": 0.8946,
+          "ALL_IN": -0.0735
+        },
+        "CHECK": 0.8648,
+        "BET_30": 0.9294,
+        "BET_MED": 0.8946,
+        "ALL_IN": -0.0735
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.2118,
+          "BET_30": 0.4576,
+          "BET_MED": 0.3267,
+          "ALL_IN": 0.0038
+        },
+        "evs": {
+          "CHECK": 0.8648,
+          "BET_30": 0.9294,
+          "BET_MED": 0.8946,
+          "ALL_IN": -0.0735
+        },
+        "CHECK": 0.8648,
+        "BET_30": 0.9294,
+        "BET_MED": 0.8946,
+        "ALL_IN": -0.0735
+      }
+    },
+    "9h 9d 9s": {
+      "strategy": {
+        "CHECK": 0.2026,
+        "BET_30": 0.4615,
+        "BET_MED": 0.3316,
+        "ALL_IN": 0.0043
+      },
+      "evs": {
+        "CHECK": 0.8591,
+        "BET_30": 0.9351,
+        "BET_MED": 0.9026,
+        "ALL_IN": -0.0895
+      },
+      "CHECK": 0.8591,
+      "BET_30": 0.9351,
+      "BET_MED": 0.9026,
+      "ALL_IN": -0.0895,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.2026,
+          "BET_30": 0.4615,
+          "BET_MED": 0.3316,
+          "ALL_IN": 0.0043
+        },
+        "evs": {
+          "CHECK": 0.8591,
+          "BET_30": 0.9351,
+          "BET_MED": 0.9026,
+          "ALL_IN": -0.0895
+        },
+        "CHECK": 0.8591,
+        "BET_30": 0.9351,
+        "BET_MED": 0.9026,
+        "ALL_IN": -0.0895
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.2026,
+          "BET_30": 0.4615,
+          "BET_MED": 0.3316,
+          "ALL_IN": 0.0043
+        },
+        "evs": {
+          "CHECK": 0.8591,
+          "BET_30": 0.9351,
+          "BET_MED": 0.9026,
+          "ALL_IN": -0.0895
+        },
+        "CHECK": 0.8591,
+        "BET_30": 0.9351,
+        "BET_MED": 0.9026,
+        "ALL_IN": -0.0895
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.2026,
+          "BET_30": 0.4615,
+          "BET_MED": 0.3316,
+          "ALL_IN": 0.0043
+        },
+        "evs": {
+          "CHECK": 0.8591,
+          "BET_30": 0.9351,
+          "BET_MED": 0.9026,
+          "ALL_IN": -0.0895
+        },
+        "CHECK": 0.8591,
+        "BET_30": 0.9351,
+        "BET_MED": 0.9026,
+        "ALL_IN": -0.0895
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.2026,
+          "BET_30": 0.4615,
+          "BET_MED": 0.3316,
+          "ALL_IN": 0.0043
+        },
+        "evs": {
+          "CHECK": 0.8591,
+          "BET_30": 0.9351,
+          "BET_MED": 0.9026,
+          "ALL_IN": -0.0895
+        },
+        "CHECK": 0.8591,
+        "BET_30": 0.9351,
+        "BET_MED": 0.9026,
+        "ALL_IN": -0.0895
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.2026,
+          "BET_30": 0.4615,
+          "BET_MED": 0.3316,
+          "ALL_IN": 0.0043
+        },
+        "evs": {
+          "CHECK": 0.8591,
+          "BET_30": 0.9351,
+          "BET_MED": 0.9026,
+          "ALL_IN": -0.0895
+        },
+        "CHECK": 0.8591,
+        "BET_30": 0.9351,
+        "BET_MED": 0.9026,
+        "ALL_IN": -0.0895
+      }
+    },
+    "6h 6d 6s": {
+      "strategy": {
+        "CHECK": 0.2106,
+        "BET_30": 0.4851,
+        "BET_MED": 0.3012,
+        "ALL_IN": 0.0031
+      },
+      "evs": {
+        "CHECK": 0.8661,
+        "BET_30": 0.916,
+        "BET_MED": 0.8869,
+        "ALL_IN": -0.0065
+      },
+      "CHECK": 0.8661,
+      "BET_30": 0.916,
+      "BET_MED": 0.8869,
+      "ALL_IN": -0.0065,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.2106,
+          "BET_30": 0.4851,
+          "BET_MED": 0.3012,
+          "ALL_IN": 0.0031
+        },
+        "evs": {
+          "CHECK": 0.8661,
+          "BET_30": 0.916,
+          "BET_MED": 0.8869,
+          "ALL_IN": -0.0065
+        },
+        "CHECK": 0.8661,
+        "BET_30": 0.916,
+        "BET_MED": 0.8869,
+        "ALL_IN": -0.0065
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.2106,
+          "BET_30": 0.4851,
+          "BET_MED": 0.3012,
+          "ALL_IN": 0.0031
+        },
+        "evs": {
+          "CHECK": 0.8661,
+          "BET_30": 0.916,
+          "BET_MED": 0.8869,
+          "ALL_IN": -0.0065
+        },
+        "CHECK": 0.8661,
+        "BET_30": 0.916,
+        "BET_MED": 0.8869,
+        "ALL_IN": -0.0065
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.2106,
+          "BET_30": 0.4851,
+          "BET_MED": 0.3012,
+          "ALL_IN": 0.0031
+        },
+        "evs": {
+          "CHECK": 0.8661,
+          "BET_30": 0.916,
+          "BET_MED": 0.8869,
+          "ALL_IN": -0.0065
+        },
+        "CHECK": 0.8661,
+        "BET_30": 0.916,
+        "BET_MED": 0.8869,
+        "ALL_IN": -0.0065
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.2106,
+          "BET_30": 0.4851,
+          "BET_MED": 0.3012,
+          "ALL_IN": 0.0031
+        },
+        "evs": {
+          "CHECK": 0.8661,
+          "BET_30": 0.916,
+          "BET_MED": 0.8869,
+          "ALL_IN": -0.0065
+        },
+        "CHECK": 0.8661,
+        "BET_30": 0.916,
+        "BET_MED": 0.8869,
+        "ALL_IN": -0.0065
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.2106,
+          "BET_30": 0.4851,
+          "BET_MED": 0.3012,
+          "ALL_IN": 0.0031
+        },
+        "evs": {
+          "CHECK": 0.8661,
+          "BET_30": 0.916,
+          "BET_MED": 0.8869,
+          "ALL_IN": -0.0065
+        },
+        "CHECK": 0.8661,
+        "BET_30": 0.916,
+        "BET_MED": 0.8869,
+        "ALL_IN": -0.0065
+      }
+    },
+    "3h 3d 3s": {
+      "strategy": {
+        "CHECK": 0.2144,
+        "BET_30": 0.4784,
+        "BET_MED": 0.3042,
+        "ALL_IN": 0.003
+      },
+      "evs": {
+        "CHECK": 0.8652,
+        "BET_30": 0.915,
+        "BET_MED": 0.887,
+        "ALL_IN": -0.0092
+      },
+      "CHECK": 0.8652,
+      "BET_30": 0.915,
+      "BET_MED": 0.887,
+      "ALL_IN": -0.0092,
+      "MONSTER": {
+        "strategy": {
+          "CHECK": 0.2144,
+          "BET_30": 0.4784,
+          "BET_MED": 0.3042,
+          "ALL_IN": 0.003
+        },
+        "evs": {
+          "CHECK": 0.8652,
+          "BET_30": 0.915,
+          "BET_MED": 0.887,
+          "ALL_IN": -0.0092
+        },
+        "CHECK": 0.8652,
+        "BET_30": 0.915,
+        "BET_MED": 0.887,
+        "ALL_IN": -0.0092
+      },
+      "STRONG": {
+        "strategy": {
+          "CHECK": 0.2144,
+          "BET_30": 0.4784,
+          "BET_MED": 0.3042,
+          "ALL_IN": 0.003
+        },
+        "evs": {
+          "CHECK": 0.8652,
+          "BET_30": 0.915,
+          "BET_MED": 0.887,
+          "ALL_IN": -0.0092
+        },
+        "CHECK": 0.8652,
+        "BET_30": 0.915,
+        "BET_MED": 0.887,
+        "ALL_IN": -0.0092
+      },
+      "MEDIUM": {
+        "strategy": {
+          "CHECK": 0.2144,
+          "BET_30": 0.4784,
+          "BET_MED": 0.3042,
+          "ALL_IN": 0.003
+        },
+        "evs": {
+          "CHECK": 0.8652,
+          "BET_30": 0.915,
+          "BET_MED": 0.887,
+          "ALL_IN": -0.0092
+        },
+        "CHECK": 0.8652,
+        "BET_30": 0.915,
+        "BET_MED": 0.887,
+        "ALL_IN": -0.0092
+      },
+      "DRAW": {
+        "strategy": {
+          "CHECK": 0.2144,
+          "BET_30": 0.4784,
+          "BET_MED": 0.3042,
+          "ALL_IN": 0.003
+        },
+        "evs": {
+          "CHECK": 0.8652,
+          "BET_30": 0.915,
+          "BET_MED": 0.887,
+          "ALL_IN": -0.0092
+        },
+        "CHECK": 0.8652,
+        "BET_30": 0.915,
+        "BET_MED": 0.887,
+        "ALL_IN": -0.0092
+      },
+      "AIR": {
+        "strategy": {
+          "CHECK": 0.2144,
+          "BET_30": 0.4784,
+          "BET_MED": 0.3042,
+          "ALL_IN": 0.003
+        },
+        "evs": {
+          "CHECK": 0.8652,
+          "BET_30": 0.915,
+          "BET_MED": 0.887,
+          "ALL_IN": -0.0092
+        },
+        "CHECK": 0.8652,
+        "BET_30": 0.915,
+        "BET_MED": 0.887,
+        "ALL_IN": -0.0092
+      }
+    }
   }
 }
