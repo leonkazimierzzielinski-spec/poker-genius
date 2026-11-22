@@ -601,10 +601,26 @@ def run_pipeline(
                     continue
 
                 t0 = time.perf_counter()
-                if use_live_server:
-                    res = solve_flop_via_gtopen(base_url, spot, flop_str, cfg, target_dgap=target_dgap, mode=mode)
-                else:
-                    raise RuntimeError("Live GTOpen server is required for GTOpen overnight pipeline!")
+                res = None
+                for flop_attempt in range(1, 4):
+                    try:
+                        if use_live_server:
+                            res = solve_flop_via_gtopen(base_url, spot, flop_str, cfg, target_dgap=target_dgap, mode=mode)
+                        else:
+                            raise RuntimeError("Live GTOpen server is required for GTOpen overnight pipeline!")
+                        break
+                    except Exception as err:
+                        print(f"\n[RETRY {flop_attempt}/3] Flop {flop_str} error: {err}. Restarting GTOpen server...")
+                        if server_proc is not None:
+                            try:
+                                server_proc.terminate()
+                                server_proc.wait(timeout=5)
+                            except Exception:
+                                pass
+                        time.sleep(3)
+                        server_proc, base_url = ensure_server(GTOPEN_DIR, port=port)
+                        if flop_attempt == 3:
+                            raise
 
                 elapsed = time.perf_counter() - t0
                 flop_times.append(elapsed)
@@ -683,12 +699,22 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    run_pipeline(
-        mode=args.mode,
-        resume=args.resume,
-        threads=args.threads,
-        port=args.port,
-    )
+    max_pipeline_retries = 100
+    for attempt in range(1, max_pipeline_retries + 1):
+        try:
+            run_pipeline(
+                mode=args.mode,
+                resume=True if attempt > 1 else args.resume,
+                threads=args.threads,
+                port=args.port,
+            )
+            break
+        except Exception as err:
+            print(f"\n[ALERT] Pipeline supervisor caught exception on attempt {attempt}/{max_pipeline_retries}: {err}")
+            import traceback
+            traceback.print_exc()
+            time.sleep(5)
+            print("[RECOVERY] Automatically resuming pipeline in 5s...\n")
 
 
 if __name__ == "__main__":
