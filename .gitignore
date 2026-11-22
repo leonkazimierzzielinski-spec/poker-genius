@@ -24,6 +24,7 @@ logs/
 hand_histories/
 
 # GTOpen temporary progress
+*.backup.json
 gtopen_progress.json
 data/flop_db/gtopen_progress.json
 

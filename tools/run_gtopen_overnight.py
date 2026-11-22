@@ -140,8 +140,11 @@ def find_server_executable(gtopen_dir: Path) -> Path | None:
         gtopen_dir / "target" / "release" / "server",
     ]
     for c in candidates:
-        if c.exists() and c.is_file():
-            return c
+        try:
+            if c.exists() and c.is_file():
+                return c
+        except Exception:
+            pass
     return None
 
 
