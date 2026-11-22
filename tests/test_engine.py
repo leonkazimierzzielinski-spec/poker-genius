@@ -305,5 +305,56 @@ def test_flop_db_nearest_cluster_lookup_and_fallback(tmp_path: Path) -> None:
     assert res_wet["CHECK"] == 0.75
 
 
+def test_flop_db_lookup_with_real_evs_and_strategy_structure(tmp_path: Path) -> None:
+    """Verify that FlopDatabase properly prioritizes and returns real action EVs in BB from parsed GTOpen data."""
+    import json
+    from engine.flop_db import FlopDatabase
+
+    mock_gtopen_v16_1 = {
+        "BTN_vs_BB_SRP": {
+            "Ah 7d 2c": {
+                "strategy": {"CHECK": 0.4619, "BET_30": 0.2179, "ALL_IN": 0.1372},
+                "evs": {"CHECK": 1.9879, "BET_30": 1.8813, "ALL_IN": 1.0353},
+                "CHECK": 1.9879,
+                "BET_30": 1.8813,
+                "ALL_IN": 1.0353,
+                "MONSTER": {
+                    "strategy": {"CHECK": 0.4202, "BET_30": 0.2518, "ALL_IN": 0.1325},
+                    "evs": {"CHECK": 9.9011, "BET_30": 8.4971, "ALL_IN": 7.7772},
+                    "CHECK": 9.9011,
+                    "BET_30": 8.4971,
+                    "ALL_IN": 7.7772,
+                },
+                "AIR": {
+                    "strategy": {"CHECK": 0.4482, "BET_30": 0.2148, "ALL_IN": 0.1426},
+                    "evs": {"CHECK": -0.4198, "BET_30": 0.0323, "ALL_IN": -1.0234},
+                    "CHECK": -0.4198,
+                    "BET_30": 0.0323,
+                    "ALL_IN": -1.0234,
+                },
+            }
+        }
+    }
+    mock_file = tmp_path / "gtopen_v16_1.json"
+    with open(mock_file, "w", encoding="utf-8") as f:
+        json.dump(mock_gtopen_v16_1, f)
+
+    db = FlopDatabase(db_path=tmp_path / "nonexistent.json", gtopen_path=mock_file)
+
+    # MONSTER (pocket 7s: 7h 7s on Ah 7d 2c) -> should return MONSTER EVs in BB
+    res_monster = db.lookup_nearest_flop(["Ah", "7d", "2c"], "BTN_vs_BB_SRP", ["7h", "7s"])
+    assert res_monster is not None
+    assert res_monster["CHECK"] == pytest.approx(9.9011, abs=1e-4)
+    assert res_monster["BET_30"] == pytest.approx(8.4971, abs=1e-4)
+    assert res_monster["ALL_IN"] == pytest.approx(7.7772, abs=1e-4)
+
+    # AIR (trash: 4s 3s on Ah 7d 2c) -> should return AIR EVs in BB (negative check, positive bet bluff)
+    res_air = db.lookup_nearest_flop(["Ah", "7d", "2c"], "BTN_vs_BB_SRP", ["4s", "3s"])
+    assert res_air is not None
+    assert res_air["CHECK"] == pytest.approx(-0.4198, abs=1e-4)
+    assert res_air["BET_30"] == pytest.approx(0.0323, abs=1e-4)
+    assert res_air["ALL_IN"] == pytest.approx(-1.0234, abs=1e-4)
+
+
 
 

@@ -25,6 +25,8 @@ from typing import Any
 ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
+
+from engine.range_engine import classify_combo
 GTOPEN_DIR = Path(r"C:\Users\leonk\Desktop\porjekty\gtopen")
 PROGRESS_FILE = ROOT_DIR / "data" / "flop_db" / "gtopen_progress.json"
 FLOP_47_DB_FILE = ROOT_DIR / "data" / "flop_db" / "gtopen_47_flops.json"
@@ -179,15 +181,157 @@ def ensure_server(gtopen_dir: Path, port: int = 3737) -> tuple[subprocess.Popen 
     return proc, base_url
 
 
+def parse_node_view_to_categories(
+    node_res: dict[str, Any],
+    board_cards: list[str],
+    starting_pot: float,
+    effective_stack: float,
+) -> dict[str, Any]:
+    """Parse real GTOpen /api/node response into 5 combo categories + root with weighted CFR frequencies and EVs in BB."""
+    if not node_res or not isinstance(node_res, dict):
+        raise RuntimeError(f"/api/node returned invalid or empty response: {node_res}")
+
+    actions_raw = node_res.get("actions", [])
+    if not actions_raw:
+        raise RuntimeError("/api/node response missing 'actions' list")
+
+    # Map each action to canonical key (CHECK, BET_30, BET_MED, ALL_IN, FOLD)
+    action_keys: list[str] = []
+    for a in actions_raw:
+        label = a.get("label", "").lower()
+        kind = a.get("kind", "").lower()
+        amount = float(a.get("amount", 0.0))
+
+        if kind == "check" or "check" in label:
+            action_keys.append("CHECK")
+        elif kind == "fold" or "fold" in label:
+            action_keys.append("FOLD")
+        elif kind == "allin" or "all-in" in label or "allin" in label or amount >= effective_stack * 0.85:
+            action_keys.append("ALL_IN")
+        elif "33%" in label or (starting_pot > 0 and amount <= 0.40 * starting_pot):
+            action_keys.append("BET_30")
+        elif "50%" in label or (starting_pot > 0 and 0.40 * starting_pot < amount < effective_stack * 0.85):
+            action_keys.append("BET_MED")
+        else:
+            if starting_pot > 0 and amount <= 0.45 * starting_pot:
+                action_keys.append("BET_30")
+            elif starting_pot > 0 and amount <= 0.75 * starting_pot:
+                action_keys.append("BET_MED")
+            else:
+                action_keys.append("ALL_IN")
+
+    acting_p = node_res.get("player")
+    if acting_p is None:
+        acting_p = 0
+
+    players = node_res.get("players", [])
+    if len(players) <= acting_p:
+        raise RuntimeError(f"/api/node response missing player {acting_p} in 'players'")
+
+    hands = players[acting_p].get("hands", [])
+    if not hands:
+        raise RuntimeError(f"/api/node response has 0 hands for acting player {acting_p}")
+
+    canonical_actions = ["CHECK", "BET_30", "BET_MED", "ALL_IN"]
+    categories = ["ROOT", "MONSTER", "STRONG", "MEDIUM", "DRAW", "AIR"]
+
+    total_weights: dict[str, float] = {c: 0.0 for c in categories}
+    strat_mass: dict[str, dict[str, float]] = {c: {a: 0.0 for a in canonical_actions} for c in categories}
+    ev_mass: dict[str, dict[str, float]] = {c: {a: 0.0 for a in canonical_actions} for c in categories}
+
+    valid_hands_count = 0
+    for h in hands:
+        combo_str = h.get("combo", "")
+        if len(combo_str) != 4:
+            continue
+        c1, c2 = combo_str[0:2], combo_str[2:4]
+        reach = float(h.get("reach", 1.0))
+        weight = float(h.get("weight", 1.0))
+        w = reach * weight
+        if w <= 1e-9:
+            continue
+
+        strat_vals = h.get("strategy")
+        ev_vals = h.get("evs")
+        if not strat_vals or not ev_vals or len(strat_vals) != len(action_keys):
+            continue
+
+        cat = classify_combo(c1, c2, board_cards)
+        if cat not in categories:
+            cat = "MEDIUM"
+
+        valid_hands_count += 1
+        total_weights[cat] += w
+        total_weights["ROOT"] += w
+
+        for a_idx, act_name in enumerate(action_keys):
+            if act_name not in canonical_actions:
+                continue
+            s_prob = float(strat_vals[a_idx])
+            e_val = ev_vals[a_idx]
+            e_num = float(e_val) if e_val is not None else 0.0
+
+            strat_mass[cat][act_name] += w * s_prob
+            ev_mass[cat][act_name] += w * e_num
+
+            strat_mass["ROOT"][act_name] += w * s_prob
+            ev_mass["ROOT"][act_name] += w * e_num
+
+    if valid_hands_count == 0 or total_weights["ROOT"] <= 1e-9:
+        raise RuntimeError(f"No valid hands found in /api/node for board {board_cards}")
+
+    # Compute weighted averages
+    strat_result: dict[str, dict[str, float]] = {}
+    ev_result: dict[str, dict[str, float]] = {}
+
+    root_w = total_weights["ROOT"]
+    root_strat = {a: round(strat_mass["ROOT"][a] / root_w, 4) for a in canonical_actions}
+    root_ev = {a: round(ev_mass["ROOT"][a] / root_w, 4) for a in canonical_actions}
+
+    strat_result["ROOT"] = root_strat
+    ev_result["ROOT"] = root_ev
+
+    for cat in ["MONSTER", "STRONG", "MEDIUM", "DRAW", "AIR"]:
+        cat_w = total_weights[cat]
+        if cat_w > 1e-9:
+            strat_result[cat] = {a: round(strat_mass[cat][a] / cat_w, 4) for a in canonical_actions}
+            ev_result[cat] = {a: round(ev_mass[cat][a] / cat_w, 4) for a in canonical_actions}
+        else:
+            strat_result[cat] = dict(root_strat)
+            ev_result[cat] = dict(root_ev)
+
+    output: dict[str, Any] = {
+        "strategy": root_strat,
+        "evs": root_ev,
+        "CHECK": root_ev["CHECK"],
+        "BET_30": root_ev["BET_30"],
+        "BET_MED": root_ev["BET_MED"],
+        "ALL_IN": root_ev["ALL_IN"],
+    }
+
+    for cat in ["MONSTER", "STRONG", "MEDIUM", "DRAW", "AIR"]:
+        output[cat] = {
+            "strategy": strat_result[cat],
+            "evs": ev_result[cat],
+            "CHECK": ev_result[cat]["CHECK"],
+            "BET_30": ev_result[cat]["BET_30"],
+            "BET_MED": ev_result[cat]["BET_MED"],
+            "ALL_IN": ev_result[cat]["ALL_IN"],
+        }
+
+    return output
+
+
 def solve_flop_via_gtopen(
     base_url: str,
     spot: str,
     flop_str: str,
     config: dict[str, Any],
     target_dgap: float = 0.005,
-    max_iter: int = 200,
+    max_iter: int = 150,
+    mode: str = "overnight",
 ) -> dict[str, Any]:
-    """Build spot and solve flop using GTOpen server API."""
+    """Build spot and solve flop using GTOpen server API, extracting real per-combo CFR strategies & EVs in BB."""
     sizes = [
         {"bet": "33 50 allin", "raise": "50 allin", "donk": ""},
         {"bet": "33 50 allin", "raise": "50 allin", "donk": ""},
@@ -209,65 +353,63 @@ def solve_flop_via_gtopen(
     }
 
     # 1. Build Spot
-    build_res = http_request(f"{base_url}/api/spot", method="POST", payload=spot_req, timeout=15.0)
-    if build_res is None:
-        raise RuntimeError(f"Failed to build spot {spot} for flop {flop_str}")
+    build_res = http_request(f"{base_url}/api/spot", method="POST", payload=spot_req, timeout=30.0)
+    if build_res is None or not isinstance(build_res, dict) or "nodes" not in build_res:
+        raise RuntimeError(f"Failed to build spot {spot} for flop {flop_str}: {build_res}")
 
     # 2. Start Solve
+    actual_iter = 15 if mode == "dry-test" else max_iter
+    actual_target = 3.0 if mode == "dry-test" else (target_dgap * 100.0)
     solve_req = {
-        "max_iterations": max_iter,
-        "target_exploit_pct": target_dgap * 100.0,
-        "check_every": 10,
+        "max_iterations": actual_iter,
+        "target_exploit_pct": actual_target,
+        "check_every": 2 if mode == "dry-test" else 5,
     }
-    http_request(f"{base_url}/api/solve", method="POST", payload=solve_req, timeout=10.0)
+    start_res = http_request(f"{base_url}/api/solve", method="POST", payload=solve_req, timeout=15.0)
+    if start_res is None or not isinstance(start_res, dict) or not start_res.get("ok"):
+        raise RuntimeError(f"Failed to start solve for spot {spot} flop {flop_str}: {start_res}")
 
-    # 3. Poll Status until solved
+    # 3. Poll Status until solved or timeout
     t0 = time.perf_counter()
     expl = 0.01
+    max_solve_time = 45.0 if mode == "dry-test" else 180.0
     while True:
-        time.sleep(0.5)
+        time.sleep(1.0)
         st = http_request(f"{base_url}/api/status", method="GET", timeout=5.0)
         if not st or st.get("state") != "running":
-            if st:
-                expl = float(st.get("exploitability", 0.005))
+            if st and st.get("exploitability") is not None:
+                expl = float(st.get("exploitability"))
             break
-        if time.perf_counter() - t0 > 120.0:
-            # Safety timeout: stop solve
-            http_request(f"{base_url}/api/stop", method="POST", payload={}, timeout=5.0)
+        if time.perf_counter() - t0 > max_solve_time:
             break
+
+    # If still running, cleanly stop solve before querying /api/node
+    st = http_request(f"{base_url}/api/status", method="GET", timeout=5.0)
+    if st and st.get("state") == "running":
+        http_request(f"{base_url}/api/stop", method="POST", payload={}, timeout=30.0)
+        for _ in range(30):
+            time.sleep(1.0)
+            st = http_request(f"{base_url}/api/status", method="GET", timeout=5.0)
+            if st and st.get("state") != "running":
+                break
 
     # 4. Query Root Node Strategy
-    node_res = http_request(f"{base_url}/api/node", method="POST", payload={"path": []}, timeout=10.0)
+    node_res = http_request(f"{base_url}/api/node", method="POST", payload={"path": []}, timeout=60.0)
+    if not node_res or not isinstance(node_res, dict):
+        raise RuntimeError(f"/api/node returned invalid or empty response for flop {flop_str}: {node_res}")
 
-    # Aggregate categories
-    strat: dict[str, Any] = {
-        "CHECK": 0.40,
-        "BET_30": 0.50,
-        "ALL_IN": 0.10,
-        "MONSTER": {"CHECK": 0.10, "BET_30": 0.60, "ALL_IN": 0.30},
-        "STRONG": {"CHECK": 0.20, "BET_30": 0.70, "ALL_IN": 0.10},
-        "MEDIUM": {"CHECK": 0.55, "BET_30": 0.45, "ALL_IN": 0.00},
-        "DRAW": {"CHECK": 0.40, "BET_30": 0.55, "ALL_IN": 0.05},
-        "AIR": {"CHECK": 0.65, "BET_30": 0.35, "ALL_IN": 0.00},
-    }
-
-    if node_res and isinstance(node_res, dict):
-        actions = node_res.get("actions", [])
-        strategy = node_res.get("strategy", [])
-        if actions and strategy:
-            total_act: dict[str, float] = {}
-            for act_name in actions:
-                name_upper = act_name.upper()
-                if "CHECK" in name_upper:
-                    total_act["CHECK"] = total_act.get("CHECK", 0.0) + 0.4
-                elif "ALL" in name_upper or "SHOVE" in name_upper:
-                    total_act["ALL_IN"] = total_act.get("ALL_IN", 0.0) + 0.1
-                else:
-                    total_act["BET_30"] = total_act.get("BET_30", 0.0) + 0.5
-            strat.update(total_act)
+    board_cards = [c.strip() for c in flop_str.split()]
+    parsed_data = parse_node_view_to_categories(
+        node_res=node_res,
+        board_cards=board_cards,
+        starting_pot=config["starting_pot"],
+        effective_stack=config["effective_stack"],
+    )
 
     return {
-        "strategy": strat,
+        "data": parsed_data,
+        "strategy": parsed_data.get("strategy", {}),
+        "evs": parsed_data.get("evs", {}),
         "exploitability": expl,
     }
 
@@ -321,8 +463,49 @@ def simulate_flop_solve(
             "AIR": {"CHECK": 0.60, "BET_30": 0.40, "ALL_IN": 0.00},
         }
 
+    pot_bb = float(config.get("starting_pot", 4.0))
+    cat_eq = {
+        "MONSTER": 0.85,
+        "STRONG": 0.68,
+        "MEDIUM": 0.50,
+        "DRAW": 0.38,
+        "AIR": 0.22,
+    }
+    data_out: dict[str, Any] = {
+        "strategy": {k: v for k, v in strat.items() if k in ("CHECK", "BET_30", "ALL_IN")},
+        "evs": {
+            "CHECK": round(0.50 * pot_bb, 4),
+            "BET_30": round(0.52 * pot_bb, 4),
+            "BET_MED": round(0.48 * pot_bb, 4),
+            "ALL_IN": round(0.40 * pot_bb, 4),
+        },
+        "CHECK": round(0.50 * pot_bb, 4),
+        "BET_30": round(0.52 * pot_bb, 4),
+        "BET_MED": round(0.48 * pot_bb, 4),
+        "ALL_IN": round(0.40 * pot_bb, 4),
+    }
+    for cat in ["MONSTER", "STRONG", "MEDIUM", "DRAW", "AIR"]:
+        eq = cat_eq[cat]
+        c_strat = strat.get(cat, {})
+        c_evs = {
+            "CHECK": round(eq * pot_bb, 4),
+            "BET_30": round((eq + 0.05) * pot_bb, 4),
+            "BET_MED": round(eq * pot_bb, 4),
+            "ALL_IN": round((eq - 0.10) * pot_bb, 4),
+        }
+        data_out[cat] = {
+            "strategy": c_strat,
+            "evs": c_evs,
+            "CHECK": c_evs["CHECK"],
+            "BET_30": c_evs["BET_30"],
+            "BET_MED": c_evs["BET_MED"],
+            "ALL_IN": c_evs["ALL_IN"],
+        }
+
     return {
-        "strategy": strat,
+        "data": data_out,
+        "strategy": data_out["strategy"],
+        "evs": data_out["evs"],
         "exploitability": 0.0045,
     }
 
@@ -360,7 +543,7 @@ def export_flop_db(progress: dict[str, Any]) -> None:
         if spot not in export_data:
             export_data[spot] = {}
         for flop_str, flop_info in spot_data.get("flops", {}).items():
-            export_data[spot][flop_str] = flop_info.get("strategy", {})
+            export_data[spot][flop_str] = flop_info.get("data", flop_info.get("strategy", {}))
 
     with open(FLOP_47_DB_FILE, "w", encoding="utf-8") as f:
         json.dump(export_data, f, indent=2)
@@ -419,12 +602,9 @@ def run_pipeline(
 
                 t0 = time.perf_counter()
                 if use_live_server:
-                    try:
-                        res = solve_flop_via_gtopen(base_url, spot, flop_str, cfg, target_dgap=target_dgap)
-                    except Exception as e:
-                        res = simulate_flop_solve(spot, flop_str, cfg)
+                    res = solve_flop_via_gtopen(base_url, spot, flop_str, cfg, target_dgap=target_dgap, mode=mode)
                 else:
-                    res = simulate_flop_solve(spot, flop_str, cfg)
+                    raise RuntimeError("Live GTOpen server is required for GTOpen overnight pipeline!")
 
                 elapsed = time.perf_counter() - t0
                 flop_times.append(elapsed)

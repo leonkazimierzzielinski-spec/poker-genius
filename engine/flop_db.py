@@ -198,16 +198,25 @@ class FlopDatabase:
         h2 = f"{hero_cards[1][0].upper()}{hero_cards[1][1].lower()}"
         for dk in (f"{h1}{h2}", f"{h2}{h1}"):
             if dk in selected_entry and isinstance(selected_entry[dk], dict):
-                return {k: float(v) for k, v in selected_entry[dk].items()}
+                sub = selected_entry[dk]
+                if "evs" in sub and isinstance(sub["evs"], dict):
+                    return {k: float(v) for k, v in sub["evs"].items()}
+                return {k: float(v) for k, v in sub.items() if k in ("CHECK", "BET_30", "BET_MED", "ALL_IN", "CALL", "FOLD")}
 
         # Hand category classification (MONSTER, STRONG, MEDIUM, DRAW, AIR)
         from engine.range_engine import classify_combo
         cat = classify_combo(hero_cards[0], hero_cards[1], board_cards)
         if cat in selected_entry and isinstance(selected_entry[cat], dict):
-            return {k: float(v) for k, v in selected_entry[cat].items()}
+            sub = selected_entry[cat]
+            if "evs" in sub and isinstance(sub["evs"], dict):
+                return {k: float(v) for k, v in sub["evs"].items()}
+            return {k: float(v) for k, v in sub.items() if k in ("CHECK", "BET_30", "BET_MED", "ALL_IN", "CALL", "FOLD")}
 
-        if all(k in selected_entry for k in ("CHECK", "BET_30", "ALL_IN")):
-            return {k: float(selected_entry[k]) for k in ("CHECK", "BET_30", "ALL_IN")}
+        if "evs" in selected_entry and isinstance(selected_entry["evs"], dict):
+            return {k: float(v) for k, v in selected_entry["evs"].items()}
+
+        if any(k in selected_entry for k in ("CHECK", "BET_30", "ALL_IN")):
+            return {k: float(selected_entry[k]) for k in ("CHECK", "BET_30", "BET_MED", "ALL_IN", "CALL", "FOLD") if k in selected_entry}
 
         return None
 

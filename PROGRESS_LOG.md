@@ -1,5 +1,40 @@
 # Poker Genius — Dziennik Postępu Prac (Progress Log)
 
+## V16.1 — Hotfix: Realne Parsowanie `/api/node` Solverem GTOpen (Kombinacje per Combo, Wagi Reach, Rzeczywiste EV w BB i 5 Koszyków) (2026-11-22)
+
+### 1. Wykryty problem i wdrożone poprawki
+1. **Eliminacja sztywnych zaślepek w `tools/run_gtopen_overnight.py`:**
+   - Poprzednia wersja `solve_flop_via_gtopen` zawierała zbyt krótki timeout na zapytaniu `/api/node` (10 s) oraz sztywne wartości domyślne (`0.40 / 0.50 / 0.10`), co powodowało ciche zapisywanie identycznych danych dla każdego flopa.
+   - Wprowadzono pełny parser `parse_node_view_to_categories`, który pobiera całą tablicę `hands` dla aktywnego gracza z `NodeView` serwera GTOpen (1,176 kombinacji).
+   - Każda kombinacja `(c1, c2)` jest klasyfikowana do jednego z 5 koszyków (`MONSTER`, `STRONG`, `MEDIUM`, `DRAW`, `AIR`) za pomocą `classify_combo` z `engine/range_engine.py`.
+   - Obliczana jest ważona średnia (z wagą `reach * weight`) rzeczywistych prawdopodobieństw strategii CFR oraz **rzeczywistych wartości EV w BB** dla akcji `CHECK`, `BET_30`, `BET_MED`, `ALL_IN`.
+   - W przypadku braku poprawnych danych z `/api/node` skrypt rzuca wyjątek `RuntimeError` zamiast podstawiać zaślepki.
+2. **Spójne wartości EV w BB w `engine/flop_db.py`:**
+   - W `FlopDatabase.lookup_nearest_flop` dodano obsługę nowego formatu z priorytetyzacją słownika `evs` oraz bezpośrednich kluczy akcji w BB.
+   - `DecisionMaker` w `main.py` otrzymuje spójne, fizyczne EV w BB (np. 8.50 BB dla Monstera, -0.42 BB dla Check z Air), co pozwala na precyzyjny dobór optymalnej linii gry.
+
+### 2. Porównanie wyników na żywych danych z GTOpen (Dry-Test)
+- **Flop `Ah 7d 2c` (Rainbow Dry):**
+  - Root Strategy: `CHECK: 46.2%, BET_30: 21.8%, BET_MED: 18.3%, ALL_IN: 13.7%`
+  - Root EVs (BB): `CHECK: 1.9879, BET_30: 1.8813, BET_MED: 1.7129, ALL_IN: 1.0353`
+  - MONSTER EVs (BB): `CHECK: 9.9011, BET_30: 8.4971, BET_MED: 8.4661, ALL_IN: 7.7772`
+  - STRONG EVs (BB): `CHECK: 8.6294, BET_30: 7.3061, BET_MED: 7.2766, ALL_IN: 6.6253`
+  - AIR EVs (BB): `CHECK: -0.4198, BET_30: +0.0323, BET_MED: -0.2434, ALL_IN: -1.0234` (zyskowny c-bet bluff!)
+- **Flop `Jh Ts 8s` (Wet Monotone Connector):**
+  - Root Strategy: `CHECK: 47.6%, BET_30: 25.2%, BET_MED: 20.0%, ALL_IN: 7.2%` (spadek shove o połowę!)
+  - MONSTER EVs (BB): `CHECK: 7.5712, BET_30: 7.7483, BET_MED: 7.6780, ALL_IN: 7.2372` (zakład ma wyższe EV niż check!)
+  - AIR EVs (BB): `CHECK: -0.3015, BET_30: -0.5633, ALL_IN: -2.7819` (silna kara za bluff air na mokrym boardzie!)
+- **Flop `Kd Kh 4c` (Paired Flop):**
+  - MONSTER EVs (BB): `CHECK: 6.8501, BET_30: 5.9211`
+  - MEDIUM EVs (BB): `CHECK: 0.3700, BET_30: 0.5096` (mały c-bet generuje najwyższe EV)
+
+### 3. Wyniki testów jednostkowych (`pytest -v tests/`)
+- Liczba testów: **137 passed in 15.42s (100% sukcesu)**.
+- Nowy test: `tests/test_engine.py::test_flop_db_lookup_with_real_evs_and_strategy_structure` potwierdzający poprawne zwracanie realnych EV w BB z bazy solvera.
+
+---
+
+
 ## V16 — Zawsze Włączony 2-Wierszowy Szerszy ActionBar, Korekta HU_SB, Pipeline Solverowy GTOpen i Integracja Nearest-Flop DB (2026-11-22)
 
 ### 1. Wdrożone zmiany i nowa architektura
