@@ -332,11 +332,24 @@ def solve_flop_via_gtopen(
     mode: str = "overnight",
 ) -> dict[str, Any]:
     """Build spot and solve flop using GTOpen server API, extracting real per-combo CFR strategies & EVs in BB."""
-    sizes = [
-        {"bet": "33 50 allin", "raise": "50 allin", "donk": ""},
-        {"bet": "33 50 allin", "raise": "50 allin", "donk": ""},
-        {"bet": "33 50 allin", "raise": "50 allin", "donk": ""},
-    ]
+    is_limped = "LIMPED" in spot
+    if is_limped:
+        sizes = [
+            {"bet": "33 50 allin", "raise": "allin", "donk": ""},
+            {"bet": "33 50 allin", "raise": "allin", "donk": ""},
+            {"bet": "33 50 allin", "raise": "allin", "donk": ""},
+        ]
+        max_raises = 2
+        allin_thresh = 70.0
+    else:
+        sizes = [
+            {"bet": "33 50 allin", "raise": "50 allin", "donk": ""},
+            {"bet": "33 50 allin", "raise": "50 allin", "donk": ""},
+            {"bet": "33 50 allin", "raise": "50 allin", "donk": ""},
+        ]
+        max_raises = 3
+        allin_thresh = 85.0
+
     spot_req = {
         "board": flop_str,
         "range_oop": config["oop_range"],
@@ -345,9 +358,9 @@ def solve_flop_via_gtopen(
         "effective_stack": config["effective_stack"],
         "rake_pct": 0.0,
         "rake_cap": 0.0,
-        "allin_threshold": 85.0,
+        "allin_threshold": allin_thresh,
         "add_allin": True,
-        "max_raises": 3,
+        "max_raises": max_raises,
         "oop": sizes,
         "ip": sizes,
     }
