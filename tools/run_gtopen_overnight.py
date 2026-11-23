@@ -150,6 +150,15 @@ def find_server_executable(gtopen_dir: Path) -> Path | None:
     return None
 
 
+def kill_server_processes() -> None:
+    """Force kill any lingering gto-server process."""
+    if sys.platform == "win32":
+        try:
+            subprocess.run(["taskkill", "/F", "/IM", "gto-server.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+
+
 def ensure_server(gtopen_dir: Path, port: int = 3737) -> tuple[subprocess.Popen | None, str]:
     """Start GTOpen server if not already running."""
     base_url = f"http://127.0.0.1:{port}"
@@ -590,6 +599,9 @@ def run_pipeline(
 
     try:
         # Check or start GTOpen server
+        if not is_server_alive(base_url):
+            kill_server_processes()
+            time.sleep(1)
         server_proc, base_url = ensure_server(GTOPEN_DIR, port=port)
         use_live_server = is_server_alive(base_url)
         print(f"Solver Engine: {'GTOpen Server (' + base_url + ')' if use_live_server else 'High-Precision Native Fallback'}")
@@ -630,6 +642,7 @@ def run_pipeline(
                                 server_proc.wait(timeout=5)
                             except Exception:
                                 pass
+                        kill_server_processes()
                         time.sleep(3)
                         server_proc, base_url = ensure_server(GTOPEN_DIR, port=port)
                         if flop_attempt == 3:
@@ -675,6 +688,7 @@ def run_pipeline(
                 server_proc.wait(timeout=5)
             except Exception:
                 pass
+        kill_server_processes()
         allow_sleep()
 
 
