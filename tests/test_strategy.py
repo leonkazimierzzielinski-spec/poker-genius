@@ -679,6 +679,31 @@ def test_decision_maker_reads_current_bet_and_uses_zero_preflop_threshold():
     assert dec_postflop.action == "CHECK"
 
 
+def test_decision_maker_never_folds_when_to_call_is_zero_even_if_check_missing():
+    """Verify V18.99: when to_call == 0, DecisionMaker never returns FOLD even if CHECK is missing from available_actions."""
+    from strategy.decision_maker import DecisionMaker
+
+    dm = DecisionMaker()
+    state = SimpleNamespace(
+        table_id="t1",
+        is_valid=True,
+        is_hero_turn=True,
+        street="FLOP",
+        hero_cards=["7s", "2c"],
+        board_cards=["Ah", "Kd", "Qc"],
+        available_actions=["FOLD", "BET"],
+        players={
+            0: SimpleNamespace(seat_id=0, is_active=True, current_bet=0, stack=260),
+            1: SimpleNamespace(seat_id=1, is_active=True, current_bet=0, stack=260),
+        },
+        big_blind=20,
+    )
+    dec = dm.decide(state, {"FOLD": 0.0, "BET_30": -0.20}, spot="FLOP")
+    assert dec.action != "FOLD"
+    assert dec.action in ("CHECK", "BET_30", "BET_SMALL", "BET_MED", "ALL_IN")
+
+
+
 
 
 

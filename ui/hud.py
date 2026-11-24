@@ -976,6 +976,8 @@ class HudOverlay(QWidget):
 
         if self.bridge is not None:
             self.bridge.decision_updated.connect(self.on_decision_updated)
+            if hasattr(self.bridge, "buy_in_changed"):
+                self.bridge.buy_in_changed.connect(self._on_buy_in_from_bridge)
             if hasattr(self.bridge, "hand_summary_updated"):
                 self.bridge.hand_summary_updated.connect(self.on_hand_summary_updated)
             if hasattr(self.bridge, "table_removed"):
@@ -1083,23 +1085,16 @@ class HudOverlay(QWidget):
         self.status_label = QLabel(self.normal_hud_widget)
         self.normal_hud_layout.addWidget(self.status_label)
 
-        # Buy-in selector row (visible in details)
+        # Auto Buy-in status & tools row (visible in details)
         self.buy_in_panel = QWidget(self.normal_hud_widget)
         buy_in_layout = QHBoxLayout(self.buy_in_panel)
         buy_in_layout.setContentsMargins(0, 2, 0, 2)
         buy_in_layout.setSpacing(4)
 
-        lbl_bi = QLabel("<b>Buy-in:</b>", self.buy_in_panel)
-        lbl_bi.setStyleSheet("color: #94a3b8; font-size: 10px; font-weight: bold;")
-        buy_in_layout.addWidget(lbl_bi)
-
         self.buy_in_buttons: dict[float, QPushButton] = {}
-        for val, text in [(0.50, "$0.50"), (2.0, "$2"), (5.0, "$5"), (10.0, "$10")]:
-            btn = QPushButton(text, self.buy_in_panel)
-            btn.setStyleSheet(btn_style)
-            btn.clicked.connect(lambda checked=False, v=val: self.set_buy_in(v))
-            buy_in_layout.addWidget(btn)
-            self.buy_in_buttons[val] = btn
+        self.auto_buy_in_label = QLabel(self.buy_in_panel)
+        self.auto_buy_in_label.setStyleSheet("color: #fbbf24; font-size: 10px; font-weight: bold;")
+        buy_in_layout.addWidget(self.auto_buy_in_label)
 
         buy_in_layout.addStretch()
 
@@ -1573,28 +1568,25 @@ class HudOverlay(QWidget):
         self.adjustSize()
         return self.is_action_only_mode
 
+    @Slot(float)
+    def _on_buy_in_from_bridge(self, val: float) -> None:
+        """Update displayed buy-in when auto-detected from processing_loop."""
+        self.buy_in = float(val)
+        self._update_buy_in_buttons_ui()
+
     def set_buy_in(self, val: float) -> None:
         """Set tournament buy-in amount and notify bridge."""
-        self.buy_in = val
+        self.buy_in = float(val)
         self._update_buy_in_buttons_ui()
         if self.bridge is not None and hasattr(self.bridge, "buy_in_changed"):
-            self.bridge.buy_in_changed.emit(val)
+            self.bridge.buy_in_changed.emit(self.buy_in)
+
+    def _format_buy_in_str(self) -> str:
+        return f"${self.buy_in:.2f}" if self.buy_in < 1.0 else f"${self.buy_in:g}"
 
     def _update_buy_in_buttons_ui(self) -> None:
-        active_style = (
-            "background-color: #2980b9; color: #ffffff; border: 1px solid #3498db; "
-            "border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: bold;"
-        )
-        inactive_style = (
-            "background-color: rgba(255, 255, 255, 0.08); color: #cbd5e1; "
-            "border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 4px; padding: 2px 8px; "
-            "font-size: 11px; font-weight: bold;"
-        )
-        for v, btn in self.buy_in_buttons.items():
-            if abs(v - self.buy_in) < 0.01:
-                btn.setStyleSheet(active_style)
-            else:
-                btn.setStyleSheet(inactive_style)
+        if hasattr(self, "auto_buy_in_label"):
+            self.auto_buy_in_label.setText(f"Buy-in: {self._format_buy_in_str()} (auto)")
 
     def start_add_table_flow(self) -> None:
         """Start interactive region selection to add a new table."""
@@ -2257,7 +2249,7 @@ class HudOverlay(QWidget):
         card_html = f"""
         <div data-action="{action}" style="background-color: rgba(255, 255, 255, 0.06); border-radius: 6px; padding: 8px; margin-top: 2px;">
             <div style="font-size: 10px; color: #94a3b8; margin-bottom: 3px;">
-                <b>{table_id}</b> &bull; <span style="color: #60a5fa;">{profile_used}</span>
+                <b>{table_id}</b> &bull; <span style="color: #fbbf24;">{self._format_buy_in_str()}</span> &bull; <span style="color: #60a5fa;">{profile_used}</span>
             </div>
             {cards_row_html}
             <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 2px;">

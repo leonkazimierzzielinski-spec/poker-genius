@@ -104,13 +104,16 @@ class DecisionMaker:
 
         available_actions = getattr(state, "available_actions", None)
         has_check = bool(available_actions and "CHECK" in available_actions)
-        facing_bet = (to_call > 0) or (available_actions is not None and "CALL" in available_actions)
+        if to_call == 0:
+            facing_bet = False
+        else:
+            facing_bet = (to_call > 0) or (available_actions is not None and "CALL" in available_actions)
 
-        # Hard safety rule: Never fold when free check is available
+        # Hard safety rule: Never fold when free check is available (to_call == 0)
         clean_evs = dict(candidate_evs)
-        if not facing_bet or (has_check and to_call == 0):
+        if to_call == 0 or not facing_bet or (has_check and to_call == 0):
             clean_evs = {k: v for k, v in clean_evs.items() if k != "FOLD"}
-            if "CHECK" not in clean_evs and (available_actions is None or "CHECK" in available_actions):
+            if "CHECK" not in clean_evs and (available_actions is None or "CHECK" in available_actions or to_call == 0):
                 clean_evs["CHECK"] = 0.0
 
         exploited_evs, reasons = self.exploit_engine.apply_exploits(
@@ -120,7 +123,7 @@ class DecisionMaker:
             spot=spot,
         )
 
-        if not facing_bet or (has_check and to_call == 0):
+        if to_call == 0 or not facing_bet or (has_check and to_call == 0):
             exploited_evs = {k: v for k, v in exploited_evs.items() if k != "FOLD"}
 
         is_preflop_decision = (
@@ -139,12 +142,22 @@ class DecisionMaker:
             else self.ev_loss_threshold_bb
         )
 
+        eff_available = available_actions
+        if to_call == 0 and available_actions is not None:
+            eff_available = [a for a in available_actions if a != "FOLD"]
+            if "CHECK" not in eff_available:
+                eff_available.append("CHECK")
+
         action, ev_bb, filter_note = self.simplifier.select_pure_action(
             evs=exploited_evs,
             modifiers=modifiers,
-            available_actions=available_actions,
+            available_actions=eff_available,
             threshold_override=eff_thresh,
         )
+
+        if to_call == 0 and action == "FOLD":
+            action = "CHECK"
+            ev_bb = exploited_evs.get("CHECK", 0.0)
 
         if filter_note:
             reasons.append(filter_note)

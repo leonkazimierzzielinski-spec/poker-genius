@@ -248,13 +248,13 @@ def determine_preflop_spot(state: Any) -> str:
         sb_status = getattr(sb_player, "status_text", "") if sb_player else ""
         bb_status = getattr(bb_player, "status_text", "") if bb_player else ""
 
+        if _is_preflop_shove(sb_player, bb_val):
+            return "BB_VS_SB_SHOVE"
+        if _is_preflop_shove(bb_player, bb_val):
+            return "BB_VS_SB_SHOVE"
         if sb_bet > bb_val or sb_status == "ALL_IN":
-            if _is_preflop_shove(sb_player, bb_val):
-                return "BB_VS_SB_SHOVE"
             return "BB_VS_SB_RAISE"
         if bb_bet > bb_val or bb_status == "ALL_IN":
-            if _is_preflop_shove(bb_player, bb_val):
-                return "BB_VS_SB_SHOVE"
             return "BB_VS_SB_RAISE"
         return "BTN_OPEN"
 
@@ -278,13 +278,13 @@ def determine_preflop_spot(state: Any) -> str:
         btn_status = getattr(btn_player, "status_text", "") if btn_player else ""
         sb_status = getattr(sb_player, "status_text", "") if sb_player else ""
 
+        if _is_preflop_shove(btn_player, bb_val):
+            return "BB_VS_BTN_SHOVE"
+        if _is_preflop_shove(sb_player, bb_val):
+            return "BB_VS_SB_SHOVE"
         if btn_bet > bb_val or btn_status == "ALL_IN":
-            if _is_preflop_shove(btn_player, bb_val):
-                return "BB_VS_BTN_SHOVE"
             return "BB_VS_BTN_RAISE"
         if sb_bet > bb_val or sb_status == "ALL_IN":
-            if _is_preflop_shove(sb_player, bb_val):
-                return "BB_VS_SB_SHOVE"
             return "BB_VS_SB_RAISE"
         if btn_bet == bb_val or sb_bet == bb_val or (btn_bet > 0 and btn_bet <= bb_val):
             return "BB_ISO_VS_LIMP"
@@ -409,12 +409,51 @@ def evaluate_candidates(
             pot_val = getattr(state, "pot", 0) or (max_opp_bet + hero_bet)
             pot_bb = max(2.5, pot_val / bb_val)
 
+            num_opps_in_pot = sum(
+                1
+                for s_id, p in players.items()
+                if s_id != 0
+                and getattr(p, "is_active", True)
+                and getattr(p, "status_text", "") not in ("FOLDED", "SIT_OUT", "ELIMINATED")
+                and (
+                    (getattr(p, "current_bet", 0) or 0) >= max_opp_bet
+                    or getattr(p, "status_text", "") == "ALL_IN"
+                )
+            )
+            num_opps_in_pot = max(1, min(2, num_opps_in_pot))
+
             if mc_calc is not None and hasattr(mc_calc, "estimate_equity") and len(hero_cards) == 2:
                 try:
-                    equity = mc_calc.estimate_equity(hero_cards, [], time_budget_ms=40.0)
-                    call_equity = max(0.05, equity - 0.05)
+                    v_combos = None
+                    if get_preflop_villain_range is not None:
+                        raiser_pos = "BTN" if "BTN" in spot else "SB"
+                        v_range = get_preflop_villain_range(
+                            position=raiser_pos,
+                            preflop_action="OPEN_RAISE",
+                            effective_bb=effective_bb,
+                            hero_cards=hero_cards,
+                        )
+                        if v_range:
+                            v_combos = list(v_range.keys())
+
+                    try:
+                        equity = mc_calc.estimate_equity(
+                            hero_cards,
+                            [],
+                            villain_range=v_combos,
+                            num_opponents=num_opps_in_pot,
+                            time_budget_ms=50.0,
+                        )
+                    except TypeError:
+                        equity = mc_calc.estimate_equity(hero_cards, [], time_budget_ms=40.0)
+
+                    if num_opps_in_pot >= 2:
+                        call_equity = max(0.05, equity - 0.08)
+                        shove_fe = 0.15
+                    else:
+                        call_equity = max(0.05, equity - 0.05)
+                        shove_fe = 0.28
                     shove_call_equity = max(0.05, equity - 0.10)
-                    shove_fe = 0.28
                     if hasattr(mc_calc, "calculate_ev_bb"):
                         call_ev = mc_calc.calculate_ev_bb(
                             call_equity, pot_bb, call_cost_bb=to_call_bb, fold_equity=0.0
@@ -964,6 +1003,7 @@ def processing_loop(
     finalized_tournament_tables: set[str] = set()
     decision_snap_counts: dict[str, dict[str, int]] = {}
     last_known_stacks: dict[str, dict[int, tuple[int, float]]] = {}
+    auto_buy_in_state: dict[str, dict[str, Any]] = {}
 
     def _on_manual_rect(rect: Any) -> None:
         if "table_1" in managed_tables:
@@ -1321,6 +1361,7 @@ def processing_loop(
                         if hasattr(pipeline, "reset_table_blinds"):
                             pipeline.reset_table_blinds(resolved_tid)
                         last_known_stacks.pop(resolved_tid, None)
+                        auto_buy_in_state.pop(resolved_tid, None)
                         trackers.pop(resolved_tid, None)
                         decision_locks.pop(resolved_tid, None)
                         last_active_decisions.pop(resolved_tid, None)
@@ -1396,6 +1437,27 @@ def processing_loop(
                         for sid_k, pl_k in (getattr(state, "players", {}) or {}).items():
                             if getattr(pl_k, "stack", None) is not None:
                                 last_known_stacks.setdefault(resolved_tid, {})[sid_k] = (int(pl_k.stack), now_mono)
+
+                        # Auto Buy-in 3-frame debounce synchronization
+                        cand_bi = getattr(pipeline, "last_detected_buy_in", {}).get(resolved_tid)
+                        if cand_bi is not None:
+                            bi_st = auto_buy_in_state.setdefault(
+                                resolved_tid, {"confirmed": None, "pending": None, "count": 0}
+                            )
+                            if bi_st["pending"] == cand_bi:
+                                bi_st["count"] += 1
+                            else:
+                                bi_st["pending"] = cand_bi
+                                bi_st["count"] = 1
+                            if bi_st["count"] >= 3 and bi_st["confirmed"] != cand_bi:
+                                bi_st["confirmed"] = cand_bi
+                                if decision_maker is not None:
+                                    decision_maker.buy_in = float(cand_bi)
+                                if hud_bridge is not None and hasattr(hud_bridge, "buy_in_changed"):
+                                    try:
+                                        hud_bridge.buy_in_changed.emit(float(cand_bi))
+                                    except Exception:
+                                        pass
                 else:
                     is_valid = getattr(state, "is_valid", True)
 
@@ -1425,6 +1487,7 @@ def processing_loop(
                         if hasattr(pipeline, "reset_table_blinds"):
                             pipeline.reset_table_blinds(resolved_tid)
                         last_known_stacks.pop(resolved_tid, None)
+                        auto_buy_in_state.pop(resolved_tid, None)
                         trackers.pop(resolved_tid, None)
                         decision_locks.pop(resolved_tid, None)
                         last_active_decisions.pop(resolved_tid, None)

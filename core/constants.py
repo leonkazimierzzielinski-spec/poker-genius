@@ -22,6 +22,7 @@ VALID_BLIND_LEVELS: tuple[tuple[int, int], ...] = (
     (75, 150),
     (100, 200),
 )
+VALID_BUY_INS: tuple[float, ...] = (0.5, 2.0, 5.0, 10.0, 50.0)
 CARD_MATCH_THRESHOLD: float = 0.92
 EV_LOSS_THRESHOLD_BB: float = 0.08
 RANKS: str = "23456789TJQKA"

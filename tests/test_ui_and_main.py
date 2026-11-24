@@ -2242,6 +2242,65 @@ def test_exclude_from_capture_helper_is_safe_on_all_platforms(qapp) -> None:
     _apply_exclude_from_capture(None)
 
 
+def test_determine_preflop_spot_prioritizes_sb_shove_over_btn_raise() -> None:
+    """Verify V18.99: BTN raise + SB ALL-IN classifies as BB_VS_SB_SHOVE (not BB_VS_BTN_RAISE)."""
+    from types import SimpleNamespace
+    from main import determine_preflop_spot
+
+    state = SimpleNamespace(
+        big_blind=20,
+        players={
+            0: SimpleNamespace(seat_id=0, stack=280, current_bet=20, is_dealer=False, is_active=True, status_text="ACTIVE"),
+            1: SimpleNamespace(seat_id=1, stack=260, current_bet=40, is_dealer=True, is_active=True, status_text="ACTIVE"),
+            2: SimpleNamespace(seat_id=2, stack=0, current_bet=280, is_dealer=False, is_active=True, status_text="ALL_IN"),
+        },
+    )
+    assert determine_preflop_spot(state) == "BB_VS_SB_SHOVE"
+
+
+def test_bb_vs_btn_raise_3way_folds_75o() -> None:
+    """Verify V18.99: 5d 7s on BB vs BTN 3x raise (90) + SB call (90) at 15/30 folds instead of calling."""
+    from types import SimpleNamespace
+    from engine.monte_carlo import MonteCarloCalculator
+    from strategy.decision_maker import DecisionMaker
+    from main import evaluate_candidates
+
+    state = SimpleNamespace(
+        table_id="t1",
+        is_valid=True,
+        is_hero_turn=True,
+        street="PREFLOP",
+        hero_cards=["5d", "7s"],
+        board_cards=[],
+        pot=210,
+        big_blind=30,
+        available_actions=["FOLD", "CALL", "RAISE", "ALL_IN"],
+        players={
+            0: SimpleNamespace(seat_id=0, stack=270, current_bet=30, is_dealer=False, is_active=True, status_text="ACTIVE"),
+            1: SimpleNamespace(seat_id=1, stack=210, current_bet=90, is_dealer=True, is_active=True, status_text="ACTIVE"),
+            2: SimpleNamespace(seat_id=2, stack=210, current_bet=90, is_dealer=False, is_active=True, status_text="ACTIVE"),
+        },
+    )
+    mc = MonteCarloCalculator()
+    cands, spot = evaluate_candidates(state, preflop_engine=None, flop_db=None, mc_calc=mc)
+    assert spot == "BB_VS_BTN_RAISE"
+    dec = DecisionMaker().decide(state, cands, spot=spot)
+    assert dec.action == "FOLD", f"Expected FOLD with 75o 3-way vs BTN 3x, got {dec.action} ({cands})"
+
+
+def test_hud_has_no_manual_buy_in_buttons_and_tracks_auto_buy_in(qapp) -> None:
+    """Verify V18.99: manual buy-in buttons are removed from HUD while auto buy_in tracking works."""
+    from ui.hud import HudOverlay
+
+    hud = HudOverlay(initial_buy_in=0.50)
+    assert hud.buy_in_buttons == {}
+    assert hud.buy_in == pytest.approx(0.50)
+    hud.set_buy_in(2.0)
+    assert hud.buy_in == pytest.approx(2.0)
+    assert "$2 (auto)" in hud.auto_buy_in_label.text()
+
+
+
 
 
 

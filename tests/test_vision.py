@@ -1406,6 +1406,22 @@ def test_blinds_single_frame_upward_glitch_does_not_poison_pipeline() -> None:
     assert pipe._last_valid_blinds["t_up"] == (40, 80)
 
 
+def test_infer_buy_in_from_unique_prize_pools_and_ocr() -> None:
+    """Verify V18.99: infer_buy_in handles unique prize pools, OCR confirmation, and 2x fallback."""
+    from vision.pipeline import infer_buy_in
+
+    assert infer_buy_in(None, 1) == 0.5
+    assert infer_buy_in(None, 1.5) == 0.5
+    assert infer_buy_in(None, 2.5) == 0.5
+    assert infer_buy_in(None, 4) == 2.0
+    assert infer_buy_in(None, 6) == 2.0
+
+    # Ambiguous $10: with OCR 2.0 -> 2.0 (5x); without OCR -> 5.0 (2x)
+    assert infer_buy_in(2.0, 10) == 2.0
+    assert infer_buy_in(None, 10) == 5.0
+
+
+
 
 
 

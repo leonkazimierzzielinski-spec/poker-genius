@@ -225,7 +225,12 @@ class DigitOCR:
         except ValueError:
             return None
 
-    def read_float(self, roi: np.ndarray) -> float | None:
+    def read_float(
+        self,
+        roi: np.ndarray,
+        min_p98: float = 125.0,
+        min_contrast: float = 35.0,
+    ) -> float | None:
         """Extract and recognize a float (e.g. prize pool '$1.50') from the ROI.
 
         Detects decimal dots between digits. Returns float or None.
@@ -233,7 +238,7 @@ class DigitOCR:
         if not self.templates:
             return None
 
-        bin_img = self._prepare_binary_image(roi, min_p98=125.0, min_contrast=35.0)
+        bin_img = self._prepare_binary_image(roi, min_p98=min_p98, min_contrast=min_contrast)
         if bin_img is None:
             return None
 

@@ -1,5 +1,25 @@
 # Poker Genius — Dziennik Postępu Prac (Progress Log)
 
+## V18.99 — Auto-Detekcja Buy-in, Czysty HUD, Priorytet SHOVE, Zakres `BB_VS_*_RAISE` i Zakaz `FOLD` przy `to_call == 0` (2026-11-24)
+
+### 1. Wdrożone zmiany
+1. **Automatyczna detekcja `buy_in` (`core/constants.py`, `config.json`, `vision/ocr.py`, `vision/pipeline.py`, `main.py`):**
+   - Dodano `VALID_BUY_INS = (0.5, 2.0, 5.0, 10.0, 50.0)` oraz ROI `buy_in: [0.468, 0.570, 0.048, 0.036]` w `config.json`.
+   - Dodano `infer_buy_in(raw_ocr_val, prize_pool)`: jednoznaczne pule JAQKpot! (`$1/$1.5/$2.5 -> $0.50`, `$4/$6 -> $2.0`), weryfikacja OCR (`read_float` z `min_p98=100, min_contrast=25`) oraz fallback `2x` / `(2, 3, 5, 10)` dla wieloznacznych pul (`$10 -> $5.0` bez OCR).
+   - W `processing_loop()` wprowadzono 3-klatkowy debounce per stół synchronizujący `decision_maker.buy_in` oraz emitujący `hud_bridge.buy_in_changed`.
+2. **Usunięcie ręcznych przycisków `Buy-in` z HUD (`ui/hud.py`):**
+   - Usunięto ręczne guziki `$0.50 / $2 / $5 / $10` z paska HUD; w pasku szczegółów oraz nagłówku karty stołu wyświetlany jest automatycznie wykryty buy-in (`Buy-in: $X (auto)`), zachowując pełną kompatybilność wsteczną API (`self.buy_in`, `set_buy_in()`, `initial_buy_in`).
+3. **Priorytet `SHOVE` i realistyczny zakres w `BB_VS_*_RAISE` (`main.py`):**
+   - W `determine_preflop_spot()` sprawdzanie `_is_preflop_shove(...)` ma teraz bezwzględny priorytet przed `RAISE` (naprawa `BTN raise + SB ALL-IN` klasyfikowanego błędnie jako `BB_VS_BTN_RAISE`).
+   - W `evaluate_candidates()` dla `BB_VS_BTN_RAISE`, `BB_VS_SB_RAISE`, `SB_VS_BTN_RAISE` wyliczany jest realistyczny zakres open-raise (`get_preflop_villain_range`) oraz liczba rywali w puli `num_opps_in_pot` z konserwatywnym `shove_fe=0.15` i `call_equity = equity - 0.08` w pulach 3-way.
+4. **Twardy zakaz `FOLD` przy darmowym `CHECK` (`strategy/decision_maker.py`):**
+   - Gdy `to_call == 0`, `facing_bet` jest wymuszane na `False`, `"FOLD"` jest usuwany z `clean_evs`, `exploited_evs` i `eff_available`, a brakujący `"CHECK"` jest dopisywany automatycznie z ostatnim bezpiecznikiem `action = "CHECK"`.
+5. **Testy i weryfikacja:**
+   - Dodano 5 nowych testów jednostkowych w `tests/test_vision.py`, `tests/test_strategy.py` i `tests/test_ui_and_main.py`.
+   - Pełny wynik `pytest -v tests/`: **166 passed in 5.89s (100% sukcesu)**.
+
+---
+
 ## V18.1 — Mikro-Hotfix: 3-Klatkowy Debounce Podnoszenia Blindów i Samonaprawa `Blinds decreased` (2026-11-24)
 
 ### 1. Wdrożone poprawki

@@ -10,13 +10,14 @@ import cv2
 import numpy as np
 
 try:
-    from core.constants import VALID_BLIND_LEVELS
+    from core.constants import VALID_BLIND_LEVELS, VALID_BUY_INS
     from core.contracts import PlayerState, TableState
 except ImportError:
     VALID_BLIND_LEVELS = (  # type: ignore[assignment]
         (10, 20), (15, 30), (20, 40), (30, 60), (40, 80),
         (50, 100), (60, 120), (75, 150), (100, 200),
     )
+    VALID_BUY_INS = (0.5, 2.0, 5.0, 10.0, 50.0)  # type: ignore[assignment]
     PlayerState = None  # type: ignore[misc, assignment]
     TableState = None  # type: ignore[misc, assignment]
 
@@ -31,6 +32,45 @@ from vision.anchor import (
 )
 from vision.card_recognizer import CardRecognizer
 from vision.ocr import DigitOCR, detect_hero_actions
+
+
+def infer_buy_in(
+    raw_ocr_val: float | None,
+    prize_pool: float | int | None,
+) -> float | None:
+    """Infer tournament buy-in from JAQKpot! prize pool and/or OCR buy_in ROI."""
+    if prize_pool is not None:
+        pp = float(prize_pool)
+        if pp in (1.0, 1.5, 2.5):
+            return 0.5
+        if pp in (4.0, 6.0):
+            return 2.0
+
+    if raw_ocr_val is not None:
+        closest = min(VALID_BUY_INS, key=lambda b: abs(b - raw_ocr_val))
+        if abs(closest - raw_ocr_val) <= 0.15:
+            if prize_pool is None or float(prize_pool) <= 0 or (float(prize_pool) / closest) >= 1.9:
+                return float(closest)
+
+    if prize_pool is not None and float(prize_pool) > 0:
+        pp = float(prize_pool)
+        cands_2x = [b for b in VALID_BUY_INS if abs((pp / b) - 2.0) < 0.01]
+        if cands_2x:
+            return float(max(cands_2x))
+
+        best_b: float | None = None
+        best_dist = 999.0
+        for b in reversed(VALID_BUY_INS):
+            mult = pp / b
+            for target_m in (2.0, 3.0, 5.0, 10.0):
+                d = abs(mult - target_m)
+                if d <= 0.05 and d < best_dist:
+                    best_dist = d
+                    best_b = float(b)
+        if best_b is not None:
+            return best_b
+
+    return None
 
 
 class VisionPipeline:
@@ -72,6 +112,7 @@ class VisionPipeline:
         self._last_canonical_table: np.ndarray | None = None
         self._last_valid_blinds: dict[str, tuple[int, int]] = {}
         self._pending_blinds: dict[str, tuple[tuple[int, int], int]] = {}
+        self.last_detected_buy_in: dict[str, float] = {}
 
         self.dealer_template: np.ndarray | None = None
         d_path = Path("data/templates/dealer.png")
@@ -506,6 +547,14 @@ class VisionPipeline:
         # 5. Blinds (normalized against VALID_BLIND_LEVELS)
         raw_blinds = self.digit_ocr.read_blinds(rois["blinds"]) if "blinds" in rois else None
         small_blind, big_blind = self._normalize_blinds(raw_blinds, table_id)
+
+        # 5b. Auto Buy-in detection
+        raw_buy_in: float | None = None
+        if "buy_in" in rois:
+            raw_buy_in = self.digit_ocr.read_float(rois["buy_in"], min_p98=100.0, min_contrast=25.0)
+        detected_bi = infer_buy_in(raw_buy_in, prize_pool)
+        if detected_bi is not None:
+            self.last_detected_buy_in[table_id] = detected_bi
 
         # 6. Players (seats 0, 1, 2)
         best_dealer_seat = None
