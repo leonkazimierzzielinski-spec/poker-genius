@@ -1534,7 +1534,19 @@ def processing_loop(
                         hero_bet_chips = getattr(hero_p_chips, "current_bet", 0) or 0
                         bb_val_chips = getattr(state, "big_blind", 20) or 20
                         pot_val_chips = getattr(state, "pot", 0) or 0
-                        eff_stk_chips = int(round(effective_bb * bb_val_chips)) if "effective_bb" in locals() and effective_bb is not None else hero_stk_chips
+                        active_opp_totals = [
+                            (getattr(p, "stack", 0) or 0) + (getattr(p, "current_bet", 0) or 0)
+                            for sid, p in getattr(state, "players", {}).items()
+                            if sid != 0
+                            and getattr(p, "is_active", True)
+                            and getattr(p, "status_text", "") not in ("FOLDED", "SIT_OUT", "ELIMINATED")
+                        ]
+                        active_opp_totals = [t for t in active_opp_totals if t > 0]
+                        eff_stk_chips = (
+                            min(hero_stk_chips + hero_bet_chips, max(active_opp_totals))
+                            if active_opp_totals
+                            else hero_stk_chips
+                        )
                         max_opp_bet_chips = max(
                             (getattr(p, "current_bet", 0) or 0 for sid, p in getattr(state, "players", {}).items() if sid != 0),
                             default=0,
@@ -1910,6 +1922,7 @@ def processing_loop(
                     debug_payload = {
                         "table_id": resolved_tid,
                         "table_rect": eff_rect,
+                        "anchor_source": anchor_source,
                         "rois": rois_list,
                     }
                     try:
@@ -2138,7 +2151,11 @@ def main(argv: list[str] | None = None) -> int:
         app = QApplication(sys.argv if argv is None else ["poker_assistant"])
 
     hud_bridge = HudBridge()
-    hud_overlay = HudOverlay(bridge=hud_bridge, monitor_idx=args.monitor)
+    hud_overlay = HudOverlay(
+        bridge=hud_bridge,
+        monitor_idx=args.monitor,
+        initial_buy_in=args.buy_in,
+    )
     hud_overlay.snapshots_enabled = save_snapshots_flag
     hud_overlay._update_snapshots_button_ui()
     if hand_recorder is not None:

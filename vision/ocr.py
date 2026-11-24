@@ -73,13 +73,30 @@ class DigitOCR:
         )
         return thresh
 
-    def _prepare_binary_image(self, roi: np.ndarray) -> np.ndarray | None:
+    def _prepare_binary_image(
+        self,
+        roi: np.ndarray,
+        min_p98: float = 140.0,
+        min_contrast: float = 40.0,
+    ) -> np.ndarray | None:
         if roi is None or roi.size == 0:
             return None
 
         # Check for near uniform images (e.g. empty or background only)
         if float(np.std(roi)) < 4.0:
             return None
+
+        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY) if roi.ndim == 3 else roi
+        p2 = float(np.percentile(gray, 2))
+        p50 = float(np.percentile(gray, 50))
+        p98 = float(np.percentile(gray, 98))
+
+        if p50 > 180.0:
+            if (p50 - p2) < min_contrast:
+                return None
+        else:
+            if p98 < min_p98 or (p98 - p50) < min_contrast:
+                return None
 
         bin_img = self.preprocess(roi)
         # Invert if background appears white/light (check corners)
@@ -163,7 +180,7 @@ class DigitOCR:
         if not self.templates:
             return None
 
-        bin_img = self._prepare_binary_image(roi)
+        bin_img = self._prepare_binary_image(roi, min_p98=100.0, min_contrast=40.0)
         if bin_img is None:
             return None
 
@@ -216,7 +233,7 @@ class DigitOCR:
         if not self.templates:
             return None
 
-        bin_img = self._prepare_binary_image(roi)
+        bin_img = self._prepare_binary_image(roi, min_p98=125.0, min_contrast=35.0)
         if bin_img is None:
             return None
 
@@ -280,7 +297,7 @@ class DigitOCR:
         if not self.templates:
             return None
 
-        bin_img = self._prepare_binary_image(roi)
+        bin_img = self._prepare_binary_image(roi, min_p98=100.0, min_contrast=25.0)
         if bin_img is None:
             return None
 

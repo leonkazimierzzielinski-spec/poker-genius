@@ -11,7 +11,7 @@ def find_all_anchors(
     anchor_template: np.ndarray,
     threshold: float = 0.85,
     min_distance_px: int = 100,
-    scales: tuple[float, ...] = (1.0, 1.25, 1.28, 1.30, 1.15, 0.85, 0.75, 1.40),
+    scales: tuple[float, ...] = (1.0, 1.25, 1.28, 1.30, 1.15, 0.85, 0.75, 0.65, 0.55, 1.40),
     preferred_scale: float | None = None,
 ) -> list[tuple[int, int, int, int]]:
     """Find all occurrences of anchor template in frame above threshold.
@@ -114,7 +114,7 @@ def find_anchor(
     frame: np.ndarray,
     anchor_template: np.ndarray,
     threshold: float = 0.85,
-    scales: tuple[float, ...] = (1.0, 1.25, 1.28, 1.30, 1.15, 0.85, 0.75, 1.40),
+    scales: tuple[float, ...] = (1.0, 1.25, 1.28, 1.30, 1.15, 0.85, 0.75, 0.65, 0.55, 1.40),
     preferred_scale: float | None = None,
 ) -> tuple[int, int, int, int] | None:
     """Find the single strongest anchor match in frame.
@@ -419,8 +419,8 @@ def find_golden_rim(
 
     hsv = cv2.cvtColor(work_frame, cv2.COLOR_BGR2HSV)
 
-    # 1. Detect blue felt candidate
-    blue_mask = cv2.inRange(hsv, (90, 40, 30), (135, 255, 255))
+    # 1. Detect blue felt candidate (tight HSV bounds excluding Stake dark slate UI)
+    blue_mask = cv2.inRange(hsv, (95, 95, 90), (130, 255, 255))
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (25, 25))
     blue_closed = cv2.morphologyEx(blue_mask, cv2.MORPH_CLOSE, kernel)
     contours, _ = cv2.findContours(blue_closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -511,10 +511,10 @@ def find_golden_rim(
 
         center_roi = hsv[c_y1:c_y2, c_x1:c_x2]
         blue_center_mask = (
-            (center_roi[:, :, 0] >= 90)
-            & (center_roi[:, :, 0] <= 135)
-            & (center_roi[:, :, 1] >= 40)
-            & (center_roi[:, :, 2] >= 30)
+            (center_roi[:, :, 0] >= 95)
+            & (center_roi[:, :, 0] <= 130)
+            & (center_roi[:, :, 1] >= 95)
+            & (center_roi[:, :, 2] >= 90)
         )
         blue_ratio = np.count_nonzero(blue_center_mask) / (center_roi.shape[0] * center_roi.shape[1])
         if blue_ratio < 0.40:
@@ -548,7 +548,7 @@ def verify_table_rect_has_blue_felt(
 
     center_roi = frame[y1:y2, x1:x2]
     hsv = cv2.cvtColor(center_roi, cv2.COLOR_BGR2HSV)
-    blue_mask = cv2.inRange(hsv, (90, 40, 30), (135, 255, 255))
+    blue_mask = cv2.inRange(hsv, (95, 95, 90), (130, 255, 255))
     blue_ratio = np.count_nonzero(blue_mask) / (center_roi.shape[0] * center_roi.shape[1])
     return bool(blue_ratio >= min_blue_ratio)
 

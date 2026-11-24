@@ -1,5 +1,29 @@
 # Poker Genius — Dziennik Postępu Prac (Progress Log)
 
+## V17.4 — Pakiet Stabilnościowy: Maska Sukna HSV, Bramka Kontrastu OCR, Ochrona Tracker FOLD/Sub-SB, `eff_stk_chips` i HUD Buy-in (2026-11-24)
+
+### 1. Wdrożone poprawki
+1. **Maska niebieskiego sukna i skale `ICON` (`vision/anchor.py`):**
+   - Zawężono maskę niebieskiego sukna w `find_golden_rim()` (`blue_mask` i `blue_center_mask`) oraz `verify_table_rect_has_blue_felt()` do `H in [95, 130], S >= 95, V >= 90` (`cv2.inRange(hsv, (95, 95, 90), (130, 255, 255))`), eliminując zlewanie ciemnego tła Stake (`#0f212e`, `#1a2c38`).
+   - Rozszerzono domyślną listę skal w `find_all_anchors()` i `find_anchor()` o małe okna (`0.65`, `0.55`).
+2. **Bramka jasności i kontrastu per typ pola w `DigitOCR` (`vision/ocr.py`):**
+   - W `_prepare_binary_image()` dodano bramkę percentyli `p2`, `p50`, `p98` oraz kontrastu (`p98 - p50` / `p50 - p2`).
+   - Przypisano dedykowane progi dla `read_int` (`min_p98=100.0, min_contrast=40.0` — odrzuca szum pustych miejsc, zachowując przygaszone stacki), `read_float` (`min_p98=125.0, min_contrast=35.0`) i `read_blinds` (`min_p98=100.0, min_contrast=25.0`).
+3. **Ochrona przed fałszywym `FOLD` i duchami sub-SB (`state/tracker.py`):**
+   - Condition C nie oznacza już `Ty (S0)` jako `FOLD`, jeśli `hero_cards` nadal zawiera 2 karty.
+   - Condition B ignoruje `max_prev_bet < small_blind`.
+   - Filtr sub-SB odrzuca także skok `0 < current_bet < sb_val`, gdy w poprzedniej klatce fotel miał `stack in (None, 0)` i `current_bet == 0`.
+4. **Kwantyzacja sizingów (`main.py`):**
+   - Usunięto martwe sprawdzenie `"effective_bb" in locals()`, obliczając `eff_stk_chips` jawnie na podstawie maksymalnego totalu aktywnych rywali (`min(hero_stk + hero_bet, max(active_opp_totals))`).
+5. **Diagnostyka kotwicy i synchronizacja `--buy-in` (`main.py`, `ui/hud.py`):**
+   - `debug_payload` zawiera `anchor_source`, a `DebugRoiOverlay` wyświetla `TABLE [{src}] (...)`.
+   - `HudOverlay` przyjmuje `initial_buy_in: float = 2.0` (przekazywane z `args.buy_in`) i synchronizuje przyciski buy-in przy starcie.
+6. **Testy jednostkowe:**
+   - Dodano 5 nowych testów regresyjnych w `tests/test_vision.py`, `tests/test_state.py` i `tests/test_ui_and_main.py`.
+   - Pełny wynik `pytest -v tests/`: **151 passed in 4.65s (100% sukcesu)**.
+
+---
+
 ## V17.3 — Hotfix: Multi-candidate `find_golden_rim` + weryfikacja niebieskiego sukna dla fallbacku `ICON` (2026-11-24)
 
 ### 1. Wdrożone poprawki

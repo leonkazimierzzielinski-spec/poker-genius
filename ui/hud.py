@@ -835,7 +835,11 @@ class DebugRoiOverlay(QWidget):
                     painter.setBrush(QColor(0, 240, 255, 12))
                     painter.drawRect(QRectF(lx, ly, lw, lh))
 
-                    tbl_label = f"TABLE ({int(tx)}, {int(ty)}, {int(tw)}x{int(th)})"
+                    anchor_src = tbl_data.get("anchor_source")
+                    if anchor_src:
+                        tbl_label = f"TABLE [{anchor_src}] ({int(tx)}, {int(ty)}, {int(tw)}x{int(th)})"
+                    else:
+                        tbl_label = f"TABLE ({int(tx)}, {int(ty)}, {int(tw)}x{int(th)})"
                     lbl_w = fm_tbl.horizontalAdvance(tbl_label) + 8
                     lbl_h = fm_tbl.height() + 4
                     lbl_rect = QRectF(lx + 4, max(4.0, ly - lbl_h - 2), lbl_w, lbl_h)
@@ -902,6 +906,7 @@ class HudOverlay(QWidget):
         bridge: HudBridge | None = None,
         parent: QWidget | None = None,
         monitor_idx: int = 0,
+        initial_buy_in: float = 2.0,
     ) -> None:
         super().__init__(parent)
         self.bridge = bridge
@@ -917,7 +922,7 @@ class HudOverlay(QWidget):
         self.is_debug_overlay_enabled: bool = False
         self.is_action_only_mode: bool = False
 
-        self.buy_in: float = 2.0
+        self.buy_in: float = float(initial_buy_in)
         self.managed_tables: dict[str, dict[str, Any]] = {
             "table_1": {"search_region": None, "adjust": (0, 0, 1.0, 1.0)}
         }

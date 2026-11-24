@@ -708,7 +708,7 @@ def test_tracker_hand_summary_invested_time_and_fold() -> None:
     # S2 invested_total accumulated: 40 (preflop) + 60 (flop) = 100!
     assert summary6["players"][2]["invested_total"] == 100
 
-    # Frame 7: Hero folds (Condition C: was facing bet 60, hero turn ends without calling)
+    # Frame 7: Hero folds (Condition C: was facing bet 60, hero turn ends without calling and cards mucked)
     st7 = TableState(
         table_id="table_test",
         timestamp_ms=7000,
@@ -716,7 +716,7 @@ def test_tracker_hand_summary_invested_time_and_fold() -> None:
         small_blind=10,
         big_blind=20,
         pot=150,
-        hero_cards=["Ah", "Kh"],
+        hero_cards=[],
         board_cards=["Qc", "Jd", "2s"],
         street="FLOP",
         is_hero_turn=False,
@@ -1631,6 +1631,135 @@ def test_tracker_no_false_tournament_end_below_880_stack() -> None:
 
     # Winner MUST have stack >= 880, so 620 does NOT trigger tournament_result
     assert tracker.current_hand.get("tournament_result") is None
+
+
+def test_tracker_does_not_fold_hero_when_hero_cards_still_visible() -> None:
+    """Verify Condition C does not mark Hero (S0) as FOLD when hero_cards still contains 2 cards."""
+    tracker = TableTracker("table_1")
+
+    st1 = TableState(
+        table_id="table_1",
+        timestamp_ms=1000,
+        prize_pool=6,
+        small_blind=10,
+        big_blind=20,
+        pot=60,
+        hero_cards=["As", "Kd"],
+        board_cards=[],
+        street="PREFLOP",
+        is_hero_turn=True,
+        available_actions=["FOLD", "CALL", "RAISE"],
+        players={
+            0: PlayerState(seat_id=0, stack=280, current_bet=20, is_dealer=False, is_active=True),
+            1: PlayerState(seat_id=1, stack=260, current_bet=40, is_dealer=True, is_active=True),
+            2: PlayerState(seat_id=2, stack=290, current_bet=10, is_dealer=False, is_active=False, status_text="FOLDED"),
+        },
+        is_valid=True,
+    )
+    tracker.update(st1)
+
+    # Hero turn ends on transition frame before pot sweep, but hero_cards still visible
+    st2 = TableState(
+        table_id="table_1",
+        timestamp_ms=1500,
+        prize_pool=6,
+        small_blind=10,
+        big_blind=20,
+        pot=60,
+        hero_cards=["As", "Kd"],
+        board_cards=[],
+        street="PREFLOP",
+        is_hero_turn=False,
+        available_actions=[],
+        players={
+            0: PlayerState(seat_id=0, stack=280, current_bet=20, is_dealer=False, is_active=True),
+            1: PlayerState(seat_id=1, stack=260, current_bet=40, is_dealer=True, is_active=True),
+            2: PlayerState(seat_id=2, stack=290, current_bet=10, is_dealer=False, is_active=False, status_text="FOLDED"),
+        },
+        is_valid=True,
+    )
+    tracker.update(st2)
+
+    summary = tracker.get_hand_summary()
+    assert summary["players"][0]["folded"] is False
+    assert summary["players"][0]["status"] != "FOLD"
+
+
+def test_tracker_ignores_sub_sb_ghost_bet_from_zero_stack_seat() -> None:
+    """Verify eliminated/zero-stack seat with sub-SB ghost bet=1 does not log ALL-IN 1 or fold active players."""
+    tracker = TableTracker("table_1")
+
+    st1 = TableState(
+        table_id="table_1",
+        timestamp_ms=1000,
+        prize_pool=6,
+        small_blind=20,
+        big_blind=40,
+        pot=80,
+        hero_cards=["Ah", "Qs"],
+        board_cards=["Kd", "7c", "2s"],
+        street="FLOP",
+        is_hero_turn=False,
+        available_actions=[],
+        players={
+            0: PlayerState(seat_id=0, stack=440, current_bet=0, is_dealer=False, is_active=True),
+            1: PlayerState(seat_id=1, stack=380, current_bet=0, is_dealer=True, is_active=True),
+            2: PlayerState(seat_id=2, stack=0, current_bet=0, is_dealer=False, is_active=True),
+        },
+        is_valid=True,
+    )
+    tracker.update(st1)
+
+    # Frame 2: S2 has ghost bet=1 while stack=0 (sub-SB glitch on empty/zero seat)
+    st2 = TableState(
+        table_id="table_1",
+        timestamp_ms=1500,
+        prize_pool=6,
+        small_blind=20,
+        big_blind=40,
+        pot=80,
+        hero_cards=["Ah", "Qs"],
+        board_cards=["Kd", "7c", "2s"],
+        street="FLOP",
+        is_hero_turn=False,
+        available_actions=[],
+        players={
+            0: PlayerState(seat_id=0, stack=440, current_bet=0, is_dealer=False, is_active=True),
+            1: PlayerState(seat_id=1, stack=380, current_bet=0, is_dealer=True, is_active=True),
+            2: PlayerState(seat_id=2, stack=0, current_bet=1, is_dealer=False, is_active=True),
+        },
+        is_valid=True,
+    )
+    tracker.update(st2)
+
+    # Frame 3: Street changes to TURN (S2's ghost bet=1 must not have been logged or trigger FOLD)
+    st3 = TableState(
+        table_id="table_1",
+        timestamp_ms=2000,
+        prize_pool=6,
+        small_blind=20,
+        big_blind=40,
+        pot=80,
+        hero_cards=["Ah", "Qs"],
+        board_cards=["Kd", "7c", "2s", "5h"],
+        street="TURN",
+        is_hero_turn=True,
+        available_actions=["CHECK", "BET"],
+        players={
+            0: PlayerState(seat_id=0, stack=440, current_bet=0, is_dealer=False, is_active=True),
+            1: PlayerState(seat_id=1, stack=380, current_bet=0, is_dealer=True, is_active=True),
+            2: PlayerState(seat_id=2, stack=0, current_bet=0, is_dealer=False, is_active=True),
+        },
+        is_valid=True,
+    )
+    tracker.update(st3)
+
+    summary = tracker.get_hand_summary()
+    s2_actions = [a for a in summary["action_log"] if a.get("seat_id") == 2]
+    assert not any(a.get("action") == "ALL-IN" and a.get("amount") == 1 for a in s2_actions)
+    assert summary["players"][0]["folded"] is False
+    assert summary["players"][1]["folded"] is False
+
 
 
 

@@ -2223,6 +2223,15 @@ def test_overlays_use_target_screen_geometry_not_virtual_geometry(qapp, monkeypa
     assert hud_1._action_bar_overlay.geometry() == QRect(-225, 1080, 1440, 900)
 
 
+def test_hud_initial_buy_in_sync(qapp) -> None:
+    """Verify HudOverlay(initial_buy_in=0.50) initializes self.buy_in == 0.50."""
+    from ui.hud import HudOverlay
+
+    hud = HudOverlay(initial_buy_in=0.50)
+    assert hud.buy_in == pytest.approx(0.50)
+
+
+
 
 
 

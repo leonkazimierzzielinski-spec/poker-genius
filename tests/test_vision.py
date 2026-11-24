@@ -1193,6 +1193,67 @@ def test_verify_table_rect_has_blue_felt_rejects_dark_sidebar() -> None:
     assert verify_table_rect_has_blue_felt(frame, (500, 100, 700, 400)) is True
 
 
+def test_find_golden_rim_ignores_stake_dark_slate_ui_background() -> None:
+    """Verify find_golden_rim ignores Stake dark slate UI (#1a2c38 / #0f212e) and verify_table_rect_has_blue_felt rejects it."""
+    from vision.anchor import find_golden_rim, verify_table_rect_has_blue_felt
+
+    canvas = np.zeros((1080, 2560, 3), dtype=np.uint8)
+    # Stake main background #1a2c38 -> BGR (56, 44, 26)
+    canvas[:, :] = (56, 44, 26)
+    # Stake sidebar #0f212e -> BGR (46, 33, 15)
+    canvas[:, :320] = (46, 33, 15)
+
+    # Embedded table (~1000x567) with real table blue felt (V >= 130, BGR (180, 90, 20)) and golden rim
+    cv2.rectangle(canvas, (800, 240), (1800, 807), (180, 90, 20), -1)
+    cv2.rectangle(canvas, (800, 240), (1800, 807), (20, 190, 230), 4)
+
+    rim = find_golden_rim(canvas)
+    assert rim is not None, "Expected find_golden_rim to find the table inside Stake dark slate background"
+    assert 780 <= rim[0] <= 820 and 220 <= rim[1] <= 260, f"Unexpected rim location: {rim}"
+
+    # verify_table_rect_has_blue_felt must reject rects on #1a2c38 / #0f212e background
+    assert verify_table_rect_has_blue_felt(canvas, (10, 100, 300, 400)) is False
+    assert verify_table_rect_has_blue_felt(canvas, (1900, 200, 600, 500)) is False
+    assert verify_table_rect_has_blue_felt(canvas, (800, 240, 1000, 567)) is True
+
+
+def test_digit_ocr_rejects_empty_seat_gradient_but_reads_dim_blinds() -> None:
+    """Verify DigitOCR rejects empty seat dark gradient/noise (p98 < 120, low contrast) while reading dim blinds."""
+    ocr = DigitOCR(threshold=0.62)
+    if not ocr.templates:
+        pytest.skip("Digit templates not available")
+
+    # 1. Empty seat gradient with noise (std > 6, p98 < 120, low contrast)
+    rng = np.random.default_rng(42)
+    empty_roi = np.zeros((24, 60, 3), dtype=np.uint8)
+    for y in range(24):
+        empty_roi[y, :, :] = (70 + y, 45 + y // 2, 25 + y // 3)
+    noise = rng.integers(-8, 9, size=empty_roi.shape, dtype=np.int16)
+    empty_roi = np.clip(empty_roi.astype(np.int16) + noise, 0, 118).astype(np.uint8)
+    assert float(np.std(empty_roi)) > 6.0
+    assert ocr.read_int(empty_roi) is None
+
+    # 2. Dim blinds ("10/20") with p98 ~ 120 and contrast ~ 55
+    parts: list[np.ndarray] = []
+    for ch in "10/20":
+        if ch == "/":
+            slash = np.zeros((20, 10), dtype=np.uint8)
+            cv2.line(slash, (2, 18), (8, 2), 255, 2)
+            parts.append(slash)
+        else:
+            tmpl = ocr.templates[int(ch)]
+            th, tw = tmpl.shape[:2]
+            resized = cv2.resize(tmpl, (max(4, int(round(tw * 20 / max(1, th)))), 20), interpolation=cv2.INTER_AREA)
+            parts.append(resized)
+        parts.append(np.zeros((20, 4), dtype=np.uint8))
+    mask = cv2.copyMakeBorder(np.hstack(parts), 6, 6, 8, 8, cv2.BORDER_CONSTANT, value=0)
+    dim_blinds = np.full((mask.shape[0], mask.shape[1], 3), 65, dtype=np.uint8)
+    dim_blinds[mask > 127] = (120, 120, 120)
+
+    assert ocr.read_blinds(dim_blinds) == (10, 20)
+
+
+
 
 
 

@@ -365,12 +365,13 @@ class TableTracker:
                 )
             )
             # Fold Condition B: Street change with uncalled bet
+            sb_val_b = max(1, getattr(state, "small_blind", 10))
             max_prev_bet = max((getattr(p, "current_bet", 0) for p in self.prev_state.players.values()), default=0)
             for sid in (0, 1, 2):
                 prev_p = self.prev_state.players.get(sid)
                 p_dict = self.current_hand["players"].get(sid)
                 if prev_p and p_dict and not p_dict.get("folded") and not p_dict.get("eliminated"):
-                    if max_prev_bet > 0 and getattr(prev_p, "current_bet", 0) < max_prev_bet and (getattr(prev_p, "stack", 0) or 0) > 0:
+                    if max_prev_bet >= sb_val_b and getattr(prev_p, "current_bet", 0) < max_prev_bet and (getattr(prev_p, "stack", 0) or 0) > 0:
                         p_dict["folded"] = True
                         p_dict["status"] = "FOLD"
                         p_dict["last_action"] = "FOLD"
@@ -405,6 +406,7 @@ class TableTracker:
                     max_opp > hero_prev_bet
                     and hero_curr_bet <= hero_prev_bet
                     and curr_real_st == prev_real_st
+                    and len(getattr(state, "hero_cards", []) or []) != 2
                 ):
                     p0_dict["folded"] = True
                     p0_dict["status"] = "FOLD"
@@ -487,9 +489,15 @@ class TableTracker:
                     p_dict["is_dealer"] = curr_p.is_dealer
 
                     if curr_p.current_bet > p_dict["street_bet"]:
-                        # Ignore sub-small_blind OCR animation glitches if player has stack remaining
+                        # Ignore sub-small_blind OCR animation glitches if player has stack or was empty/zero-stack
                         sb_val = max(1, getattr(state, "small_blind", 10))
-                        if 0 < curr_p.current_bet < sb_val and (curr_p.stack or 0) > 0:
+                        if (
+                            0 < curr_p.current_bet < sb_val
+                            and (
+                                (curr_p.stack or 0) > 0
+                                or (prev_p.stack in (None, 0) and (prev_p.current_bet or 0) == 0)
+                            )
+                        ):
                             continue
 
                         delta = curr_p.current_bet - p_dict["street_bet"]
