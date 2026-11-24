@@ -10,10 +10,12 @@ class StateValidator:
     def __init__(self, total_chips: int = TOTAL_CHIPS) -> None:
         self.total_chips = total_chips
         self._last_blinds: dict[str, tuple[int, int]] = {}
+        self._pending_lower_blinds: dict[str, tuple[tuple[int, int], int]] = {}
 
     def reset_table(self, table_id: str) -> None:
         """Removes blinds history for a table (e.g. after tournament ends)."""
         self._last_blinds.pop(table_id, None)
+        self._pending_lower_blinds.pop(table_id, None)
 
     def validate(self, state: TableState) -> tuple[bool, list[str]]:
         """Validate state against 3 golden rules:
@@ -104,15 +106,32 @@ class StateValidator:
         ):
             errors.append("Missing board cards on postflop pot")
 
-        # Rule 3: Blinds monotonicity
+        # Rule 3: Blinds monotonicity with 3-frame self-healing for lower valid blinds
         if not (state.small_blind > 0 and state.big_blind > state.small_blind):
             errors.append("Invalid blinds")
+            self._pending_lower_blinds.pop(state.table_id, None)
         elif state.table_id in self._last_blinds:
             prev_sb, prev_bb = self._last_blinds[state.table_id]
             if state.small_blind < prev_sb or state.big_blind < prev_bb:
-                errors.append(
-                    f"Blinds decreased from {(prev_sb, prev_bb)} to {(state.small_blind, state.big_blind)}"
-                )
+                curr_bl = (state.small_blind, state.big_blind)
+                if len(errors) == 0 and curr_bl in VALID_BLIND_LEVELS:
+                    pend_bl, pend_cnt = self._pending_lower_blinds.get(state.table_id, (None, 0))
+                    pend_cnt = pend_cnt + 1 if pend_bl == curr_bl else 1
+                    self._pending_lower_blinds[state.table_id] = (curr_bl, pend_cnt)
+                    if pend_cnt >= 3:
+                        self._last_blinds[state.table_id] = curr_bl
+                        self._pending_lower_blinds.pop(state.table_id, None)
+                    else:
+                        errors.append(
+                            f"Blinds decreased from {(prev_sb, prev_bb)} to {curr_bl}"
+                        )
+                else:
+                    self._pending_lower_blinds.pop(state.table_id, None)
+                    errors.append(
+                        f"Blinds decreased from {(prev_sb, prev_bb)} to {curr_bl}"
+                    )
+            else:
+                self._pending_lower_blinds.pop(state.table_id, None)
 
         is_valid = len(errors) == 0
         if is_valid and (

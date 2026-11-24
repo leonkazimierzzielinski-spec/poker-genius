@@ -1261,10 +1261,10 @@ def test_blinds_ladder_normalization_recovers_partial_reads_and_blocks_poisoning
 
     pipe = VisionPipeline("config.json")
     assert pipe._normalize_blinds((20, 4), "t1") == (20, 40)
-    assert pipe._normalize_blinds((3, 60), "t1") == (30, 60)
-    assert pipe._normalize_blinds((30, 610), "t1") == (30, 60)
+    assert pipe._normalize_blinds((3, 60), "t2") == (30, 60)
+    assert pipe._normalize_blinds((30, 610), "t3") == (30, 60)
     # Ambiguous (1, 2) falls back to carry-over (30, 60)
-    assert pipe._normalize_blinds((1, 2), "t1") == (30, 60)
+    assert pipe._normalize_blinds((1, 2), "t3") == (30, 60)
 
     # StateValidator must not poison _last_blinds with illegal (30, 610)
     val = StateValidator()
@@ -1381,6 +1381,30 @@ def test_detect_rabbit_hunting_break_blocks_preview() -> None:
 
     assert detect_rabbit_hunting_break(actions, is_hero_turn=False) is True
     assert detect_rabbit_hunting_break(actions, is_hero_turn=True) is False
+
+
+def test_blinds_single_frame_upward_glitch_does_not_poison_pipeline() -> None:
+    """Verify V18.1: single-frame upward glitch (40, 10) or (40, 80) from (20, 40) does not raise _last_valid_blinds."""
+    from vision.pipeline import VisionPipeline
+
+    pipe = VisionPipeline("config.json")
+    assert pipe._normalize_blinds((20, 40), "t_up") == (20, 40)
+    assert pipe._last_valid_blinds["t_up"] == (20, 40)
+
+    # 1. Partial read (40, 10) -> (40, 80) is > 1 step above (20, 40), rejected immediately
+    assert pipe._normalize_blinds((40, 10), "t_up") == (20, 40)
+    assert pipe._last_valid_blinds["t_up"] == (20, 40)
+
+    # 2. Single-frame exact read (40, 80) is debounced (needs 3 consecutive frames)
+    assert pipe._normalize_blinds((40, 80), "t_up") == (20, 40)
+    assert pipe._last_valid_blinds["t_up"] == (20, 40)
+    assert pipe._normalize_blinds((40, 80), "t_up") == (20, 40)
+    assert pipe._last_valid_blinds["t_up"] == (20, 40)
+
+    # 3. 3rd consecutive (40, 80) confirms the upward level
+    assert pipe._normalize_blinds((40, 80), "t_up") == (40, 80)
+    assert pipe._last_valid_blinds["t_up"] == (40, 80)
+
 
 
 

@@ -1,5 +1,19 @@
 # Poker Genius — Dziennik Postępu Prac (Progress Log)
 
+## V18.1 — Mikro-Hotfix: 3-Klatkowy Debounce Podnoszenia Blindów i Samonaprawa `Blinds decreased` (2026-11-24)
+
+### 1. Wdrożone poprawki
+1. **3-klatkowy debounce podnoszenia blindów w `vision/pipeline.py` (`_normalize_blinds`):**
+   - Dodano `_pending_blinds` (czyszczone w `reset_table_blinds()`): przejście na wyższy poziom blindów wymaga **3 kolejnych spójnych klatek** z nowym poziomem (do tego czasu zwracane jest `prev`).
+   - Dla częściowych odczytów spoza `VALID_BLIND_LEVELS` (np. `(40, 10)`) zablokowano przeskok większy niż o 1 szczebel drabinki względem `prev`.
+2. **Samonaprawa `Blinds decreased` w `state/validator.py` (`_pending_lower_blinds`):**
+   - Gdy jedynym problemem jest `Blinds decreased`, a niższy poziom `(sb, bb)` należy do `VALID_BLIND_LEVELS` przy w 100% poprawnych żetonach i kartach (`len(errors) == 0`), walidator zlicza kolejne klatki i po **3. spójnej klatce** automatycznie akceptuje nowy poziom (`_last_blinds[table_id] = (sb, bb)`), zapobiegając permanentnemu zakleszczeniu w `WAIT`.
+3. **Testy jednostkowe:**
+   - Dodano `test_blinds_single_frame_upward_glitch_does_not_poison_pipeline` (`tests/test_vision.py`) oraz `test_validator_self_heals_blinds_decreased_after_3_consistent_frames` (`tests/test_state.py`).
+   - Pełny wynik `pytest -v tests/`: **161 passed in 5.75s (100% sukcesu)**.
+
+---
+
 ## V18 — Pancerny Odczyt CV, Fizyczna Spójność Stanu i Stabilny Tracker (2026-11-24)
 
 ### 1. Benchmark regresyjny PRZED vs PO (`Nagrywanie 2026-11-24 215605.mp4`, `stride=3`, 3 682 klatki)

@@ -71,6 +71,7 @@ class VisionPipeline:
         self.last_evicted_table_id: str | None = None
         self._last_canonical_table: np.ndarray | None = None
         self._last_valid_blinds: dict[str, tuple[int, int]] = {}
+        self._pending_blinds: dict[str, tuple[tuple[int, int], int]] = {}
 
         self.dealer_template: np.ndarray | None = None
         d_path = Path("data/templates/dealer.png")
@@ -82,18 +83,19 @@ class VisionPipeline:
     def reset_table_blinds(self, table_id: str) -> None:
         """Clear cached valid blinds for a table (e.g. on new tournament)."""
         self._last_valid_blinds.pop(table_id, None)
+        self._pending_blinds.pop(table_id, None)
 
     def _normalize_blinds(
         self, raw_blinds: tuple[int, int] | None, table_id: str
     ) -> tuple[int, int]:
-        """Normalize OCR blinds against official Stake JAQKpot! blind ladder."""
+        """Normalize OCR blinds against official Stake JAQKpot! blind ladder with 3-frame upward debounce."""
         prev = self._last_valid_blinds.get(table_id)
-        if raw_blinds in VALID_BLIND_LEVELS:
-            if prev is None or raw_blinds >= prev:
-                self._last_valid_blinds[table_id] = raw_blinds
-            return raw_blinds
+        is_exact = raw_blinds in VALID_BLIND_LEVELS
 
-        if raw_blinds is not None:
+        cand: tuple[int, int] | None = None
+        if is_exact:
+            cand = raw_blinds
+        elif raw_blinds is not None:
             raw_sb, raw_bb = raw_blinds
             candidates = [
                 (vsb, vbb)
@@ -105,12 +107,40 @@ class VisionPipeline:
                     ge_prev = [c for c in candidates if c >= prev]
                     if ge_prev:
                         candidates = ge_prev
-                chosen = candidates[0]
-                if prev is None or chosen >= prev:
-                    self._last_valid_blinds[table_id] = chosen
-                return chosen
+                cand = candidates[0]
 
-        return prev if prev is not None else (10, 20)
+        if cand is None:
+            self._pending_blinds.pop(table_id, None)
+            return prev if prev is not None else (10, 20)
+
+        if prev is None:
+            self._last_valid_blinds[table_id] = cand
+            self._pending_blinds.pop(table_id, None)
+            return cand
+
+        if cand == prev:
+            self._pending_blinds.pop(table_id, None)
+            return cand
+
+        if cand > prev:
+            # Partial match cannot jump more than 1 step in VALID_BLIND_LEVELS
+            if not is_exact and prev in VALID_BLIND_LEVELS and cand in VALID_BLIND_LEVELS:
+                if VALID_BLIND_LEVELS.index(cand) > VALID_BLIND_LEVELS.index(prev) + 1:
+                    self._pending_blinds.pop(table_id, None)
+                    return prev
+
+            pend_val, pend_cnt = self._pending_blinds.get(table_id, (None, 0))
+            pend_cnt = pend_cnt + 1 if pend_val == cand else 1
+            self._pending_blinds[table_id] = (cand, pend_cnt)
+            if pend_cnt >= 3:
+                self._last_valid_blinds[table_id] = cand
+                self._pending_blinds.pop(table_id, None)
+                return cand
+            return prev
+
+        # cand < prev: allow exact ladder reads through so StateValidator/main can handle new tournament / self-heal
+        self._pending_blinds.pop(table_id, None)
+        return cand if is_exact else prev
 
     @staticmethod
     def _mask_white_bet_text(roi: np.ndarray) -> np.ndarray:

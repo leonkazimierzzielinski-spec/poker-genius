@@ -1826,6 +1826,48 @@ def test_tracker_two_frame_bet_confirm_no_duplicate_completed_hand_and_instant_f
     assert tracker.last_completed_hand is None
 
 
+def test_validator_self_heals_blinds_decreased_after_3_consistent_frames() -> None:
+    """Verify V18.1: after (40, 80), frames 1-2 of (20, 40) are INVALID, frame 3 self-heals to VALID."""
+    val = StateValidator()
+
+    def _mk_state(sb: int, bb: int) -> TableState:
+        return TableState(
+            table_id="t_heal",
+            timestamp_ms=1000,
+            prize_pool=4,
+            small_blind=sb,
+            big_blind=bb,
+            pot=60,
+            hero_cards=["Ah", "Kd"],
+            board_cards=[],
+            street="PREFLOP",
+            is_hero_turn=False,
+            available_actions=[],
+            players={
+                0: PlayerState(0, 280, 0),
+                1: PlayerState(1, 280, 0),
+                2: PlayerState(2, 280, 0),
+            },
+        )
+
+    ok0, _ = val.validate(_mk_state(40, 80))
+    assert ok0 is True
+    assert val._last_blinds["t_heal"] == (40, 80)
+
+    # Frame 1 & 2 of lower valid blinds (20, 40) -> rejected to protect against 1-frame glitch
+    ok1, errs1 = val.validate(_mk_state(20, 40))
+    assert ok1 is False and any("Blinds decreased" in e for e in errs1)
+
+    ok2, errs2 = val.validate(_mk_state(20, 40))
+    assert ok2 is False and any("Blinds decreased" in e for e in errs2)
+
+    # Frame 3 of consistent (20, 40) with valid 900 chips -> self-heals
+    ok3, errs3 = val.validate(_mk_state(20, 40))
+    assert ok3 is True and errs3 == []
+    assert val._last_blinds["t_heal"] == (20, 40)
+
+
+
 
 
 
