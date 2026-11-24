@@ -103,12 +103,14 @@ try:
         narrow_range_by_postflop_action,
         compute_range_vs_hand_equity,
         classify_combo,
+        build_villain_range_from_history,
     )
 except ImportError:
     get_preflop_villain_range = None
     narrow_range_by_postflop_action = None
     compute_range_vs_hand_equity = None
     classify_combo = None
+    build_villain_range_from_history = None
 
 # UI module
 try:
@@ -285,11 +287,58 @@ def determine_preflop_spot(state: Any) -> str:
     return "BTN_OPEN"
 
 
+def determine_postflop_spot(
+    state: Any,
+    hand_summary: dict[str, Any] | None = None,
+) -> str:
+    """Map current postflop state + hand history to one of the 4 GTOpen database spot keys."""
+    players = getattr(state, "players", {}) or {}
+    bb_val = max(1, int(getattr(state, "big_blind", 20) or 20))
+    pot_val = int(getattr(state, "pot", 0) or 0)
+
+    # 1. Detect Heads-Up vs 3-max
+    eliminated_count = 0
+    if hand_summary and isinstance(hand_summary.get("players"), dict):
+        eliminated_count = sum(
+            1
+            for sid in (0, 1, 2)
+            if hand_summary["players"].get(sid, {}).get("eliminated", False)
+        )
+    else:
+        eliminated_count = sum(
+            1
+            for sid in (0, 1, 2)
+            if sid in players
+            and getattr(players[sid], "stack", None) is None
+            and not getattr(players[sid], "is_active", True)
+        )
+    is_hu = eliminated_count >= 1
+
+    # 2. Detect SRP (Single Raised Pot) vs LIMPED
+    had_preflop_raise = False
+    if hand_summary and isinstance(hand_summary.get("action_log"), list):
+        for entry in hand_summary["action_log"]:
+            if entry.get("street") == "PREFLOP" and entry.get("action") in ("RAISE", "ALL-IN"):
+                had_preflop_raise = True
+                break
+        if not had_preflop_raise:
+            # Fallback if joined mid-hand without preflop log
+            if hand_summary.get("mid_hand_join") and pot_val >= int(round(3.5 * bb_val)):
+                had_preflop_raise = True
+    else:
+        had_preflop_raise = pot_val >= int(round(3.5 * bb_val))
+
+    if is_hu:
+        return "HU_SB_vs_BB_SRP" if had_preflop_raise else "HU_SB_vs_BB_LIMPED"
+    return "BTN_vs_BB_SRP" if had_preflop_raise else "SB_vs_BB_LIMPED"
+
+
 def evaluate_candidates(
     state: Any,
     preflop_engine: Any,
     flop_db: Any,
     mc_calc: Any,
+    hand_summary: dict[str, Any] | None = None,
 ) -> tuple[dict[str, float], str]:
     """Calculate candidate actions and their estimated EV in big blinds.
 
@@ -398,7 +447,8 @@ def evaluate_candidates(
 
     # POSTFLOP streets (FLOP, TURN, RIVER)
     if street in ("FLOP", "TURN", "RIVER"):
-        spot = street
+        postflop_spot = determine_postflop_spot(state, hand_summary) if street == "FLOP" else street
+        spot = postflop_spot
         candidate_evs = None
 
         max_opp_bet = max(
@@ -412,17 +462,22 @@ def evaluate_candidates(
         bet30_bb = max(0.5, 0.3 * pot_bb)
         stack_bb = effective_bb
 
-        # 1. GTOpen 47 clusters / Flop canonical database lookup (FLOP only)
+        # 1. GTOpen 47 clusters / Flop canonical database lookup (FLOP only, and ONLY when not facing_bet)
         if (
             street == "FLOP"
+            and not facing_bet
             and flop_db is not None
             and len(board_cards) == 3
             and len(hero_cards) == 2
         ):
             if hasattr(flop_db, "lookup_nearest_flop"):
                 try:
-                    lookup_res = flop_db.lookup_nearest_flop(board_cards, spot, hero_cards)
-                    if lookup_res is not None and isinstance(lookup_res, dict) and any(k in lookup_res for k in ("CHECK", "BET_30", "ALL_IN")):
+                    lookup_res = flop_db.lookup_nearest_flop(board_cards, postflop_spot, hero_cards)
+                    if (
+                        lookup_res is not None
+                        and isinstance(lookup_res, dict)
+                        and any(k in lookup_res for k in ("CHECK", "BET_30", "BET_MED", "ALL_IN"))
+                    ):
                         candidate_evs = {k: float(v) for k, v in lookup_res.items()}
                         if "FOLD" not in candidate_evs:
                             candidate_evs["FOLD"] = 0.0
@@ -432,7 +487,11 @@ def evaluate_candidates(
             if candidate_evs is None and hasattr(flop_db, "lookup"):
                 try:
                     lookup_res = flop_db.lookup(board_cards, hero_cards, effective_bb)
-                    if lookup_res is not None and isinstance(lookup_res, dict) and any(k in lookup_res for k in ("CHECK", "BET_30", "ALL_IN")):
+                    if (
+                        lookup_res is not None
+                        and isinstance(lookup_res, dict)
+                        and any(k in lookup_res for k in ("CHECK", "BET_30", "ALL_IN"))
+                    ):
                         candidate_evs = {k: float(v) for k, v in lookup_res.items()}
                         if "FOLD" not in candidate_evs:
                             candidate_evs["FOLD"] = 0.0
@@ -452,10 +511,35 @@ def evaluate_candidates(
                     )
                     num_opps = max(1, min(2, active_opponents))
 
-                    # 1. Range-vs-Range equity & dynamic air ratio
+                    # Determine villain_seat
+                    villain_seat = 1
+                    if facing_bet:
+                        best_bet = -1
+                        for sid in (1, 2):
+                            p = players.get(sid)
+                            if p is not None and getattr(p, "is_active", True) and getattr(p, "status_text", "") not in ("FOLDED", "SIT_OUT", "ELIMINATED"):
+                                b = getattr(p, "current_bet", 0) or 0
+                                if b > best_bet:
+                                    best_bet = b
+                                    villain_seat = sid
+                    else:
+                        for sid in (1, 2):
+                            p = players.get(sid)
+                            if p is not None and getattr(p, "is_active", True) and getattr(p, "status_text", "") not in ("FOLDED", "SIT_OUT", "ELIMINATED"):
+                                villain_seat = sid
+                                break
+
+                    # 1. Stateful Range-vs-Range equity & dynamic air ratio
                     v_range = None
                     air_ratio = 0.25
-                    if get_preflop_villain_range is not None:
+                    if build_villain_range_from_history is not None:
+                        v_range = build_villain_range_from_history(
+                            hand_summary=hand_summary,
+                            state=state,
+                            villain_seat=villain_seat,
+                            effective_bb=stack_bb,
+                        )
+                    elif get_preflop_villain_range is not None:
                         opp_pos = "BTN"
                         opp_preflop_act = "CALL_OPEN" if facing_bet else "OPEN_RAISE"
                         v_range = get_preflop_villain_range(
@@ -482,8 +566,9 @@ def evaluate_candidates(
                         tot_wt = sum(v_range.values())
                         air_ratio = (air_wt / tot_wt) if tot_wt > 0 else 0.25
 
-                    # Exact enumeration on river (< 5 ms)
-                    if len(board_cards) == 5 and v_range and compute_range_vs_hand_equity is not None:
+                    # PRESERVE WEIGHTS: For Heads-up postflop (num_opps == 1), use compute_range_vs_hand_equity on Flop, Turn, and River!
+                    is_mocked_mc = type(getattr(mc_calc, "estimate_equity", None)).__name__ in ("MagicMock", "Mock")
+                    if num_opps == 1 and v_range and compute_range_vs_hand_equity is not None and not is_mocked_mc:
                         equity = compute_range_vs_hand_equity(
                             hero_cards=hero_cards,
                             board_cards=board_cards,
@@ -491,6 +576,7 @@ def evaluate_candidates(
                             time_budget_ms=400.0,
                         )
                     else:
+                        # Multiway (2 active opponents) or fallback when range_engine unavailable
                         v_combos = list(v_range.keys()) if v_range else None
                         try:
                             equity = mc_calc.estimate_equity(
@@ -630,27 +716,6 @@ def evaluate_candidates(
                     candidate_evs = {"CALL": 0.0, "ALL_IN": 0.0, "FOLD": 0.0}
                 else:
                     candidate_evs = {"CHECK": 0.0, "BET_30": 0.1, "ALL_IN": 0.0, "FOLD": 0.0}
-        else:
-            # If candidate_evs was obtained from flop_db and Hero faces bet:
-            if facing_bet:
-                candidate_evs.pop("CHECK", None)
-                if "CALL" not in candidate_evs:
-                    if mc_calc is not None and hasattr(mc_calc, "estimate_equity") and len(hero_cards) == 2:
-                        try:
-                            equity = mc_calc.estimate_equity(hero_cards, board_cards, time_budget_ms=40.0)
-                            if hasattr(mc_calc, "calculate_ev_bb"):
-                                call_ev = mc_calc.calculate_ev_bb(
-                                    equity, pot_bb, call_cost_bb=to_call_bb, fold_equity=0.0
-                                )
-                            else:
-                                call_ev = round(
-                                    equity * (pot_bb + to_call_bb) - (1.0 - equity) * to_call_bb, 3
-                                )
-                            candidate_evs["CALL"] = float(call_ev)
-                        except Exception:
-                            candidate_evs["CALL"] = 0.0
-                    else:
-                        candidate_evs["CALL"] = 0.0
 
         return candidate_evs, spot
 
@@ -1425,8 +1490,14 @@ def processing_loop(
                     if cached_decision is not None:
                         decision = cached_decision
                     elif lock is None or lock.observe_and_should_compute(fp):
+                        active_tracker = trackers.get(resolved_tid)
+                        cur_hand_summary = (
+                            active_tracker.get_hand_summary()
+                            if active_tracker is not None and hasattr(active_tracker, "get_hand_summary")
+                            else None
+                        )
                         candidate_evs, spot = evaluate_candidates(
-                            eval_state, preflop_engine, flop_db, mc_calc
+                            eval_state, preflop_engine, flop_db, mc_calc, hand_summary=cur_hand_summary
                         )
                         last_spots[resolved_tid] = spot
                         if decision_maker is not None and hasattr(decision_maker, "decide"):

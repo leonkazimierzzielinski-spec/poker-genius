@@ -21,10 +21,12 @@ class DecisionMaker:
     def __init__(
         self,
         buy_in: float | int = 2.0,
-        ev_loss_threshold_bb: float = EV_LOSS_THRESHOLD_BB,
+        ev_loss_threshold_bb: float = 0.03,
+        preflop_ev_loss_threshold_bb: float = 0.0,
     ):
         self.buy_in = buy_in
         self.ev_loss_threshold_bb = ev_loss_threshold_bb
+        self.preflop_ev_loss_threshold_bb = preflop_ev_loss_threshold_bb
         self.adapter = MultiplierAdapter()
         self.exploit_engine = ExploitEngine()
         self.simplifier = StrategySimplifier(ev_loss_threshold_bb=ev_loss_threshold_bb)
@@ -82,9 +84,18 @@ class DecisionMaker:
         # Determine if check is free (to_call == 0)
         players = getattr(state, "players", {}) or {}
         hero_p = players.get(0) if isinstance(players, dict) else (players[0] if len(players) > 0 else None)
-        hero_bet = getattr(hero_p, "bet", 0) or 0 if hero_p else 0
+
+        def _get_player_bet(p: Any) -> int:
+            if p is None:
+                return 0
+            val = getattr(p, "current_bet", None)
+            if val is None:
+                val = getattr(p, "bet", 0)
+            return int(val or 0)
+
+        hero_bet = _get_player_bet(hero_p)
         opp_bets = [
-            getattr(p, "bet", 0) or 0
+            _get_player_bet(p)
             for s_id, p in (players.items() if isinstance(players, dict) else enumerate(players))
             if s_id != 0 and p is not None and getattr(p, "is_active", True)
         ]
@@ -112,10 +123,27 @@ class DecisionMaker:
         if not facing_bet or (has_check and to_call == 0):
             exploited_evs = {k: v for k, v in exploited_evs.items() if k != "FOLD"}
 
+        is_preflop_decision = (
+            street == "PREFLOP"
+            or spot in (
+                "BTN_OPEN", "SB_OPEN", "SB_BVB", "HU_SB",
+                "BB_VS_LIMP", "BB_ISO_VS_LIMP", "BB_VS_MR",
+                "BB_VS_BTN_RAISE", "BB_VS_SB_RAISE", "SB_VS_BTN_RAISE",
+                "BB_VS_BTN_SHOVE", "BB_VS_SB_SHOVE", "SB_VS_BTN_SHOVE",
+                "BB_VS_SHOVE", "SB_VS_BTN",
+            )
+        )
+        eff_thresh = (
+            self.preflop_ev_loss_threshold_bb
+            if is_preflop_decision
+            else self.ev_loss_threshold_bb
+        )
+
         action, ev_bb, filter_note = self.simplifier.select_pure_action(
             evs=exploited_evs,
             modifiers=modifiers,
             available_actions=available_actions,
+            threshold_override=eff_thresh,
         )
 
         if filter_note:

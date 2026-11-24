@@ -356,5 +356,75 @@ def test_flop_db_lookup_with_real_evs_and_strategy_structure(tmp_path: Path) -> 
     assert res_air["ALL_IN"] == pytest.approx(-1.0234, abs=1e-4)
 
 
+def test_build_villain_range_from_history_narrows_across_streets() -> None:
+    """Verify that build_villain_range_from_history progressively narrows across streets upon aggression."""
+    from types import SimpleNamespace
+    from engine.range_engine import (
+        build_villain_range_from_history,
+        classify_combo,
+        compute_range_vs_hand_equity,
+    )
+
+    board = ["Kd", "7d", "2s", "Jc"]
+    hero = ["7c", "6c"]  # 2nd pair (bluffcatcher) on Turn
+
+    state = SimpleNamespace(
+        street="TURN",
+        hero_cards=hero,
+        board_cards=board,
+        pot=200,
+        big_blind=20,
+        players={
+            0: SimpleNamespace(seat_id=0, stack=200, current_bet=0),
+            1: SimpleNamespace(seat_id=1, stack=200, current_bet=0),
+        },
+    )
+
+    # 1. Preflop open only
+    hs_preflop = {
+        "dealer_seat": 1,
+        "action_log": [
+            {"seat_id": 1, "street": "PREFLOP", "action": "RAISE", "amount": 40},
+        ],
+    }
+    r_preflop = build_villain_range_from_history(hs_preflop, state, villain_seat=1, effective_bb=10.0)
+
+    # 2. Aggressive line: Preflop Raise -> Big Bet Flop (0.75 pot) -> Big Bet Turn (0.75 pot)
+    hs_agg = {
+        "dealer_seat": 1,
+        "action_log": [
+            {"seat_id": 1, "street": "PREFLOP", "action": "RAISE", "amount": 40},
+            {"seat_id": 1, "street": "FLOP", "action": "BET", "amount": 60},
+            {"seat_id": 1, "street": "TURN", "action": "BET", "amount": 120},
+        ],
+    }
+    r_agg = build_villain_range_from_history(hs_agg, state, villain_seat=1, effective_bb=10.0)
+
+    # 3. Passive line: Preflop Limp -> Check Flop -> Check Turn
+    hs_passive = {
+        "dealer_seat": 1,
+        "action_log": [
+            {"seat_id": 1, "street": "PREFLOP", "action": "CALL", "amount": 20},
+            {"seat_id": 1, "street": "FLOP", "action": "CHECK", "amount": 0},
+            {"seat_id": 1, "street": "TURN", "action": "CHECK", "amount": 0},
+        ],
+    }
+    r_passive = build_villain_range_from_history(hs_passive, state, villain_seat=1, effective_bb=10.0)
+
+    # (a) Air ratio must be significantly lower after multi-street aggression
+    air_preflop = sum(w for (c1, c2), w in r_preflop.items() if classify_combo(c1, c2, board) == "AIR") / sum(r_preflop.values())
+    air_agg = sum(w for (c1, c2), w in r_agg.items() if classify_combo(c1, c2, board) == "AIR") / sum(r_agg.values())
+
+    assert air_agg < air_preflop, f"Aggressive line should reduce AIR ratio: {air_agg:.3f} vs {air_preflop:.3f}"
+    assert air_agg < 0.20, f"Expected AIR ratio < 0.20 after 2 big bets, got {air_agg:.3f}"
+
+    # (b) Bluffcatcher equity against aggressive range must be significantly lower than against passive range
+    eq_agg = compute_range_vs_hand_equity(hero, board, r_agg)
+    eq_passive = compute_range_vs_hand_equity(hero, board, r_passive)
+
+    assert eq_agg < eq_passive, f"Equity vs aggressive range ({eq_agg:.3f}) must be lower than vs passive ({eq_passive:.3f})"
+    assert eq_passive - eq_agg >= 0.15, f"Expected substantial equity drop (>= 0.15), got {eq_passive - eq_agg:.3f}"
+
+
 
 

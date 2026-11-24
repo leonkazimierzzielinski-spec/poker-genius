@@ -90,6 +90,7 @@ class StrategySimplifier:
         evs: dict[str, float],
         modifiers: ProfileModifiers,
         available_actions: list[str] | None = None,
+        threshold_override: float | None = None,
     ) -> tuple[str, float, str | None]:
         """
         Select a deterministic pure action respecting allowed actions and EV-loss threshold.
@@ -133,30 +134,41 @@ class StrategySimplifier:
 
         best_action, best_ev = sorted_candidates[0]
 
-        # 3. Minimum profit threshold (+0.08 BB)
+        # 3. Minimum profit threshold (relative EV gain over baseline)
+        eff_thresh = (
+            self.ev_loss_threshold_bb
+            if threshold_override is None
+            else max(0.0, float(threshold_override))
+        )
+
+        if available_actions is not None and len(available_actions) > 0:
+            check_available = is_action_available("CHECK", available_actions)
+        else:
+            check_available = "CHECK" in candidates
+
+        if check_available:
+            baseline_action = "CHECK"
+            baseline_ev = float(candidates.get("CHECK", 0.0))
+        else:
+            baseline_action = "FOLD"
+            baseline_ev = float(candidates.get("FOLD", 0.0))
+
+        ev_gain = float(best_ev) - baseline_ev
+
         chosen_action = best_action
         chosen_ev = best_ev
         filter_note: str | None = None
 
-        if best_action not in ("FOLD", "CHECK") and best_ev < self.ev_loss_threshold_bb:
+        if best_action not in ("FOLD", "CHECK") and ev_gain < eff_thresh:
             if (
                 modifiers.prefer_high_variance_borderline
-                and best_ev >= 0.0
+                and ev_gain >= 0.0
                 and best_action in ("ALL_IN", "CALL")
             ):
                 filter_note = "Borderline 0EV high-variance call/shove"
             else:
-                if available_actions is not None and len(available_actions) > 0:
-                    check_available = is_action_available("CHECK", available_actions)
-                else:
-                    check_available = "CHECK" in candidates
-
-                if check_available:
-                    chosen_action = "CHECK"
-                    chosen_ev = candidates.get("CHECK", 0.0)
-                else:
-                    chosen_action = "FOLD"
-                    chosen_ev = 0.0
-                filter_note = "Filtered marginal play < +0.08 BB"
+                chosen_action = baseline_action
+                chosen_ev = baseline_ev
+                filter_note = f"Filtered marginal play < +{eff_thresh:.2f} BB"
 
         return chosen_action, chosen_ev, filter_note

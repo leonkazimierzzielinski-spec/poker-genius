@@ -458,3 +458,220 @@ class RangeTracker:
         if tot_weight <= 0.0:
             return 0.25
         return round(air_weight / tot_weight, 4)
+
+
+def infer_villain_position(
+    state: Any,
+    hand_summary: dict[str, Any] | None,
+    villain_seat: int,
+) -> str:
+    """Infer villain's position ('BTN', 'SB', 'BB') based on dealer button and player count."""
+    dealer_seat: int | None = None
+    if hand_summary and isinstance(hand_summary.get("players"), dict):
+        for sid, pinfo in hand_summary["players"].items():
+            if isinstance(pinfo, dict) and pinfo.get("is_dealer"):
+                dealer_seat = int(sid)
+                break
+
+    if dealer_seat is None:
+        players = getattr(state, "players", {}) or {}
+        for sid, p in (players.items() if isinstance(players, dict) else enumerate(players)):
+            if getattr(p, "is_dealer", False):
+                dealer_seat = int(sid)
+                break
+
+    if dealer_seat is not None and villain_seat == dealer_seat:
+        return "BTN"
+
+    eliminated: set[int] = set()
+    if hand_summary and isinstance(hand_summary.get("players"), dict):
+        for sid, pinfo in hand_summary["players"].items():
+            if isinstance(pinfo, dict) and pinfo.get("eliminated"):
+                eliminated.add(int(sid))
+    else:
+        players = getattr(state, "players", {}) or {}
+        for sid in (0, 1, 2):
+            if sid in players:
+                p = players[sid]
+                if getattr(p, "stack", None) is None and not getattr(p, "is_active", True):
+                    eliminated.add(sid)
+
+    num_active = max(2, 3 - len(eliminated))
+    if num_active == 2:
+        # Heads-Up: non-dealer is BB
+        return "BB"
+
+    # 3-max: gracz po dealerze to SB, kolejny to BB
+    if dealer_seat is not None:
+        sb_seat = (dealer_seat + 1) % 3
+        if villain_seat == sb_seat:
+            return "SB"
+        return "BB"
+
+    return "BTN"
+
+
+def build_villain_range_from_history(
+    hand_summary: dict[str, Any] | None,
+    state: Any,
+    villain_seat: int,
+    effective_bb: float,
+) -> dict[tuple[str, str], float]:
+    """Build villain's weighted range cumulatively from preflop to the current postflop action."""
+    hero_cards = list(getattr(state, "hero_cards", []) or [])
+    board_cards = list(getattr(state, "board_cards", []) or [])
+    bb_val = max(1, int(getattr(state, "big_blind", 20) or 20))
+    pot_val = max(bb_val, int(getattr(state, "pot", 40) or 40))
+
+    v_pos = infer_villain_position(state, hand_summary, villain_seat)
+
+    action_log: list[dict[str, Any]] = []
+    if hand_summary and isinstance(hand_summary.get("action_log"), list):
+        action_log = hand_summary["action_log"]
+
+    preflop_acts = [
+        a for a in action_log
+        if a.get("seat_id") == villain_seat
+        and a.get("street") == "PREFLOP"
+        and a.get("action") not in ("BLIND", "FOLD")
+    ]
+    postflop_acts = [
+        a for a in action_log
+        if a.get("seat_id") == villain_seat
+        and a.get("street") in ("FLOP", "TURN", "RIVER")
+        and a.get("action") not in ("BLIND", "FOLD")
+    ]
+
+    has_allin = any(str(a.get("action", "")).upper() in ("ALL-IN", "ALL_IN", "SHOVE") for a in preflop_acts)
+    num_raises = sum(
+        1 for a in preflop_acts
+        if str(a.get("action", "")).upper() == "RAISE"
+        or (str(a.get("action", "")).upper() == "BET" and float(a.get("amount", 0) or 0) > bb_val)
+    )
+
+    if has_allin or num_raises >= 2:
+        preflop_act = "3BET_OR_SHOVE"
+    elif any(
+        str(a.get("action", "")).upper() == "RAISE"
+        or (str(a.get("action", "")).upper() == "BET" and float(a.get("amount", 0) or 0) > bb_val)
+        for a in preflop_acts
+    ):
+        preflop_act = "OPEN_RAISE"
+    elif any(str(a.get("action", "")).upper() == "CALL" for a in preflop_acts):
+        had_other_raise = any(
+            entry.get("street") == "PREFLOP"
+            and str(entry.get("action", "")).upper() in ("RAISE", "ALL-IN", "ALL_IN")
+            for entry in action_log
+        )
+        if had_other_raise or pot_val >= 3.5 * bb_val:
+            preflop_act = "CALL_OPEN"
+        else:
+            preflop_act = "LIMP"
+    else:
+        if pot_val >= 3.5 * bb_val:
+            preflop_act = "OPEN_RAISE" if v_pos in ("BTN", "SB") else "CALL_OPEN"
+        else:
+            preflop_act = "LIMP"
+
+    v_range = get_preflop_villain_range(
+        position=v_pos,
+        preflop_action=preflop_act,
+        effective_bb=effective_bb,
+        hero_cards=hero_cards,
+        board_cards=board_cards,
+    )
+
+    running_pot = max(float(bb_val * 2), float(pot_val) * 0.5)
+    for entry in postflop_acts:
+        act_street = str(entry.get("street", "FLOP")).upper()
+        if act_street == "FLOP":
+            if len(board_cards) < 3:
+                continue
+            street_board = board_cards[:3]
+        elif act_street == "TURN":
+            if len(board_cards) < 4:
+                continue
+            street_board = board_cards[:4]
+        elif act_street == "RIVER":
+            if len(board_cards) < 5:
+                continue
+            street_board = board_cards[:5]
+        else:
+            continue
+
+        raw_act = str(entry.get("action", "")).upper()
+        if raw_act in ("ALL-IN", "ALL_IN", "RAISE"):
+            act_type = "RAISE"
+        elif raw_act in ("BET", "BET_30", "BET_SMALL", "BET_MED"):
+            act_type = "BET"
+        elif raw_act in ("CHECK", "CALL"):
+            act_type = "CHECK"
+        else:
+            act_type = "CHECK"
+
+        amt = float(entry.get("amount", 0) or 0)
+        b_to_p = (amt / max(float(bb_val), running_pot)) if act_type in ("BET", "RAISE") else 0.0
+
+        narrowed = narrow_range_by_postflop_action(
+            villain_range=v_range,
+            board_cards=street_board,
+            action_type=act_type,
+            bet_to_pot=b_to_p,
+            street=act_street,
+        )
+        if narrowed and sum(narrowed.values()) > 1e-6:
+            v_range = narrowed
+        if amt > 0:
+            running_pot += amt
+
+    # Account for current bet on the active street
+    players = getattr(state, "players", {}) or {}
+    curr_p = (
+        players.get(villain_seat)
+        if isinstance(players, dict)
+        else (players[villain_seat] if len(players) > villain_seat else None)
+    )
+    curr_bet = 0
+    if curr_p is not None:
+        val = getattr(curr_p, "current_bet", None)
+        if val is None:
+            val = getattr(curr_p, "bet", 0)
+        curr_bet = int(val or 0)
+
+    curr_street = str(getattr(state, "street", "FLOP") or "FLOP").upper()
+
+    if curr_bet > 0 and len(board_cards) >= 3:
+        already_logged = False
+        if postflop_acts:
+            last_act = postflop_acts[-1]
+            if str(last_act.get("street", "")).upper() == curr_street:
+                last_amt = float(last_act.get("amount", 0) or 0)
+                if abs(last_amt - curr_bet) <= 1:
+                    already_logged = True
+        if not already_logged:
+            b_to_p = curr_bet / max(float(bb_val), float(pot_val - curr_bet))
+            narrowed = narrow_range_by_postflop_action(
+                villain_range=v_range,
+                board_cards=board_cards,
+                action_type="BET",
+                bet_to_pot=b_to_p,
+                street=curr_street,
+            )
+            if narrowed and sum(narrowed.values()) > 1e-6:
+                v_range = narrowed
+    elif curr_bet == 0 and len(board_cards) >= 3:
+        has_act_on_curr_street = any(
+            str(a.get("street", "")).upper() == curr_street for a in postflop_acts
+        )
+        if not has_act_on_curr_street and v_pos != "BTN":
+            narrowed = narrow_range_by_postflop_action(
+                villain_range=v_range,
+                board_cards=board_cards,
+                action_type="CHECK",
+                bet_to_pot=0.0,
+                street=curr_street,
+            )
+            if narrowed and sum(narrowed.values()) > 1e-6:
+                v_range = narrowed
+
+    return v_range

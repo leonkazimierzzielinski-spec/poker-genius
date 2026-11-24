@@ -611,6 +611,74 @@ def test_hu_sb_87o_not_fold_and_a4s_12bb_not_all_in():
     assert action_a4 == "MIN_RAISE", f"Expected A4s at 12 BB HU_SB to play MIN_RAISE, got {action_a4}"
 
 
+def test_simplifier_relative_ev_gain_allows_profitable_cbet_over_negative_check():
+    """Verify that Simplifier measures relative EV gain against baseline CHECK/FOLD."""
+    from strategy.simplifier import StrategySimplifier
+    from strategy.multiplier_adapter import ProfileModifiers
+
+    simplifier = StrategySimplifier(ev_loss_threshold_bb=0.03)
+    modifiers = ProfileModifiers(profile_name="STANDARD_EXPLOIT")
+
+    # 1. Profitable c-bet (+0.45 BB gain over -0.42 CHECK) -> choose BET_30
+    cands_profitable = {"CHECK": -0.42, "BET_30": 0.03}
+    act1, ev1, _ = simplifier.select_pure_action(cands_profitable, modifiers)
+    assert act1 == "BET_30", f"Expected BET_30 for +0.45 BB gain, got {act1}"
+
+    # 2. Marginal c-bet (+0.02 BB gain over -0.42 CHECK < 0.03 threshold) -> simplify to CHECK
+    cands_marginal = {"CHECK": -0.42, "BET_30": -0.40}
+    act2, ev2, _ = simplifier.select_pure_action(cands_marginal, modifiers)
+    assert act2 == "CHECK", f"Expected CHECK for +0.02 BB gain (< 0.03), got {act2}"
+
+
+def test_decision_maker_reads_current_bet_and_uses_zero_preflop_threshold():
+    """Verify that DecisionMaker reads PlayerState.current_bet and applies 0.0 threshold preflop vs 0.03 postflop."""
+    from strategy.decision_maker import DecisionMaker
+
+    dm = DecisionMaker(ev_loss_threshold_bb=0.03, preflop_ev_loss_threshold_bb=0.0)
+
+    # 1. Facing bet via current_bet (no .bet attribute)
+    state_facing_bet = SimpleNamespace(
+        table_id="t1",
+        is_valid=True,
+        is_hero_turn=True,
+        street="PREFLOP",
+        hero_cards=["7s", "2c"],
+        available_actions=["FOLD", "CALL", "ALL_IN"],
+        players={
+            0: SimpleNamespace(seat_id=0, is_active=True, current_bet=20, stack=280),
+            1: SimpleNamespace(seat_id=1, is_active=True, current_bet=40, stack=260),
+        },
+        big_blind=20,
+    )
+    cands_preflop_fold = {"FOLD": 0.0, "CALL": -0.5, "ALL_IN": -2.0}
+    dec_fold = dm.decide(state_facing_bet, cands_preflop_fold, spot="PREFLOP")
+    assert dec_fold.action == "FOLD"
+
+    # 2. Preflop zero threshold: +0.02 BB over FOLD (0.0) should be accepted (not simplified away)
+    cands_preflop_marginal = {"FOLD": 0.0, "CALL": 0.02}
+    dec_preflop = dm.decide(state_facing_bet, cands_preflop_marginal, spot="PREFLOP")
+    assert dec_preflop.action == "CALL"
+
+    # 3. Postflop 0.03 threshold: +0.02 BB over CHECK (0.0) should be simplified to CHECK
+    state_postflop_free = SimpleNamespace(
+        table_id="t1",
+        is_valid=True,
+        is_hero_turn=True,
+        street="FLOP",
+        hero_cards=["Jh", "Td"],
+        board_cards=["Js", "7d", "2c"],
+        available_actions=["CHECK", "BET_30", "ALL_IN"],
+        players={
+            0: SimpleNamespace(seat_id=0, is_active=True, current_bet=0, stack=280),
+            1: SimpleNamespace(seat_id=1, is_active=True, current_bet=0, stack=260),
+        },
+        big_blind=20,
+    )
+    cands_postflop_marginal = {"CHECK": 0.0, "BET_30": 0.02}
+    dec_postflop = dm.decide(state_postflop_free, cands_postflop_marginal, spot="FLOP")
+    assert dec_postflop.action == "CHECK"
+
+
 
 
 

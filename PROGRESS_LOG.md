@@ -1,5 +1,45 @@
 # Poker Genius — Dziennik Postępu Prac (Progress Log)
 
+## V17 — Silnik Postflop Range-vs-Range ze Stanem Rozdania, Baza GTOpen Spotów i Relatywny Simplifier (2026-11-24)
+
+### 1. Wdrożone komponenty i architektura
+1. **Relatywny próg EV w `strategy/simplifier.py`:**
+   - Poprawiono logikę upraszczania strategii: `ev_gain = best_ev - baseline_ev < eff_thresh` względem bazowej akcji zerowej/pasywnej (`CHECK` przy darmowej decyzji lub `FOLD` przy facing bet).
+   - Eliminuje to błąd odrzucania wysoce zyskownych betów z AIR (np. c-bet `BET_30 = +0.03 BB` przeciwko `CHECK = -0.42 BB` daje zysk `+0.45 BB >= 0.03 BB` i jest wybierany, podczas gdy marginalny `BET_30 = -0.40 BB` z zyskiem `+0.02 BB < 0.03 BB` jest upraszczany do `CHECK`).
+2. **Poprawka odczytu `current_bet` i rozdzielne progi w `strategy/decision_maker.py`:**
+   - Wprowadzono `_get_player_bet(p)` sprawdzający w pierwszej kolejności `p.current_bet`, a w przypadku braku fallback do `p.bet`. Likwiduje to krytyczny defekt, w którym bot nie widział zakładów przeciwnika i blokował opcję `FOLD`.
+   - Wprowadzono dwa rozdzielne progi straty EV: preflop `preflop_ev_loss_threshold_bb = 0.00 BB` (każda dodatnia linia preflop jest brana pod uwagę), postflop `ev_loss_threshold_bb = 0.03 BB`.
+3. **Stanowy silnik zakresów `engine/range_engine.py`:**
+   - Zaimplementowano funkcję `infer_villain_position(state, hand_summary, villain_seat)` precyzyjnie określającą pozycję rywala (BTN/SB/BB) w 3-max i HU.
+   - Zaimplementowano funkcję `build_villain_range_from_history(hand_summary, state, villain_seat, effective_bb)`: kumulatywne zawężanie zakresu ulica po ulicy (`preflop_acts` -> `postflop_acts` dla Flop, Turn, River) na podstawie realnego logu akcji z zachowaniem wielkości zakładów w relacji do puli.
+4. **Podpięcie `flop_db` i zachowanie wag zakresu w `main.py`:**
+   - Nowa funkcja `determine_postflop_spot(state, hand_summary)` automatycznie klasyfikuje spot postflop do 4 głównych kategorii GTOpen: `BTN_vs_BB_SRP`, `SB_vs_BB_LIMPED`, `HU_SB_vs_BB_SRP`, `HU_SB_vs_BB_LIMPED`.
+   - Zapytanie do bazy `flop_db.lookup_nearest_flop` wykonywane jest **wyłącznie gdy `not facing_bet`** (węzeł otwierający flopa).
+   - Gdy `facing_bet == True`, silnik zawsze kieruje decyzję do stanowego `range_engine`.
+   - **Kluczowe zachowanie wag:** Wyeliminowano spłaszczanie zakresu `list(v_range.keys())` — dla Heads-Up postflop (`num_opps == 1`) wywoływane jest bezpośrednio `compute_range_vs_hand_equity(hero_cards, board_cards, villain_range=v_range)`, co w pełni respektuje dynamiczne wagi kombinacji na Flopie, Turnie i Riverze.
+   - W pętli `processing_loop` przekazywany jest aktualny `cur_hand_summary = active_tracker.get_hand_summary()`.
+
+### 2. Wyniki testów jednostkowych (`pytest -v tests/`)
+- Liczba testów: **142 passed in 4.19s (100% sukcesu)**.
+- Nowe testy:
+  - `tests/test_strategy.py::test_simplifier_relative_ev_gain_allows_profitable_cbet_over_negative_check`
+  - `tests/test_strategy.py::test_decision_maker_reads_current_bet_and_uses_zero_preflop_threshold`
+  - `tests/test_engine.py::test_build_villain_range_from_history_narrows_across_streets`
+  - `tests/test_ui_and_main.py::test_determine_postflop_spot_all_four_variants`
+  - `tests/test_ui_and_main.py::test_evaluate_candidates_hits_gtopen_flop_db_when_not_facing_bet_and_uses_range_engine_when_facing_bet`
+
+### 3. Wyniki weryfikacji klatek z nagrań testowych (`nagrania testowe/`)
+| Nagranie | Klatka | Ulica / Stan | Spot | Zwrócone EV / Akcja | Latencja | Uwagi |
+|---|---|---|---|---|---|---|
+| `2 gry na raz` | f1383 | FLOP, not facing bet | `BTN_vs_BB_SRP` | `CHECK`: 0.62 BB, `BET_30`: 0.59 BB -> Decyzja: `CHECK` | 1.6 ms | Trafienie klastra GTOpen Flop DB |
+| `2 gry na raz` | f1627 | FLOP, facing bet (120 vs 40) | `BTN_vs_BB_SRP` | `CALL`: +1.89 BB, `ALL_IN`: -4.31 BB -> Decyzja: `CALL` | 51.6 ms | Stanowy `range_engine` z wagami |
+| `2026-11-19 211257` | f2604 | TURN, pot=218 | `TURN` | `CHECK`: +4.17 BB, `BET_30`: +2.66 BB -> Decyzja: `CHECK` | 20.0 ms | Stanowy `range_engine` na Turnie |
+| `2026-11-19 211257` | f4757 | FLOP, HU facing shove (Quad 7s) | `HU_SB_vs_BB_SRP` | `CALL`: +22.71 BB, `ALL_IN`: +20.66 BB -> Decyzja: `CALL` | 92.0 ms | Perfekcyjny snap-call monster |
+
+---
+
+
+
 ## V16.1 — Hotfix: Realne Parsowanie `/api/node` Solverem GTOpen (Kombinacje per Combo, Wagi Reach, Rzeczywiste EV w BB i 5 Koszyków) (2026-11-22)
 
 ### 1. Wykryty problem i wdrożone poprawki

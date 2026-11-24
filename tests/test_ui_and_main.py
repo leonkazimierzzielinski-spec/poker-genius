@@ -390,7 +390,7 @@ def test_evaluate_candidates_flop_db():
         mc_calc=None,
     )
 
-    assert spot == "FLOP"
+    assert spot in ("FLOP", "SB_vs_BB_LIMPED")
     assert candidates["CHECK"] == 0.1
     assert candidates["BET_30"] == 0.45
     assert candidates["ALL_IN"] == 0.35
@@ -751,7 +751,7 @@ def test_evaluate_candidates_postflop_facing_bet():
         mc_calc=mock_mc,
     )
 
-    assert spot == "FLOP"
+    assert spot in ("FLOP", "BTN_vs_BB_SRP")
     assert "CALL" in candidates
     assert "CHECK" not in candidates  # Cannot check when facing a bet
     assert "FOLD" in candidates
@@ -1000,7 +1000,7 @@ def test_postflop_ev_conservative_no_blind_shove():
         mc_calc=mc_calc,
     )
 
-    assert spot == "FLOP"
+    assert spot in ("FLOP", "BTN_vs_BB_SRP")
     assert "CHECK" in candidates
     assert "BET_30" in candidates
     assert "ALL_IN" in candidates
@@ -2016,6 +2016,135 @@ def test_hud_renders_alt_action_when_present() -> None:
     html_text = label.text()
     assert "Alt: BET" in html_text
     assert "(+0.52 BB)" in html_text
+
+
+def test_determine_postflop_spot_all_four_variants():
+    """Verify determine_postflop_spot accurately identifies all four GTOpen spot categories."""
+    from main import determine_postflop_spot
+    from types import SimpleNamespace
+
+    state_3max = SimpleNamespace(
+        big_blind=20,
+        pot=80,
+        players={
+            0: SimpleNamespace(seat_id=0, stack=260, is_active=True),
+            1: SimpleNamespace(seat_id=1, stack=260, is_active=True),
+            2: SimpleNamespace(seat_id=2, stack=260, is_active=True),
+        },
+    )
+    # 1. 3-max SRP (had_preflop_raise = True)
+    hs_3max_srp = {
+        "players": {0: {"eliminated": False}, 1: {"eliminated": False}, 2: {"eliminated": False}},
+        "action_log": [{"seat_id": 1, "street": "PREFLOP", "action": "RAISE", "amount": 40}],
+    }
+    assert determine_postflop_spot(state_3max, hs_3max_srp) == "BTN_vs_BB_SRP"
+
+    # 2. 3-max Limped (had_preflop_raise = False)
+    hs_3max_limp = {
+        "players": {0: {"eliminated": False}, 1: {"eliminated": False}, 2: {"eliminated": False}},
+        "action_log": [{"seat_id": 1, "street": "PREFLOP", "action": "CALL", "amount": 20}],
+    }
+    assert determine_postflop_spot(state_3max, hs_3max_limp) == "SB_vs_BB_LIMPED"
+
+    # 3. Heads-Up SRP (1 player eliminated, preflop raise)
+    state_hu = SimpleNamespace(
+        big_blind=20,
+        pot=80,
+        players={
+            0: SimpleNamespace(seat_id=0, stack=260, is_active=True),
+            1: SimpleNamespace(seat_id=1, stack=260, is_active=True),
+            2: SimpleNamespace(seat_id=2, stack=None, is_active=False),
+        },
+    )
+    hs_hu_srp = {
+        "players": {0: {"eliminated": False}, 1: {"eliminated": False}, 2: {"eliminated": True}},
+        "action_log": [{"seat_id": 0, "street": "PREFLOP", "action": "RAISE", "amount": 40}],
+    }
+    assert determine_postflop_spot(state_hu, hs_hu_srp) == "HU_SB_vs_BB_SRP"
+
+    # 4. Heads-Up Limped (1 player eliminated, limp)
+    hs_hu_limp = {
+        "players": {0: {"eliminated": False}, 1: {"eliminated": False}, 2: {"eliminated": True}},
+        "action_log": [{"seat_id": 0, "street": "PREFLOP", "action": "CALL", "amount": 20}],
+    }
+    assert determine_postflop_spot(state_hu, hs_hu_limp) == "HU_SB_vs_BB_LIMPED"
+
+
+def test_evaluate_candidates_hits_gtopen_flop_db_when_not_facing_bet_and_uses_range_engine_when_facing_bet():
+    """Verify that evaluate_candidates queries flop_db root-node when not facing bet, but uses range_engine when facing bet."""
+    from unittest.mock import MagicMock
+    from types import SimpleNamespace
+    from main import evaluate_candidates
+
+    # Mock FlopDatabase
+    flop_db = MagicMock()
+    flop_db.lookup_nearest_flop.return_value = {
+        "CHECK": 1.25,
+        "BET_30": 1.85,
+        "ALL_IN": 0.40,
+    }
+
+    # Scenario A: NOT facing bet on Flop
+    state_not_facing = SimpleNamespace(
+        street="FLOP",
+        hero_cards=["Ah", "Kd"],
+        board_cards=["Ac", "7d", "2s"],
+        pot=80,
+        big_blind=20,
+        players={
+            0: SimpleNamespace(seat_id=0, stack=280, current_bet=0, is_active=True),
+            1: SimpleNamespace(seat_id=1, stack=280, current_bet=0, is_active=True),
+            2: SimpleNamespace(seat_id=2, stack=None, is_active=False, status_text="FOLDED"),
+        },
+    )
+    hs = {
+        "dealer_seat": 1,
+        "players": {0: {"eliminated": False}, 1: {"eliminated": False}, 2: {"eliminated": True}},
+        "action_log": [{"seat_id": 1, "street": "PREFLOP", "action": "RAISE", "amount": 40}],
+    }
+    cands_a, spot_a = evaluate_candidates(
+        state_not_facing,
+        preflop_engine=None,
+        flop_db=flop_db,
+        mc_calc=None,
+        hand_summary=hs,
+    )
+    assert spot_a == "HU_SB_vs_BB_SRP"
+    assert flop_db.lookup_nearest_flop.called
+    assert cands_a["BET_30"] == 1.85
+    assert cands_a["CHECK"] == 1.25
+
+    # Reset mock for Scenario B
+    flop_db.lookup_nearest_flop.reset_mock()
+
+    # Scenario B: FACING BET on Flop
+    state_facing = SimpleNamespace(
+        street="FLOP",
+        hero_cards=["Ah", "Kd"],
+        board_cards=["Ac", "7d", "2s"],
+        pot=120,
+        big_blind=20,
+        players={
+            0: SimpleNamespace(seat_id=0, stack=280, current_bet=0, is_active=True),
+            1: SimpleNamespace(seat_id=1, stack=240, current_bet=40, is_active=True),
+            2: SimpleNamespace(seat_id=2, stack=None, is_active=False, status_text="FOLDED"),
+        },
+    )
+    cands_b, spot_b = evaluate_candidates(
+        state_facing,
+        preflop_engine=None,
+        flop_db=flop_db,
+        mc_calc=None,
+        hand_summary=hs,
+    )
+    # Flop DB must NOT be queried when facing bet!
+    assert not flop_db.lookup_nearest_flop.called
+    # Actions must be for facing bet (CALL, ALL_IN, FOLD)
+    assert "CALL" in cands_b
+    assert "ALL_IN" in cands_b
+    assert "FOLD" in cands_b
+    assert "BET_30" not in cands_b
+
 
 
 
