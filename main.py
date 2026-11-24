@@ -34,6 +34,7 @@ try:
         find_anchor,
         find_golden_rim,
         find_right_anchor,
+        verify_table_rect_has_blue_felt,
     )
     from vision.capture import (
         DXCAM_AVAILABLE,
@@ -51,6 +52,7 @@ except ImportError:
     compute_table_rect = None  # type: ignore[assignment]
     compute_table_rect_from_rim = None  # type: ignore[assignment]
     compute_unclipped_table_rect = None  # type: ignore[assignment]
+    verify_table_rect_has_blue_felt = None  # type: ignore[assignment]
     DXCAM_AVAILABLE = False
     FrameSource = Any  # type: ignore[misc, assignment]
     LiveScreenCapture = Any  # type: ignore[misc, assignment]
@@ -1150,8 +1152,13 @@ def processing_loop(
                                     if getattr(pipeline, "right_anchor_template", None) is not None and find_right_anchor is not None:
                                         right_anchor = find_right_anchor(frame, pipeline.right_anchor_template, full_anchor, canonical_size=canonical_sz, left_template_size=(tpl_w, tpl_h))
                                     table_rect = compute_unclipped_table_rect(full_anchor, table_offset, canonical_size=canonical_sz, template_size=(tpl_w, tpl_h), frame_shape=frame.shape, right_anchor=right_anchor)
-                                    has_anchor = True
-                                    anchor_source = "ICON"
+                                    if verify_table_rect_has_blue_felt is not None and not verify_table_rect_has_blue_felt(frame, table_rect):
+                                        table_rect = search_region
+                                        has_anchor = False
+                                        anchor_source = "MANUAL"
+                                    else:
+                                        has_anchor = True
+                                        anchor_source = "ICON"
                                 else:
                                     table_rect = search_region
                                     anchor_source = "MANUAL"
@@ -1175,8 +1182,12 @@ def processing_loop(
                                     if getattr(pipeline, "right_anchor_template", None) is not None and find_right_anchor is not None:
                                         right_anchor = find_right_anchor(frame, pipeline.right_anchor_template, anchor, canonical_size=canonical_sz, left_template_size=(tpl_w, tpl_h))
                                     table_rect = compute_unclipped_table_rect(anchor, table_offset, canonical_size=canonical_sz, template_size=(tpl_w, tpl_h), frame_shape=frame.shape, right_anchor=right_anchor)
-                                    has_anchor = True
-                                    anchor_source = "ICON"
+                                    if verify_table_rect_has_blue_felt is not None and not verify_table_rect_has_blue_felt(frame, table_rect):
+                                        table_rect = None
+                                        has_anchor = False
+                                    else:
+                                        has_anchor = True
+                                        anchor_source = "ICON"
                             except Exception:
                                 anchor = None
 

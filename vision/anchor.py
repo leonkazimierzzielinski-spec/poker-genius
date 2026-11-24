@@ -441,71 +441,116 @@ def find_golden_rim(
         return None
 
     candidates.sort(reverse=True)
-    _, fx, fy, fw, fh = candidates[0]
-
-    # 2. Golden rim boundary around felt (4 clean arcs)
     golden_mask = cv2.inRange(hsv, (12, 50, 90), (35, 255, 255))
 
-    # Left arc: vertical mid-band, horizontal search around left felt edge
-    y1_l, y2_l = int(fy + 0.38 * fh), int(fy + 0.62 * fh)
-    x1_l, x2_l = max(0, fx - int(0.04 * fw)), min(W, fx + int(0.04 * fw))
-    l_pts = np.where(golden_mask[y1_l:y2_l, x1_l:x2_l] > 0)
-    if len(l_pts[1]) < 15:
-        return None
-    left_x = x1_l + int(np.percentile(l_pts[1], 15))
+    for _area, fx, fy, fw, fh in candidates[:6]:
+        min_arc_pts = 8 if fw < 750 else 15
+        lr_margin = int((0.06 if fw < 750 else 0.04) * fw)
 
-    # Right arc: vertical mid-band, horizontal search around right felt edge
-    x1_r, x2_r = max(0, fx + fw - int(0.04 * fw)), min(W, fx + fw + int(0.04 * fw))
-    r_pts = np.where(golden_mask[y1_l:y2_l, x1_r:x2_r] > 0)
-    if len(r_pts[1]) < 15:
-        return None
-    right_x = x1_r + int(np.percentile(r_pts[1], 85))
+        # 2. Golden rim boundary around felt (4 clean arcs)
+        # Left arc: vertical mid-band, horizontal search around left felt edge
+        y1_l, y2_l = int(fy + 0.38 * fh), int(fy + 0.62 * fh)
+        x1_l, x2_l = max(0, fx - lr_margin), min(W, fx + lr_margin)
+        if y2_l <= y1_l or x2_l <= x1_l:
+            continue
+        l_pts = np.where(golden_mask[y1_l:y2_l, x1_l:x2_l] > 0)
+        if len(l_pts[1]) < min_arc_pts:
+            continue
+        left_x = x1_l + int(np.percentile(l_pts[1], 15))
 
-    # Top arc: horizontal band between S1 and S2 avatars, above Prize Pool text
-    x1_t, x2_t = int(fx + 0.44 * fw), int(fx + 0.56 * fw)
-    y1_t, y2_t = max(0, fy - int(0.08 * fh)), min(H, fy + int(0.12 * fh))
-    t_pts = np.where(golden_mask[y1_t:y2_t, x1_t:x2_t] > 0)
-    if len(t_pts[0]) < 15:
-        return None
-    top_y = y1_t + int(np.percentile(t_pts[0], 15))
+        # Right arc: vertical mid-band, horizontal search around right felt edge
+        x1_r, x2_r = max(0, fx + fw - lr_margin), min(W, fx + fw + lr_margin)
+        if x2_r <= x1_r:
+            continue
+        r_pts = np.where(golden_mask[y1_l:y2_l, x1_r:x2_r] > 0)
+        if len(r_pts[1]) < min_arc_pts:
+            continue
+        right_x = x1_r + int(np.percentile(r_pts[1], 85))
 
-    # Bottom arc: two horizontal bands flanking hero cards, above action buttons
-    x1_b1, x2_b1 = int(fx + 0.22 * fw), int(fx + 0.36 * fw)
-    x1_b2, x2_b2 = int(fx + 0.64 * fw), int(fx + 0.78 * fw)
-    y1_b, y2_b = int(fy + 0.85 * fh), min(H, fy + int(1.15 * fh))
-    b1_pts = np.where(golden_mask[y1_b:y2_b, x1_b1:x2_b1] > 0)
-    b2_pts = np.where(golden_mask[y1_b:y2_b, x1_b2:x2_b2] > 0)
-    all_b_y = list(b1_pts[0]) + list(b2_pts[0])
-    if len(all_b_y) < 15:
-        return None
-    bot_y = y1_b + int(np.percentile(all_b_y, 15))
+        # Top arc: horizontal band between S1 and S2 avatars, above Prize Pool text
+        x1_t, x2_t = int(fx + 0.44 * fw), int(fx + 0.56 * fw)
+        y1_t, y2_t = max(0, fy - int(0.08 * fh)), min(H, fy + int(0.12 * fh))
+        if y2_t <= y1_t or x2_t <= x1_t:
+            continue
+        t_pts = np.where(golden_mask[y1_t:y2_t, x1_t:x2_t] > 0)
+        if len(t_pts[0]) < min_arc_pts:
+            continue
+        top_y = y1_t + int(np.percentile(t_pts[0], 15))
 
-    rim_w = right_x - left_x
-    rim_h = bot_y - top_y
+        # Bottom arc: two horizontal bands flanking hero cards, above action buttons
+        x1_b1, x2_b1 = int(fx + 0.22 * fw), int(fx + 0.36 * fw)
+        x1_b2, x2_b2 = int(fx + 0.64 * fw), int(fx + 0.78 * fw)
+        y1_b, y2_b = int(fy + 0.85 * fh), min(H, fy + int(1.15 * fh))
+        if y2_b <= y1_b:
+            continue
+        b1_pts = np.where(golden_mask[y1_b:y2_b, x1_b1:x2_b1] > 0)
+        b2_pts = np.where(golden_mask[y1_b:y2_b, x1_b2:x2_b2] > 0)
+        all_b_y = list(b1_pts[0]) + list(b2_pts[0])
+        if len(all_b_y) < min_arc_pts:
+            continue
+        bot_y = y1_b + int(np.percentile(all_b_y, 15))
 
-    # 3. Hard size and aspect ratio checks
-    if rim_w < 250 or rim_h < 130:
-        return None
+        rim_w = right_x - left_x
+        rim_h = bot_y - top_y
 
-    aspect = rim_w / rim_h
-    if not (1.55 <= aspect <= 2.15):
-        return None
+        # 3. Hard size and aspect ratio checks
+        if rim_w < 250 or rim_h < 130:
+            continue
 
-    # 4. Verified blue interior felt dominance in center 40% box
-    c_y1 = int(top_y + 0.30 * rim_h)
-    c_y2 = int(top_y + 0.70 * rim_h)
-    c_x1 = int(left_x + 0.30 * rim_w)
-    c_x2 = int(left_x + 0.70 * rim_w)
-    if c_y2 <= c_y1 or c_x2 <= c_x1:
-        return None
+        aspect = rim_w / rim_h
+        if not (1.55 <= aspect <= 2.15):
+            continue
 
-    center_roi = hsv[c_y1:c_y2, c_x1:c_x2]
-    blue_center_mask = (center_roi[:, :, 0] >= 90) & (center_roi[:, :, 0] <= 135) & (center_roi[:, :, 1] >= 40)
-    blue_ratio = np.count_nonzero(blue_center_mask) / (center_roi.shape[0] * center_roi.shape[1])
-    if blue_ratio < 0.40:
-        return None
+        # 4. Verified blue interior felt dominance in center 40% box
+        c_y1 = max(0, int(top_y + 0.30 * rim_h))
+        c_y2 = min(H, int(top_y + 0.70 * rim_h))
+        c_x1 = max(0, int(left_x + 0.30 * rim_w))
+        c_x2 = min(W, int(left_x + 0.70 * rim_w))
+        if c_y2 <= c_y1 or c_x2 <= c_x1:
+            continue
 
-    return (left_x + sx_offset, top_y + sy_offset, rim_w, rim_h)
+        center_roi = hsv[c_y1:c_y2, c_x1:c_x2]
+        blue_center_mask = (
+            (center_roi[:, :, 0] >= 90)
+            & (center_roi[:, :, 0] <= 135)
+            & (center_roi[:, :, 1] >= 40)
+            & (center_roi[:, :, 2] >= 30)
+        )
+        blue_ratio = np.count_nonzero(blue_center_mask) / (center_roi.shape[0] * center_roi.shape[1])
+        if blue_ratio < 0.40:
+            continue
+
+        return (left_x + sx_offset, top_y + sy_offset, rim_w, rim_h)
+
+    return None
+
+
+def verify_table_rect_has_blue_felt(
+    frame: np.ndarray,
+    table_rect: tuple[int, int, int, int],
+    min_blue_ratio: float = 0.25,
+) -> bool:
+    """Verify that the central region of a candidate table_rect contains blue poker felt."""
+    if frame is None or frame.size == 0 or table_rect is None:
+        return False
+
+    tx, ty, tw, th = table_rect
+    if tw <= 0 or th <= 0:
+        return False
+
+    H, W = frame.shape[:2]
+    x1 = max(0, int(tx + 0.30 * tw))
+    x2 = min(W, int(tx + 0.70 * tw))
+    y1 = max(0, int(ty + 0.30 * th))
+    y2 = min(H, int(ty + 0.70 * th))
+    if x2 <= x1 or y2 <= y1:
+        return False
+
+    center_roi = frame[y1:y2, x1:x2]
+    hsv = cv2.cvtColor(center_roi, cv2.COLOR_BGR2HSV)
+    blue_mask = cv2.inRange(hsv, (90, 40, 30), (135, 255, 255))
+    blue_ratio = np.count_nonzero(blue_mask) / (center_roi.shape[0] * center_roi.shape[1])
+    return bool(blue_ratio >= min_blue_ratio)
 
 
 def compute_table_rect_from_rim(

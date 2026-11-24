@@ -1,5 +1,20 @@
 # Poker Genius — Dziennik Postępu Prac (Progress Log)
 
+## V17.3 — Hotfix: Multi-candidate `find_golden_rim` + weryfikacja niebieskiego sukna dla fallbacku `ICON` (2026-11-24)
+
+### 1. Wdrożone poprawki
+1. **Iteracja kandydatów i adaptacyjne progi w `vision/anchor.py` (`find_golden_rim`):**
+   - Zamiast sprawdzać wyłącznie `candidates[0]`, pętla iteruje po `candidates[:6]` i zwraca pierwszego kandydata przechodzącego weryfikację 4 złotych łuków, proporcji `1.55 <= aspect <= 2.15` oraz niebieskiego środka (`blue_ratio >= 0.40`).
+   - Dla mniejszych stołów (`fw < 750`) obniżono minimalną liczbę złotych pikseli na łuk z `15` do `8` oraz poszerzono poziomy margines poszukiwania lewego/prawego łuku z `0.04 * fw` do `0.06 * fw`.
+2. **Weryfikacja niebieskiego sukna dla fallbacku `ICON` (`vision/anchor.py`, `main.py`):**
+   - Dodano funkcję `verify_table_rect_has_blue_felt(frame, table_rect, min_blue_ratio=0.25)` sprawdzającą udział pikseli niebieskiego sukna w centrum wykrytego prostokąta.
+   - W `main.py` (gałąź fallbacku `ICON`) po wyliczeniu `table_rect` przez `compute_unclipped_table_rect` odrzucane są dopasowania bez niebieskiego sukna (np. białe ikony w ciemnoszarym menu `My Casino`).
+3. **Testy jednostkowe (`tests/test_vision.py`):**
+   - Dodano `test_find_golden_rim_skips_larger_blue_distractor_and_finds_table` oraz `test_verify_table_rect_has_blue_felt_rejects_dark_sidebar`.
+   - Pełny wynik testów: **146 passed in 4.84s (100% sukcesu)**.
+
+---
+
 ## V17.2 — Hotfix: DigitOCR pod monitory 1080p / małe okna (0.54x–0.65x) i weryfikacja ultrawide 2560×1080 (2026-11-24)
 
 ### 1. Wdrożone poprawki

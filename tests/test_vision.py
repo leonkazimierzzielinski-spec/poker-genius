@@ -1161,6 +1161,39 @@ def test_digit_ocr_and_rim_on_ultrawide_2560x1080_left_and_right_scaled() -> Non
         assert ocr.read_blinds(_render_synthetic("10/20", 8)) == (10, 20)
 
 
+def test_find_golden_rim_skips_larger_blue_distractor_and_finds_table() -> None:
+    """Verify find_golden_rim iterates blue candidates and skips a larger non-table blue distractor."""
+    from vision.anchor import find_golden_rim
+
+    canvas = np.zeros((1080, 2560, 3), dtype=np.uint8)
+
+    # Left: larger blue distractor (900x500, aspect=1.80) without golden rim
+    cv2.rectangle(canvas, (80, 120), (980, 620), (160, 80, 20), -1)
+
+    # Right: smaller real table (700x370, aspect=1.89) WITH golden rim (BGR: 20, 190, 230)
+    cv2.rectangle(canvas, (1450, 250), (2150, 620), (160, 80, 20), -1)
+    cv2.ellipse(canvas, (1800, 435), (350, 185), 0, 0, 360, (20, 190, 230), 4)
+    # Also draw rectangular golden rim bounds so 4 arcs hit cleanly
+    cv2.rectangle(canvas, (1450, 250), (2150, 620), (20, 190, 230), 4)
+
+    rim = find_golden_rim(canvas)
+    assert rim is not None, "Expected find_golden_rim to find the real table on the right"
+    assert rim[0] >= 1400, f"Expected rim on the right (x >= 1400), got {rim}"
+
+
+def test_verify_table_rect_has_blue_felt_rejects_dark_sidebar() -> None:
+    """Verify verify_table_rect_has_blue_felt rejects dark gray sidebar (My Casino) and accepts blue felt."""
+    from vision.anchor import verify_table_rect_has_blue_felt
+
+    frame = np.full((800, 1400, 3), 35, dtype=np.uint8)  # dark gray background
+    # Blue felt region on the right
+    cv2.rectangle(frame, (500, 100), (1200, 500), (160, 80, 20), -1)
+
+    assert verify_table_rect_has_blue_felt(frame, (0, 100, 400, 500)) is False
+    assert verify_table_rect_has_blue_felt(frame, (500, 100, 700, 400)) is True
+
+
+
 
 
 
