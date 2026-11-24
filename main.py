@@ -2127,7 +2127,7 @@ def main(argv: list[str] | None = None) -> int:
         app = QApplication(sys.argv if argv is None else ["poker_assistant"])
 
     hud_bridge = HudBridge()
-    hud_overlay = HudOverlay(bridge=hud_bridge)
+    hud_overlay = HudOverlay(bridge=hud_bridge, monitor_idx=args.monitor)
     hud_overlay.snapshots_enabled = save_snapshots_flag
     hud_overlay._update_snapshots_button_ui()
     if hand_recorder is not None:

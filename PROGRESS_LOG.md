@@ -1,5 +1,22 @@
 # Poker Genius — Dziennik Postępu Prac (Progress Log)
 
+## V17.1 — Hotfix: Multi-monitor / Mixed-DPI Overlay Geometry (2026-11-24)
+
+### 1. Wdrożone poprawki
+1. **Przypięcie nakładek do wybranego monitora (`ui/hud.py`):**
+   - Dodano funkcję pomocniczą `get_target_screen(monitor_idx: int = 0)`, która zwraca ekran docelowy z `QApplication.screens()` (z bezpiecznym fallbackiem do `primaryScreen()`).
+   - Dodano opcjonalny parametr `monitor_idx: int = 0` do konstruktorów `ActionBarOverlay`, `DebugRoiOverlay`, `RegionSelectorOverlay` oraz `HudOverlay`.
+   - Zastąpiono `screen.virtualGeometry()` geometrią konkretnego ekranu `target_screen.geometry()` we wszystkich nakładkach. Eliminuje to przesunięcia i rozciąganie nakładek na konfiguracjach wielomonitorowych z ujemnymi współrzędnymi wirtualnego pulpitu (np. lewy monitor `x = -225`).
+2. **Pobieranie `devicePixelRatio` z docelowego ekranu:**
+   - W `DebugRoiOverlay` (renderowanie i przeciąganie stołu), `ActionBarOverlay` (kalkulacja pozycji i render kafelków akcji) oraz `RegionSelectorOverlay` (skalowanie współrzędnych wybranego prostokąta) wartość `dpr` jest pobierana bezpośrednio z `get_target_screen(self._monitor_idx)`.
+3. **Przekazywanie indeksu monitora z CLI (`main.py`):**
+   - W punkcie startowym `HudOverlay` tworzony jest z parametrem `monitor_idx=args.monitor`.
+4. **Weryfikacja testowa (`tests/test_ui_and_main.py`):**
+   - Nowy test `test_overlays_use_target_screen_geometry_not_virtual_geometry` potwierdza na mockowanym układzie 2 monitorów (`(0, 0, 2560, 1080), dpr=1.0` oraz `(-225, 1080, 1440, 900), dpr=2.0`), że nakładki dla monitora 0 zachowują `x == 0` i `dpr == 1.0`, a dla monitora 1 `x == -225` i `dpr == 2.0`.
+   - Wynik testów: **143 passed in 4.61s (100% sukcesu)**.
+
+---
+
 ## V17 — Silnik Postflop Range-vs-Range ze Stanem Rozdania, Baza GTOpen Spotów i Relatywny Simplifier (2026-11-24)
 
 ### 1. Wdrożone komponenty i architektura

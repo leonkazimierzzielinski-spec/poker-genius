@@ -2146,6 +2146,84 @@ def test_evaluate_candidates_hits_gtopen_flop_db_when_not_facing_bet_and_uses_ra
     assert "BET_30" not in cands_b
 
 
+def test_overlays_use_target_screen_geometry_not_virtual_geometry(qapp, monkeypatch) -> None:
+    """Verify DebugRoiOverlay, ActionBarOverlay, and RegionSelectorOverlay pin to target monitor geometry & DPR."""
+    from unittest.mock import MagicMock
+    from PySide6.QtCore import QRect
+    from PySide6.QtWidgets import QApplication
+    from ui.hud import (
+        DebugRoiOverlay,
+        ActionBarOverlay,
+        RegionSelectorOverlay,
+        HudOverlay,
+        get_target_screen,
+    )
+
+    # Mock screen 0: (0, 0, 2560, 1080), dpr=1.0
+    mock_screen_0 = MagicMock()
+    mock_screen_0.geometry.return_value = QRect(0, 0, 2560, 1080)
+    mock_screen_0.virtualGeometry.return_value = QRect(-225, 0, 3785, 1980)
+    mock_screen_0.devicePixelRatio.return_value = 1.0
+
+    # Mock screen 1: (-225, 1080, 1440, 900), dpr=2.0
+    mock_screen_1 = MagicMock()
+    mock_screen_1.geometry.return_value = QRect(-225, 1080, 1440, 900)
+    mock_screen_1.virtualGeometry.return_value = QRect(-225, 0, 3785, 1980)
+    mock_screen_1.devicePixelRatio.return_value = 2.0
+
+    monkeypatch.setattr(QApplication, "screens", lambda: [mock_screen_0, mock_screen_1])
+    monkeypatch.setattr(QApplication, "primaryScreen", lambda: mock_screen_0)
+
+    # 1. get_target_screen helper validation
+    assert get_target_screen(0) is mock_screen_0
+    assert get_target_screen(1) is mock_screen_1
+    assert get_target_screen(5) is mock_screen_0
+
+    # 2. Overlays for monitor 0 get geometry of monitor 0 (x == 0, not -225) and dpr == 1.0
+    dbg_0 = DebugRoiOverlay(monitor_idx=0)
+    assert dbg_0.geometry() == QRect(0, 0, 2560, 1080)
+    assert dbg_0.geometry().x() == 0
+    assert dbg_0.geometry().x() != -225
+    assert get_target_screen(dbg_0._monitor_idx).devicePixelRatio() == 1.0
+
+    bar_0 = ActionBarOverlay(monitor_idx=0)
+    assert bar_0.geometry() == QRect(0, 0, 2560, 1080)
+    assert bar_0.geometry().x() == 0
+    assert bar_0.geometry().x() != -225
+    assert get_target_screen(bar_0._monitor_idx).devicePixelRatio() == 1.0
+
+    sel_0 = RegionSelectorOverlay(monitor_idx=0)
+    assert sel_0.geometry() == QRect(0, 0, 2560, 1080)
+    assert sel_0.geometry().x() == 0
+
+    # 3. Overlays for monitor 1 get geometry of monitor 1 (x == -225, y == 1080) and dpr == 2.0
+    dbg_1 = DebugRoiOverlay(monitor_idx=1)
+    assert dbg_1.geometry() == QRect(-225, 1080, 1440, 900)
+    assert dbg_1.geometry().x() == -225
+    assert get_target_screen(dbg_1._monitor_idx).devicePixelRatio() == 2.0
+
+    bar_1 = ActionBarOverlay(monitor_idx=1)
+    assert bar_1.geometry() == QRect(-225, 1080, 1440, 900)
+    assert bar_1.geometry().x() == -225
+    assert get_target_screen(bar_1._monitor_idx).devicePixelRatio() == 2.0
+
+    sel_1 = RegionSelectorOverlay(monitor_idx=1)
+    assert sel_1.geometry() == QRect(-225, 1080, 1440, 900)
+    assert sel_1.geometry().x() == -225
+
+    # 4. HudOverlay propagates monitor_idx to child overlays
+    hud_0 = HudOverlay(monitor_idx=0)
+    assert hud_0._monitor_idx == 0
+    assert hud_0._debug_overlay.geometry() == QRect(0, 0, 2560, 1080)
+    assert hud_0._action_bar_overlay.geometry() == QRect(0, 0, 2560, 1080)
+
+    hud_1 = HudOverlay(monitor_idx=1)
+    assert hud_1._monitor_idx == 1
+    assert hud_1._debug_overlay.geometry() == QRect(-225, 1080, 1440, 900)
+    assert hud_1._action_bar_overlay.geometry() == QRect(-225, 1080, 1440, 900)
+
+
+
 
 
 

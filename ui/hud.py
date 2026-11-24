@@ -334,6 +334,13 @@ class HudBridge(QObject):
     snapshots_toggled = Signal(bool)
 
 
+def get_target_screen(monitor_idx: int = 0) -> Any:
+    screens = QApplication.screens()
+    if screens and 0 <= monitor_idx < len(screens):
+        return screens[monitor_idx]
+    return QApplication.primaryScreen()
+
+
 class RegionSelectorOverlay(QWidget):
     """Fullscreen semi-transparent overlay for selecting table ROI with mouse."""
 
@@ -343,8 +350,10 @@ class RegionSelectorOverlay(QWidget):
         self,
         on_selected: Any = None,
         parent: QWidget | None = None,
+        monitor_idx: int = 0,
     ) -> None:
         super().__init__(parent)
+        self._monitor_idx = monitor_idx
         if on_selected is not None:
             self.selected.connect(on_selected)
 
@@ -355,6 +364,10 @@ class RegionSelectorOverlay(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setCursor(Qt.CursorShape.CrossCursor)
+
+        target_screen = get_target_screen(self._monitor_idx)
+        if target_screen:
+            self.setGeometry(target_screen.geometry())
 
         self._start_pos: QPoint | None = None
         self._current_pos: QPoint | None = None
@@ -389,7 +402,9 @@ class RegionSelectorOverlay(QWidget):
                 h = y2 - y1
 
                 if w >= 50 and h >= 50:
-                    dpr = self.devicePixelRatio()
+                    target_screen = get_target_screen(self._monitor_idx)
+                    dpr = target_screen.devicePixelRatio() if target_screen else 1.0
+                    dpr = max(0.1, dpr)
                     phys_x = int(round(x1 * dpr))
                     phys_y = int(round(y1 * dpr))
                     phys_w = int(round(w * dpr))
@@ -439,9 +454,11 @@ class ActionBarOverlay(QWidget):
         self,
         bridge: HudBridge | None = None,
         parent: QWidget | None = None,
+        monitor_idx: int = 0,
     ) -> None:
         super().__init__(parent)
         self.bridge = bridge
+        self._monitor_idx = monitor_idx
         self._action_data: dict[str, dict[str, Any]] = {}
 
         self.setWindowFlags(
@@ -452,9 +469,9 @@ class ActionBarOverlay(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
 
-        screen = QApplication.primaryScreen()
-        if screen:
-            self.setGeometry(screen.virtualGeometry())
+        target_screen = get_target_screen(self._monitor_idx)
+        if target_screen:
+            self.setGeometry(target_screen.geometry())
 
         if self.bridge is not None and hasattr(self.bridge, "action_bar_updated"):
             self.bridge.action_bar_updated.connect(self.on_action_bar_updated)
@@ -495,9 +512,9 @@ class ActionBarOverlay(QWidget):
         bh = float(max(38, int(28.0 * 1.35)))
         bar_y = lay + lah + 4.0
 
-        screen = self.screen() or QApplication.primaryScreen()
-        if screen:
-            screen_h = screen.geometry().height()
+        target_screen = get_target_screen(getattr(self, "_monitor_idx", 0))
+        if target_screen:
+            screen_h = target_screen.geometry().height()
             if bar_y + bh > screen_h:
                 bar_y = max(4.0, lay - bh - 4.0)
 
@@ -522,8 +539,8 @@ class ActionBarOverlay(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        screen = self.screen() or QApplication.primaryScreen()
-        dpr = screen.devicePixelRatio() if screen else 1.0
+        target_screen = get_target_screen(getattr(self, "_monitor_idx", 0))
+        dpr = target_screen.devicePixelRatio() if target_screen else 1.0
         dpr = max(0.1, dpr)
 
         for tid, data in self._action_data.items():
@@ -622,9 +639,11 @@ class DebugRoiOverlay(QWidget):
         self,
         bridge: HudBridge | None = None,
         parent: QWidget | None = None,
+        monitor_idx: int = 0,
     ) -> None:
         super().__init__(parent)
         self.bridge = bridge
+        self._monitor_idx = monitor_idx
         self._data: dict[str, Any] | None = None
         self._tables: dict[str, dict[str, Any]] = {}
         self.editing_table_id: str | None = None
@@ -643,9 +662,9 @@ class DebugRoiOverlay(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
 
-        screen = QApplication.primaryScreen()
-        if screen:
-            self.setGeometry(screen.virtualGeometry())
+        target_screen = get_target_screen(self._monitor_idx)
+        if target_screen:
+            self.setGeometry(target_screen.geometry())
 
         if self.bridge is not None and hasattr(self.bridge, "debug_overlay_updated"):
             self.bridge.debug_overlay_updated.connect(self.on_debug_overlay_updated)
@@ -701,8 +720,9 @@ class DebugRoiOverlay(QWidget):
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         if self._drag_mode and self._drag_start_pos is not None:
             delta = event.globalPosition().toPoint() - self._drag_start_pos
-            screen = self.screen() or QApplication.primaryScreen()
-            dpr = screen.devicePixelRatio() if screen else 1.0
+            target_screen = get_target_screen(getattr(self, "_monitor_idx", 0))
+            dpr = target_screen.devicePixelRatio() if target_screen else 1.0
+            dpr = max(0.1, dpr)
             new_dx = self._drag_start_adjust[0] + int(round(delta.x() * dpr))
             new_dy = self._drag_start_adjust[1] + int(round(delta.y() * dpr))
             self._current_dx = new_dx
@@ -737,8 +757,8 @@ class DebugRoiOverlay(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        screen = self.screen() or QApplication.primaryScreen()
-        dpr = screen.devicePixelRatio() if screen else 1.0
+        target_screen = get_target_screen(getattr(self, "_monitor_idx", 0))
+        dpr = target_screen.devicePixelRatio() if target_screen else 1.0
         dpr = max(0.1, dpr)
 
         font_tbl = QFont("Arial", 9, QFont.Weight.Bold)
@@ -881,9 +901,11 @@ class HudOverlay(QWidget):
         self,
         bridge: HudBridge | None = None,
         parent: QWidget | None = None,
+        monitor_idx: int = 0,
     ) -> None:
         super().__init__(parent)
         self.bridge = bridge
+        self._monitor_idx = monitor_idx
 
         self.table_widgets: dict[str, QLabel] = {}
         self.table_header_widgets: dict[str, QWidget] = {}
@@ -924,11 +946,11 @@ class HudOverlay(QWidget):
         self._is_internal_adjust: bool = False
 
         if QApplication.instance() is not None:
-            self._debug_overlay = DebugRoiOverlay(bridge=self.bridge)
-            self._action_bar_overlay = ActionBarOverlay(bridge=self.bridge)
-            screen = QApplication.primaryScreen()
-            if screen:
-                self._action_bar_overlay.setGeometry(screen.virtualGeometry())
+            self._debug_overlay = DebugRoiOverlay(bridge=self.bridge, monitor_idx=self._monitor_idx)
+            self._action_bar_overlay = ActionBarOverlay(bridge=self.bridge, monitor_idx=self._monitor_idx)
+            target_screen = get_target_screen(self._monitor_idx)
+            if target_screen:
+                self._action_bar_overlay.setGeometry(target_screen.geometry())
             self._action_bar_overlay.show()
 
         self._init_window()
@@ -1479,9 +1501,9 @@ class HudOverlay(QWidget):
         self.is_debug_overlay_enabled = not self.is_debug_overlay_enabled
         if self._debug_overlay is not None:
             if self.is_debug_overlay_enabled:
-                screen = QApplication.primaryScreen()
-                if screen:
-                    self._debug_overlay.setGeometry(screen.virtualGeometry())
+                target_screen = get_target_screen(self._monitor_idx)
+                if target_screen:
+                    self._debug_overlay.setGeometry(target_screen.geometry())
                 self._debug_overlay.show()
             else:
                 if self.editing_table_id is None:
@@ -1505,9 +1527,9 @@ class HudOverlay(QWidget):
         """Toggle Action-Only mode (ActionBarOverlay below game buttons)."""
         self.is_action_only_mode = not self.is_action_only_mode
         if self._action_bar_overlay is not None:
-            screen = QApplication.primaryScreen()
-            if screen:
-                self._action_bar_overlay.setGeometry(screen.virtualGeometry())
+            target_screen = get_target_screen(self._monitor_idx)
+            if target_screen:
+                self._action_bar_overlay.setGeometry(target_screen.geometry())
             self._action_bar_overlay.show()
 
         if self.is_action_only_mode:
@@ -1568,7 +1590,12 @@ class HudOverlay(QWidget):
             if rect is not None:
                 self.add_table(next_tid, rect)
 
-        self._selector = RegionSelectorOverlay(on_selected=_on_region_selected)
+        self._selector = RegionSelectorOverlay(
+            on_selected=_on_region_selected, monitor_idx=self._monitor_idx
+        )
+        target_screen = get_target_screen(self._monitor_idx)
+        if target_screen:
+            self._selector.setGeometry(target_screen.geometry())
         self._selector.showFullScreen()
 
     def add_table(self, table_id: str, search_region: Any = None) -> None:
@@ -1676,7 +1703,12 @@ class HudOverlay(QWidget):
 
     def start_region_selection(self) -> None:
         """Open fullscreen region selector overlay to manually choose table ROI."""
-        self._selector = RegionSelectorOverlay(on_selected=self._on_region_selected)
+        self._selector = RegionSelectorOverlay(
+            on_selected=self._on_region_selected, monitor_idx=self._monitor_idx
+        )
+        target_screen = get_target_screen(self._monitor_idx)
+        if target_screen:
+            self._selector.setGeometry(target_screen.geometry())
         self._selector.showFullScreen()
 
     def _on_region_selected(self, rect: tuple[int, int, int, int] | None) -> None:
