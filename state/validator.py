@@ -1,6 +1,6 @@
 """Table state validation and sanity checks for poker_assistant."""
 
-from core.constants import TOTAL_CHIPS
+from core.constants import TOTAL_CHIPS, VALID_BLIND_LEVELS
 from core.contracts import TableState
 
 
@@ -78,6 +78,13 @@ class StateValidator:
         else:
             errors.append("Missing stack reading")
 
+        # Rule 1b: Physical bet vs pot consistency
+        if state.pot > 0 and any(p.current_bet > state.pot for p in state.players.values()):
+            errors.append("Invalid bet exceeds pot")
+        elif state.pot == 0 and any(p.current_bet > 0 for p in state.players.values()):
+            if sum((p.stack or 0) for p in state.players.values()) == self.total_chips:
+                errors.append("Invalid bet exceeds pot")
+
         # Rule 2: Card uniqueness and validity
         all_cards = list(state.hero_cards) + list(state.board_cards)
         if len(all_cards) != len(set(all_cards)):
@@ -108,7 +115,10 @@ class StateValidator:
                 )
 
         is_valid = len(errors) == 0
-        if is_valid:
+        if is_valid and (
+            (state.small_blind, state.big_blind) in VALID_BLIND_LEVELS
+            or state.big_blind == 2 * state.small_blind
+        ):
             self._last_blinds[state.table_id] = (state.small_blind, state.big_blind)
 
         return is_valid, errors

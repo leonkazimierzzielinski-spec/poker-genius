@@ -10,8 +10,13 @@ import cv2
 import numpy as np
 
 try:
+    from core.constants import VALID_BLIND_LEVELS
     from core.contracts import PlayerState, TableState
 except ImportError:
+    VALID_BLIND_LEVELS = (  # type: ignore[assignment]
+        (10, 20), (15, 30), (20, 40), (30, 60), (40, 80),
+        (50, 100), (60, 120), (75, 150), (100, 200),
+    )
     PlayerState = None  # type: ignore[misc, assignment]
     TableState = None  # type: ignore[misc, assignment]
 
@@ -65,6 +70,7 @@ class VisionPipeline:
         self._last_anchor_scale: float | None = None
         self.last_evicted_table_id: str | None = None
         self._last_canonical_table: np.ndarray | None = None
+        self._last_valid_blinds: dict[str, tuple[int, int]] = {}
 
         self.dealer_template: np.ndarray | None = None
         d_path = Path("data/templates/dealer.png")
@@ -72,6 +78,52 @@ class VisionPipeline:
             img_d = cv2.imread(str(d_path), cv2.IMREAD_COLOR)
             if img_d is not None and img_d.size > 0:
                 self.dealer_template = img_d
+
+    def reset_table_blinds(self, table_id: str) -> None:
+        """Clear cached valid blinds for a table (e.g. on new tournament)."""
+        self._last_valid_blinds.pop(table_id, None)
+
+    def _normalize_blinds(
+        self, raw_blinds: tuple[int, int] | None, table_id: str
+    ) -> tuple[int, int]:
+        """Normalize OCR blinds against official Stake JAQKpot! blind ladder."""
+        prev = self._last_valid_blinds.get(table_id)
+        if raw_blinds in VALID_BLIND_LEVELS:
+            if prev is None or raw_blinds >= prev:
+                self._last_valid_blinds[table_id] = raw_blinds
+            return raw_blinds
+
+        if raw_blinds is not None:
+            raw_sb, raw_bb = raw_blinds
+            candidates = [
+                (vsb, vbb)
+                for vsb, vbb in VALID_BLIND_LEVELS
+                if raw_sb == vsb or raw_bb == vbb
+            ]
+            if candidates:
+                if len(candidates) > 1 and prev is not None:
+                    ge_prev = [c for c in candidates if c >= prev]
+                    if ge_prev:
+                        candidates = ge_prev
+                chosen = candidates[0]
+                if prev is None or chosen >= prev:
+                    self._last_valid_blinds[table_id] = chosen
+                return chosen
+
+        return prev if prev is not None else (10, 20)
+
+    @staticmethod
+    def _mask_white_bet_text(roi: np.ndarray) -> np.ndarray:
+        """Isolate white bet digits from colored chip icons on real colored ROIs."""
+        if roi is None or roi.size == 0 or roi.ndim != 3:
+            return roi
+        hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+        if float(np.mean(hsv[:, :, 1] >= 65)) >= 0.05:
+            mask = (hsv[:, :, 1] < 65) & (hsv[:, :, 2] > 170)
+            out = np.zeros_like(roi)
+            out[mask] = roi[mask]
+            return out
+        return roi
 
     def _load_config(self) -> dict:
         if self.config_path.is_file():
@@ -421,13 +473,9 @@ class VisionPipeline:
             if f_val is not None:
                 prize_pool = int(f_val) if f_val.is_integer() else f_val
 
-        # 5. Blinds
-        small_blind = 10
-        big_blind = 20
-        if "blinds" in rois:
-            blinds = self.digit_ocr.read_blinds(rois["blinds"])
-            if blinds is not None:
-                small_blind, big_blind = blinds
+        # 5. Blinds (normalized against VALID_BLIND_LEVELS)
+        raw_blinds = self.digit_ocr.read_blinds(rois["blinds"]) if "blinds" in rois else None
+        small_blind, big_blind = self._normalize_blinds(raw_blinds, table_id)
 
         # 6. Players (seats 0, 1, 2)
         best_dealer_seat = None
@@ -452,12 +500,18 @@ class VisionPipeline:
             dealer_key = f"seat_{seat_id}_dealer"
 
             stack = None
+            is_all_in_badge = False
             if stack_key in rois:
-                stack = self.digit_ocr.read_int(rois[stack_key])
+                if self.digit_ocr.is_all_in_label(rois[stack_key]):
+                    stack = 0
+                    is_all_in_badge = True
+                else:
+                    stack = self.digit_ocr.read_int(rois[stack_key])
 
             current_bet = 0
             if bet_key in rois:
-                b_val = self.digit_ocr.read_int(rois[bet_key])
+                masked_bet_roi = self._mask_white_bet_text(rois[bet_key])
+                b_val = self.digit_ocr.read_int(masked_bet_roi)
                 if b_val is not None:
                     current_bet = b_val
 
@@ -469,8 +523,12 @@ class VisionPipeline:
                 if d_roi.size > 0 and float(np.mean(d_roi)) > self.dealer_threshold:
                     is_dealer = True
 
-            is_active = (stack is not None and stack > 0) or (current_bet > 0)
-            if stack is None and current_bet > 0:
+            is_active = (stack is not None and stack > 0) or (current_bet > 0) or is_all_in_badge
+            if is_all_in_badge:
+                stack = 0
+                status_text = "ALL_IN"
+                is_active = True
+            elif stack is None and current_bet > 0:
                 stack = 0
                 status_text = "ALL_IN"
                 is_active = True
@@ -490,6 +548,15 @@ class VisionPipeline:
                 is_active=is_active,
                 status_text=status_text,
             )
+
+        # Physical bet sanitization: bet cannot exceed pot (and pot == 0 implies all bets == 0)
+        if pot == 0:
+            for p in players.values():
+                p.current_bet = 0
+        else:
+            for p in players.values():
+                if p.current_bet > pot:
+                    p.current_bet = 0
 
         # Refine Check vs Call if facing an opponent bet
         if is_hero_turn and available_actions:

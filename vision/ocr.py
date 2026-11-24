@@ -180,7 +180,7 @@ class DigitOCR:
         if not self.templates:
             return None
 
-        bin_img = self._prepare_binary_image(roi, min_p98=100.0, min_contrast=40.0)
+        bin_img = self._prepare_binary_image(roi, min_p98=80.0, min_contrast=40.0)
         if bin_img is None:
             return None
 
@@ -404,6 +404,47 @@ class DigitOCR:
         except ValueError:
             return None
 
+    def is_all_in_label(self, roi: np.ndarray) -> bool:
+        """Detect 'All-In' text badge inside a player's stack ROI."""
+        if roi is None or roi.size == 0 or roi.ndim != 3:
+            return False
+
+        hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+        wmask = ((hsv[:, :, 1] < 60) & (hsv[:, :, 2] > 155)).astype(np.uint8) * 255
+        contours, _ = cv2.findContours(wmask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        min_h = max(6, int(roi.shape[0] * 0.25))
+
+        valid_boxes: list[tuple[int, int, int, int]] = []
+        for c in contours:
+            x, y, w, h = cv2.boundingRect(c)
+            if h >= min_h and w >= 2:
+                valid_boxes.append((x, y, w, h))
+
+        if len(valid_boxes) < 3:
+            return False
+
+        x_min = min(b[0] for b in valid_boxes)
+        y_min = min(b[1] for b in valid_boxes)
+        x_max = max(b[0] + b[2] for b in valid_boxes)
+        y_max = max(b[1] + b[3] for b in valid_boxes)
+        span_w = x_max - x_min
+        span_h = max(1, y_max - y_min)
+
+        if (span_w / float(span_h)) < 2.2:
+            return False
+
+        if not self.templates:
+            return True
+
+        matched_digits = 0
+        for bx, by, bw, bh in valid_boxes:
+            crop = wmask[by : by + bh, bx : bx + bw]
+            best_d, best_s = self._match_digit_crop(crop)
+            if best_d is not None and best_s >= self.threshold:
+                matched_digits += 1
+
+        return matched_digits < (len(valid_boxes) / 2.0)
+
 
 def detect_hero_actions(
     actions_roi: np.ndarray,
@@ -427,7 +468,7 @@ def detect_hero_actions(
         mask_purple = cv2.inRange(
             hsv_timer, np.array([125, 80, 100]), np.array([165, 255, 255])
         )
-        if int(cv2.countNonZero(mask_purple)) < 500:
+        if int(cv2.countNonZero(mask_purple)) < 180:
             return (False, [])
 
     if actions_roi is None or actions_roi.size == 0:
@@ -476,3 +517,48 @@ def detect_hero_actions(
         return (True, actions)
 
     return (False, [])
+
+
+def detect_rabbit_hunting_break(
+    actions_roi: np.ndarray | None,
+    is_hero_turn: bool,
+) -> bool:
+    """Detect Rabbit Hunting break (grey button with white rabbit silhouette in left half of hero_actions)."""
+    if is_hero_turn or actions_roi is None or actions_roi.size == 0 or actions_roi.ndim != 3:
+        return False
+
+    h, w = actions_roi.shape[:2]
+    left = actions_roi[:, : max(1, int(w * 0.48))]
+    if left.size == 0:
+        return False
+
+    hsv = cv2.cvtColor(left, cv2.COLOR_BGR2HSV)
+    red_px = int(
+        cv2.countNonZero(cv2.inRange(hsv, np.array([0, 60, 60]), np.array([10, 255, 255])))
+        + cv2.countNonZero(cv2.inRange(hsv, np.array([170, 60, 60]), np.array([180, 255, 255])))
+    )
+    green_px = int(cv2.countNonZero(cv2.inRange(hsv, np.array([35, 60, 60]), np.array([85, 255, 255]))))
+    orange_px = int(cv2.countNonZero(cv2.inRange(hsv, np.array([11, 60, 60]), np.array([34, 255, 255]))))
+    if red_px >= 40 or green_px >= 40 or orange_px >= 40:
+        return False
+
+    grey_mask = (hsv[:, :, 1] < 45) & (hsv[:, :, 2] >= 45) & (hsv[:, :, 2] <= 125)
+    grey_ratio = float(np.count_nonzero(grey_mask)) / float(left.shape[0] * left.shape[1])
+    if grey_ratio < 0.20:
+        return False
+
+    white_mask = ((hsv[:, :, 1] < 40) & (hsv[:, :, 2] > 205)).astype(np.uint8) * 255
+    cnts, _ = cv2.findContours(white_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not cnts:
+        return False
+
+    largest = max(cnts, key=cv2.contourArea)
+    area = float(cv2.contourArea(largest))
+    if not (100.0 <= area <= 2600.0):
+        return False
+
+    _x, _y, cw, ch = cv2.boundingRect(largest)
+    if ch <= 0:
+        return False
+    aspect = cw / float(ch)
+    return 0.55 <= aspect <= 1.45

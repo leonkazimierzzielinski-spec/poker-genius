@@ -33,7 +33,12 @@ def _resolve_real_street(state: TableState) -> str:
 class TableTracker:
     """Tracks state transitions across valid frames, measures reaction times, and produces game events."""
 
-    def __init__(self, table_id: str, hero_cards_confirm_frames: int = 3) -> None:
+    def __init__(
+        self,
+        table_id: str,
+        hero_cards_confirm_frames: int = 3,
+        bet_confirm_frames: int = 1,
+    ) -> None:
         self.table_id = table_id
         self.prev_state: TableState | None = None
         self.hand_number: int = 0
@@ -44,6 +49,8 @@ class TableTracker:
         self._pending_hero_cards: list[str] | None = None
         self._pending_hero_frames: int = 0
         self._hero_cards_confirm_frames: int = int(hero_cards_confirm_frames)
+        self._bet_confirm_frames: int = max(1, int(bet_confirm_frames))
+        self._pending_bets: dict[int, tuple[int, int]] = {}
         self._hero_none_stack_frames: int = 0
 
     def _format_time(self, ts_ms: int) -> str:
@@ -54,6 +61,7 @@ class TableTracker:
 
     def _init_current_hand(self, state: TableState) -> None:
         self._current_real_street = _resolve_real_street(state)
+        self._pending_bets.clear()
         players_dict: dict[int, dict[str, Any]] = {}
         starting_stacks: dict[int, int | None] = {}
         starting_bets: dict[int, int] = {}
@@ -246,6 +254,7 @@ class TableTracker:
         if not state.is_valid:
             return state, []
 
+        self.last_completed_hand = None
         events: list[GameEvent] = []
 
         # First valid frame observed
@@ -311,7 +320,27 @@ class TableTracker:
             self._pending_hero_cards = None
             self._pending_hero_frames = 0
 
-        is_new_hand = hero_cards_changed or dealer_changed or street_reset
+        sb_v = max(1, getattr(state, "small_blind", 10))
+        bb_v = max(1, getattr(state, "big_blind", 20))
+        prev_pot = getattr(self.prev_state, "pot", 0) or 0
+        curr_pot = getattr(state, "pot", 0) or 0
+        start_stacks = self.current_hand.get("starting_stacks", {})
+        stack_shifted = any(
+            start_stacks.get(sid) is not None
+            and state.players.get(sid) is not None
+            and state.players[sid].stack is not None
+            and abs(int(state.players[sid].stack) - int(start_stacks[sid])) >= sb_v
+            for sid in (0, 1, 2)
+        )
+        pot_reset_new_hand = bool(
+            curr_real_st == "PREFLOP"
+            and prev_real_st == "PREFLOP"
+            and prev_pot >= 2 * bb_v
+            and curr_pot <= sb_v + bb_v
+            and stack_shifted
+        )
+
+        is_new_hand = hero_cards_changed or dealer_changed or street_reset or pot_reset_new_hand
 
         if is_new_hand:
             self.hand_number += 1
@@ -489,6 +518,11 @@ class TableTracker:
                     p_dict["is_dealer"] = curr_p.is_dealer
 
                     if curr_p.current_bet > p_dict["street_bet"]:
+                        # Reject physically impossible bets (> pot or > 900)
+                        if curr_p.current_bet > 900 or (state.pot > 0 and curr_p.current_bet > state.pot):
+                            self._pending_bets.pop(seat_id, None)
+                            continue
+
                         # Ignore sub-small_blind OCR animation glitches if player has stack or was empty/zero-stack
                         sb_val = max(1, getattr(state, "small_blind", 10))
                         if (
@@ -498,7 +532,28 @@ class TableTracker:
                                 or (prev_p.stack in (None, 0) and (prev_p.current_bet or 0) == 0)
                             )
                         ):
+                            self._pending_bets.pop(seat_id, None)
                             continue
+
+                        # Check if posting blind (no multi-frame debounce needed for initial blind post)
+                        is_blind_candidate = (
+                            self._current_real_street == "PREFLOP"
+                            and not self.current_hand.get("hero_cards")
+                            and curr_p.current_bet in (state.small_blind, state.big_blind)
+                            and not p_dict.get("has_posted_blind", False)
+                        )
+                        if not is_blind_candidate and self._bet_confirm_frames > 1:
+                            pend_val, pend_cnt = self._pending_bets.get(seat_id, (0, 0))
+                            if pend_val > 0 and curr_p.current_bet >= pend_val:
+                                pend_cnt += 1
+                            else:
+                                pend_cnt = 1
+                            self._pending_bets[seat_id] = (curr_p.current_bet, pend_cnt)
+                            if pend_cnt < self._bet_confirm_frames:
+                                continue
+                            self._pending_bets.pop(seat_id, None)
+                        else:
+                            self._pending_bets.pop(seat_id, None)
 
                         delta = curr_p.current_bet - p_dict["street_bet"]
                         p_dict["invested_total"] += delta

@@ -202,7 +202,7 @@ def test_tracker_new_hand_street_and_timing() -> None:
     # Frame 2: t=1350, Villain 1 raises (current_bet 10 -> 40), latency = 350 ms
     state2 = create_dummy_table_state(
         timestamp_ms=1350,
-        pot=30,
+        pot=60,
         stacks=(300, 260, 280),
         bets=(0, 40, 20),
         hero_cards=["Ah", "Kd"],
@@ -1759,6 +1759,72 @@ def test_tracker_ignores_sub_sb_ghost_bet_from_zero_stack_seat() -> None:
     assert not any(a.get("action") == "ALL-IN" and a.get("amount") == 1 for a in s2_actions)
     assert summary["players"][0]["folded"] is False
     assert summary["players"][1]["folded"] is False
+
+
+def test_tracker_two_frame_bet_confirm_no_duplicate_completed_hand_and_instant_fold_reset() -> None:
+    """Verify V18 D6: 2-frame bet confirm, clearing last_completed_hand, and pot-drop instant-fold NEW_HAND."""
+    tracker = TableTracker("table_1", bet_confirm_frames=2)
+
+    st1 = TableState(
+        table_id="table_1", timestamp_ms=1000, prize_pool=4, small_blind=10, big_blind=20, pot=30,
+        hero_cards=["Ah", "Kd"], board_cards=[], street="PREFLOP", is_hero_turn=False, available_actions=[],
+        players={
+            0: PlayerState(0, 280, 20, is_dealer=False),
+            1: PlayerState(1, 290, 10, is_dealer=False),
+            2: PlayerState(2, 300, 0, is_dealer=True),
+        },
+        is_valid=True,
+    )
+    tracker.update(st1)
+
+    # 1-frame bet spike (60) must NOT be logged yet at bet_confirm_frames=2
+    st_spike = TableState(
+        table_id="table_1", timestamp_ms=1200, prize_pool=4, small_blind=10, big_blind=20, pot=90,
+        hero_cards=["Ah", "Kd"], board_cards=[], street="PREFLOP", is_hero_turn=False, available_actions=[],
+        players={
+            0: PlayerState(0, 280, 20, is_dealer=False),
+            1: PlayerState(1, 290, 10, is_dealer=False),
+            2: PlayerState(2, 240, 60, is_dealer=True),
+        },
+        is_valid=True,
+    )
+    _, ev_spike = tracker.update(st_spike)
+    assert not any(e.event_type == "VILLAIN_ACTION" for e in ev_spike)
+
+    # 2nd consecutive frame with bet=60 confirms the raise
+    st_conf = TableState(
+        table_id="table_1", timestamp_ms=1400, prize_pool=4, small_blind=10, big_blind=20, pot=90,
+        hero_cards=["Ah", "Kd"], board_cards=[], street="PREFLOP", is_hero_turn=False, available_actions=[],
+        players={
+            0: PlayerState(0, 280, 20, is_dealer=False),
+            1: PlayerState(1, 290, 10, is_dealer=False),
+            2: PlayerState(2, 240, 60, is_dealer=True),
+        },
+        is_valid=True,
+    )
+    _, ev_conf = tracker.update(st_conf)
+    assert any(e.event_type == "VILLAIN_ACTION" for e in ev_conf)
+
+    # Instant-fold preflop: pot drops from 90 to 30, S2 stack shifted (+30 vs 300)
+    st_reset = TableState(
+        table_id="table_1", timestamp_ms=2000, prize_pool=4, small_blind=10, big_blind=20, pot=30,
+        hero_cards=["Ah", "Kd"], board_cards=[], street="PREFLOP", is_hero_turn=False, available_actions=[],
+        players={
+            0: PlayerState(0, 260, 20, is_dealer=False),
+            1: PlayerState(1, 280, 10, is_dealer=False),
+            2: PlayerState(2, 330, 0, is_dealer=True),
+        },
+        is_valid=True,
+    )
+    _, ev_reset = tracker.update(st_reset)
+    assert any(e.event_type == "NEW_HAND" for e in ev_reset)
+    assert tracker.last_completed_hand is not None
+
+    # Next non-NEW_HAND update must clear last_completed_hand to prevent duplicate recording
+    _, ev_next = tracker.update(st_reset)
+    assert not any(e.event_type == "NEW_HAND" for e in ev_next)
+    assert tracker.last_completed_hand is None
+
 
 
 

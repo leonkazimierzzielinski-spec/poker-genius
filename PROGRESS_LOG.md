@@ -1,5 +1,39 @@
 # Poker Genius — Dziennik Postępu Prac (Progress Log)
 
+## V18 — Pancerny Odczyt CV, Fizyczna Spójność Stanu i Stabilny Tracker (2026-11-24)
+
+### 1. Benchmark regresyjny PRZED vs PO (`Nagrywanie 2026-11-24 215605.mp4`, `stride=3`, 3 682 klatki)
+
+| Metryka | Przed V18 | Po V18 | Cel V18 (KPI) |
+| :--- | :---: | :---: | :---: |
+| `VALID` gdy `len(hero_cards) == 2` | `1 079 / 2 226` (`48.5%`) | **`2 133 / 2 226` (`95.8%`)** | `>= 85%` |
+| `VALID` ogółem (`3 608` klatek z kotwicą) | `1 366` (`37.9%`) | **`3 225` (`89.4%`)** | — |
+| `Invalid blinds` + `Blinds decreased` | `1 035` + `515` = `1 550` | **`0` + `0` = `0`** | `0` |
+| `current_bet > pot` / `current_bet > 900` | `46` / `28` | **`0` / `0`** | `0 / 0` |
+| Fałszywe `stack == 1` na etykiecie `All-In` | `341` | **`3`** (`99.1%` redukcji) | `0` |
+| `Missing stack` na przygaszonym `S0` (3-max) | `133` | **`0`** (`S1: 1, S2: 1`) | `<= 10` |
+| Akcje `RAISE > 900` i duplikaty rozdań w `TableTracker` | `7151`, `1160`, `1310` + 3 duplikaty | **`0` / `0` duplikatów** (15 unikalnych rozdań) | `0` |
+| Pełny zestaw testów `pytest -v tests/` | `151 passed` | **`159 passed`** (`5.93 s`) | `100% zielonych` |
+
+### 2. Wdrożone zmiany (D1–D9)
+1. **Drabinka blindów i blokada zatrucia walidatora (`core/constants.py`, `vision/pipeline.py`, `state/validator.py`):**
+   - Dodano `VALID_BLIND_LEVELS` oraz `_normalize_blinds()` z naprawą częściowych odczytów (np. `(20, 4) -> (20, 40)`, `(30, 610) -> (30, 60)`) i carry-over dla niejednoznacznych odczytów (`(1, 2)`).
+   - `StateValidator` aktualizuje `_last_blinds` wyłącznie dla legalnych par (`VALID_BLIND_LEVELS` lub `bb == 2 * sb`).
+2. **Przygaszone stacki, detekcja `All-In` i próg paska tury (`vision/ocr.py`, `vision/pipeline.py`):**
+   - `DigitOCR.read_int()` używa `min_p98=80.0, min_contrast=40.0` (odzysk przygaszonych stacków po `Fold`).
+   - Dodano `DigitOCR.is_all_in_label()` (`stack=0, status_text="ALL_IN"` zamiast fałszywego `1`).
+   - Obniżono próg fioletowego paska tury `seat_0_timer` z `500` na **`180 px`**.
+   - Dodano `detect_rabbit_hunting_break(actions_roi, is_hero_turn)` zamrażające `[PLAN]` i tracker podczas `Rabbit hunting break`.
+3. **Czyste bety i niezmiennik `bet <= pot` (`config.json`, `vision/pipeline.py`, `state/validator.py`):**
+   - Poszerzono `seat_0_bet` do `[0.478, 0.605, 0.068, 0.04]` i dodano `_mask_white_bet_text()` wycinającą kolorowe ikony żetonów.
+   - Wymuszono `pot == 0 -> bet = 0` oraz `bet > pot -> bet = 0` w `VisionPipeline` + walidację `"Invalid bet exceeds pot"` w `StateValidator`.
+4. **Stabilność `TableTracker` (`state/tracker.py`):**
+   - Reset `last_completed_hand = None` poza `NEW_HAND`, 2-klatkowe potwierdzanie betów (`bet_confirm_frames=2` w `main.py`), odrzucanie betów `> pot` i `> 900`, oraz wykrywanie resetu puli przy instant-foldzie preflop.
+5. **Orkiestrator i wykluczenie HUD z przechwytywania (`main.py`, `ui/hud.py`):**
+   - Podtrzymanie `last_stable_rect` przez `2.0 s` (`RIM_HOLD`), carry-over 1 brakującego stacka z `900 - pot - suma` przez `1.5 s`, obsługa `Rabbit hunting break` oraz `_apply_exclude_from_capture()` (`WDA_EXCLUDEFROMCAPTURE = 0x11`) w `showEvent` wszystkich nakładek.
+
+---
+
 ## V17.4 — Pakiet Stabilnościowy: Maska Sukna HSV, Bramka Kontrastu OCR, Ochrona Tracker FOLD/Sub-SB, `eff_stk_chips` i HUD Buy-in (2026-11-24)
 
 ### 1. Wdrożone poprawki

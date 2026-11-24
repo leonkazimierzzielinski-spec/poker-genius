@@ -11,6 +11,17 @@ BLIND_LEVELS: list[tuple[int, int]] = [
     (50, 100),
     (60, 120),
 ]
+VALID_BLIND_LEVELS: tuple[tuple[int, int], ...] = (
+    (10, 20),
+    (15, 30),
+    (20, 40),
+    (30, 60),
+    (40, 80),
+    (50, 100),
+    (60, 120),
+    (75, 150),
+    (100, 200),
+)
 CARD_MATCH_THRESHOLD: float = 0.92
 EV_LOSS_THRESHOLD_BB: float = 0.08
 RANKS: str = "23456789TJQKA"

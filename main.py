@@ -30,12 +30,14 @@ try:
         compute_table_rect,
         compute_table_rect_from_rim,
         compute_unclipped_table_rect,
+        crop_rois,
         find_all_anchors,
         find_anchor,
         find_golden_rim,
         find_right_anchor,
         verify_table_rect_has_blue_felt,
     )
+    from vision.ocr import detect_rabbit_hunting_break
     from vision.capture import (
         DXCAM_AVAILABLE,
         FrameSource,
@@ -52,7 +54,9 @@ except ImportError:
     compute_table_rect = None  # type: ignore[assignment]
     compute_table_rect_from_rim = None  # type: ignore[assignment]
     compute_unclipped_table_rect = None  # type: ignore[assignment]
+    crop_rois = None  # type: ignore[assignment]
     verify_table_rect_has_blue_felt = None  # type: ignore[assignment]
+    detect_rabbit_hunting_break = None  # type: ignore[assignment]
     DXCAM_AVAILABLE = False
     FrameSource = Any  # type: ignore[misc, assignment]
     LiveScreenCapture = Any  # type: ignore[misc, assignment]
@@ -959,6 +963,7 @@ def processing_loop(
     tournament_end_confirm: dict[str, int] = {}
     finalized_tournament_tables: set[str] = set()
     decision_snap_counts: dict[str, dict[str, int]] = {}
+    last_known_stacks: dict[str, dict[int, tuple[int, float]]] = {}
 
     def _on_manual_rect(rect: Any) -> None:
         if "table_1" in managed_tables:
@@ -1130,6 +1135,7 @@ def processing_loop(
                             table_rect = compute_table_rect_from_rim(rim, rim_rel=rim_rel, canonical_size=canonical_sz)
                             has_anchor = True
                             anchor_source = "RIM"
+                            slot_info["last_rim_ts"] = time.perf_counter()
                     except Exception:
                         table_rect = None
 
@@ -1190,6 +1196,16 @@ def processing_loop(
                                         anchor_source = "ICON"
                             except Exception:
                                 anchor = None
+
+                # 2b. Hold last stable RIM rect up to 2.0 s during brief dim/transition
+                if (
+                    table_rect is None
+                    and slot_info.get("last_stable_rect") is not None
+                    and (time.perf_counter() - slot_info.get("last_rim_ts", 0.0)) <= 2.0
+                ):
+                    table_rect = slot_info["last_stable_rect"]
+                    has_anchor = True
+                    anchor_source = "RIM_HOLD"
 
                 # 3. NUMER 3: Fallback to raw search region if set
                 if table_rect is None and search_region is not None:
@@ -1302,10 +1318,46 @@ def processing_loop(
                         decision_snap_counts.pop(resolved_tid, None)
                         if validator is not None:
                             validator.reset_table(resolved_tid)
+                        if hasattr(pipeline, "reset_table_blinds"):
+                            pipeline.reset_table_blinds(resolved_tid)
+                        last_known_stacks.pop(resolved_tid, None)
                         trackers.pop(resolved_tid, None)
                         decision_locks.pop(resolved_tid, None)
                         last_active_decisions.pop(resolved_tid, None)
                         last_spots.pop(resolved_tid, None)
+
+                # Short-term carry-over for 1 missing stack (<= 1.5s, non-eliminated seat)
+                now_mono = time.perf_counter()
+                st_players = getattr(state, "players", {}) or {}
+                none_sids = [
+                    sid for sid in (0, 1, 2)
+                    if sid in st_players
+                    and getattr(st_players[sid], "stack", None) is None
+                    and (getattr(st_players[sid], "current_bet", 0) or 0) == 0
+                ]
+                if len(none_sids) == 1 and all(
+                    sid in st_players and getattr(st_players[sid], "stack", None) is not None
+                    for sid in (0, 1, 2) if sid != none_sids[0]
+                ):
+                    miss_sid = none_sids[0]
+                    tr_obj = trackers.get(resolved_tid)
+                    is_out_in_tr = bool(
+                        tr_obj is not None
+                        and tr_obj.current_hand
+                        and tr_obj.current_hand.get("players", {}).get(miss_sid, {}).get("eliminated", False)
+                    )
+                    last_info = last_known_stacks.get(resolved_tid, {}).get(miss_sid)
+                    if not is_out_in_tr and last_info is not None and (now_mono - last_info[1]) <= 1.5:
+                        last_stk = last_info[0]
+                        other_sum = sum(
+                            (getattr(st_players[sid], "stack", 0) or 0) + (getattr(st_players[sid], "current_bet", 0) or 0)
+                            for sid in (0, 1, 2) if sid != miss_sid
+                        )
+                        inferred = 900 - (getattr(state, "pot", 0) or 0) - other_sum
+                        if 0 <= inferred <= last_stk:
+                            st_players[miss_sid].stack = inferred
+                            st_players[miss_sid].is_active = (inferred > 0)
+                            st_players[miss_sid].status_text = "ACTIVE" if inferred > 0 else "ALL_IN"
 
                 validation_errors: list[str] = []
                 if validator is not None:
@@ -1340,6 +1392,10 @@ def processing_loop(
                             decision_snap_counts.pop(resolved_tid, None)
                             is_valid, validation_errors = validator.validate(state)
                     state.is_valid = is_valid
+                    if is_valid:
+                        for sid_k, pl_k in (getattr(state, "players", {}) or {}).items():
+                            if getattr(pl_k, "stack", None) is not None:
+                                last_known_stacks.setdefault(resolved_tid, {})[sid_k] = (int(pl_k.stack), now_mono)
                 else:
                     is_valid = getattr(state, "is_valid", True)
 
@@ -1366,6 +1422,9 @@ def processing_loop(
                                 pass
                         if validator is not None:
                             validator.reset_table(resolved_tid)
+                        if hasattr(pipeline, "reset_table_blinds"):
+                            pipeline.reset_table_blinds(resolved_tid)
+                        last_known_stacks.pop(resolved_tid, None)
                         trackers.pop(resolved_tid, None)
                         decision_locks.pop(resolved_tid, None)
                         last_active_decisions.pop(resolved_tid, None)
@@ -1374,10 +1433,30 @@ def processing_loop(
                         finalized_tournament_tables.discard(resolved_tid)
                         decision_snap_counts.pop(resolved_tid, None)
 
+                is_rabbit_break = False
+                if (
+                    detect_rabbit_hunting_break is not None
+                    and crop_rois is not None
+                    and canonical_img is not None
+                    and not getattr(state, "is_hero_turn", False)
+                ):
+                    try:
+                        c_rois = crop_rois(
+                            canonical_img,
+                            (0, 0, canonical_img.shape[1], canonical_img.shape[0]),
+                            getattr(pipeline, "rois_rel", {}),
+                        )
+                        is_rabbit_break = detect_rabbit_hunting_break(
+                            c_rois.get("hero_actions"),
+                            getattr(state, "is_hero_turn", False),
+                        )
+                    except Exception:
+                        is_rabbit_break = False
+
                 events: list[Any] = []
-                if TableTracker is not None:
+                if TableTracker is not None and not is_rabbit_break:
                     if resolved_tid not in trackers:
-                        trackers[resolved_tid] = TableTracker(resolved_tid)
+                        trackers[resolved_tid] = TableTracker(resolved_tid, bet_confirm_frames=2)
                     state, events = trackers[resolved_tid].update(state)
                     if any(getattr(e, "event_type", "") == "NEW_HAND" for e in events):
                         decision_snap_counts.pop(resolved_tid, None)
@@ -1440,7 +1519,16 @@ def processing_loop(
                 spot: str = last_spots.get(resolved_tid, "--")
 
                 hero_stk = getattr(getattr(state, "players", {}).get(0), "stack", None)
-                if is_valid and len(hero_cards) == 2 and hero_stk == 0:
+                if is_rabbit_break:
+                    decision = Decision(
+                        table_id=resolved_tid,
+                        action="WAIT",
+                        ev_bb=None,
+                        confidence=1.0,
+                        profile_used="STANDARD_EXPLOIT",
+                        reason="Rabbit hunting break",
+                    )
+                elif is_valid and len(hero_cards) == 2 and hero_stk == 0:
                     decision = Decision(
                         table_id=resolved_tid,
                         action="WAIT",

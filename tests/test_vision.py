@@ -1253,6 +1253,137 @@ def test_digit_ocr_rejects_empty_seat_gradient_but_reads_dim_blinds() -> None:
     assert ocr.read_blinds(dim_blinds) == (10, 20)
 
 
+def test_blinds_ladder_normalization_recovers_partial_reads_and_blocks_poisoning() -> None:
+    """Verify V18 D1: blinds normalization against VALID_BLIND_LEVELS and StateValidator poisoning guard."""
+    from vision.pipeline import VisionPipeline
+    from state.validator import StateValidator
+    from core.contracts import TableState, PlayerState
+
+    pipe = VisionPipeline("config.json")
+    assert pipe._normalize_blinds((20, 4), "t1") == (20, 40)
+    assert pipe._normalize_blinds((3, 60), "t1") == (30, 60)
+    assert pipe._normalize_blinds((30, 610), "t1") == (30, 60)
+    # Ambiguous (1, 2) falls back to carry-over (30, 60)
+    assert pipe._normalize_blinds((1, 2), "t1") == (30, 60)
+
+    # StateValidator must not poison _last_blinds with illegal (30, 610)
+    val = StateValidator()
+    st_bad = TableState(
+        table_id="t1", timestamp_ms=1000, prize_pool=4, small_blind=30, big_blind=610, pot=90,
+        hero_cards=["Ah", "Kd"], board_cards=[], street="PREFLOP", is_hero_turn=False, available_actions=[],
+        players={0: PlayerState(0, 270, 0), 1: PlayerState(1, 270, 0), 2: PlayerState(2, 270, 0)},
+    )
+    ok, _ = val.validate(st_bad)
+    assert ok is True
+    assert "t1" not in val._last_blinds
+
+
+def test_digit_ocr_reads_dimmed_folded_stack_and_rejects_empty_seat() -> None:
+    """Verify V18 D3: dimmed folded stack (p50=36, p98=88) is read, while empty seat (diff < 25) returns None."""
+    ocr = DigitOCR(threshold=0.62)
+    if not ocr.templates:
+        pytest.skip("Digit templates not available")
+
+    # 1. Dimmed stack "260" with p50=36, p98=88 (contrast=52 >= 40)
+    parts: list[np.ndarray] = []
+    for ch in "260":
+        tmpl = ocr.templates[int(ch)]
+        th, tw = tmpl.shape[:2]
+        resized = cv2.resize(tmpl, (max(4, int(round(tw * 20 / max(1, th)))), 20), interpolation=cv2.INTER_AREA)
+        parts.append(resized)
+        parts.append(np.zeros((20, 4), dtype=np.uint8))
+    mask = cv2.copyMakeBorder(np.hstack(parts), 6, 6, 8, 8, cv2.BORDER_CONSTANT, value=0)
+    dim_stack = np.full((mask.shape[0], mask.shape[1], 3), 36, dtype=np.uint8)
+    dim_stack[mask > 127] = (88, 88, 88)
+    assert ocr.read_int(dim_stack) == 260
+
+    # 2. Empty seat noise with diff < 25
+    rng = np.random.default_rng(7)
+    empty = np.full((24, 60, 3), 40, dtype=np.uint8)
+    noise = rng.integers(-10, 11, size=empty.shape, dtype=np.int16)
+    empty = np.clip(empty.astype(np.int16) + noise, 25, 60).astype(np.uint8)
+    assert ocr.read_int(empty) is None
+
+
+def test_digit_ocr_detects_all_in_label_instead_of_digit_1() -> None:
+    """Verify V18 D4: 'All-In' text badge is detected by is_all_in_label() and not misread as stack=1."""
+    ocr = DigitOCR(threshold=0.62)
+    roi = np.full((34, 80, 3), 45, dtype=np.uint8)
+    cv2.putText(roi, "All-In", (4, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.72, (235, 235, 235), 2, cv2.LINE_AA)
+    assert ocr.is_all_in_label(roi) is True
+
+
+def test_bet_white_mask_removes_colored_chip_and_rejects_bet_gt_pot() -> None:
+    """Verify V18 D5: colored chip icon is masked out before OCR, and bet > pot is rejected by validator."""
+    from vision.pipeline import VisionPipeline
+    from state.validator import StateValidator
+    from core.contracts import TableState, PlayerState
+
+    pipe = VisionPipeline("config.json")
+    if not pipe.digit_ocr.templates:
+        pytest.skip("Digit templates not available")
+
+    # Render colored green/orange chip circle next to white "20"
+    parts: list[np.ndarray] = []
+    for ch in "20":
+        tmpl = pipe.digit_ocr.templates[int(ch)]
+        th, tw = tmpl.shape[:2]
+        resized = cv2.resize(tmpl, (max(4, int(round(tw * 20 / max(1, th)))), 20), interpolation=cv2.INTER_AREA)
+        parts.append(resized)
+        parts.append(np.zeros((20, 4), dtype=np.uint8))
+    digits_mask = np.hstack(parts)
+    roi = np.full((32, 30 + digits_mask.shape[1], 3), (60, 40, 20), dtype=np.uint8)
+    cv2.circle(roi, (14, 16), 10, (0, 180, 255), -1)  # bright colored chip
+    roi[6 : 6 + digits_mask.shape[0], 26 : 26 + digits_mask.shape[1]][digits_mask > 127] = (245, 245, 245)
+
+    masked = pipe._mask_white_bet_text(roi)
+    assert pipe.digit_ocr.read_int(masked) == 20
+
+    val = StateValidator()
+    st_bad = TableState(
+        table_id="t1", timestamp_ms=1000, prize_pool=4, small_blind=10, big_blind=20, pot=30,
+        hero_cards=["Ah", "Kd"], board_cards=[], street="PREFLOP", is_hero_turn=False, available_actions=[],
+        players={0: PlayerState(0, 760, 110), 1: PlayerState(1, 0, 0), 2: PlayerState(2, 0, 0)},
+    )
+    ok, errs = val.validate(st_bad)
+    assert ok is False
+    assert "Invalid bet exceeds pot" in errs
+
+
+def test_detect_hero_actions_purple_threshold_180() -> None:
+    """Verify V18 D2: purple_px=250 with action buttons -> True; purple_px=80 with red carpet -> False."""
+    from vision.ocr import detect_hero_actions
+
+    actions = np.full((60, 300, 3), 20, dtype=np.uint8)
+    actions[10:50, 10:80] = (30, 30, 220)   # Red FOLD
+    actions[10:50, 110:190] = (30, 200, 30)  # Green CHECK/CALL
+
+    timer_ok = np.zeros((40, 100, 3), dtype=np.uint8)
+    timer_ok[10:15, 10:60] = (200, 50, 180)  # ~250 purple pixels
+    ok1, acts1 = detect_hero_actions(actions, hero_timer_roi=timer_ok)
+    assert ok1 is True and len(acts1) >= 2
+
+    timer_low = np.zeros((40, 100, 3), dtype=np.uint8)
+    timer_low[10:12, 10:50] = (200, 50, 180)  # ~80 purple pixels (< 180)
+    ok2, acts2 = detect_hero_actions(actions, hero_timer_roi=timer_low)
+    assert ok2 is False and acts2 == []
+
+
+def test_detect_rabbit_hunting_break_blocks_preview() -> None:
+    """Verify V18 D7: white rabbit silhouette inside grey button in left half of hero_actions returns True."""
+    from vision.ocr import detect_rabbit_hunting_break
+
+    actions = np.full((60, 300, 3), 25, dtype=np.uint8)
+    # Grey button in left half (HSV S < 45, 45 <= V <= 125)
+    actions[8:52, 10:130] = (85, 80, 75)
+    # White rabbit silhouette (~20x22 px, area ~440, aspect ~0.91)
+    cv2.ellipse(actions, (70, 32), (10, 11), 0, 0, 360, (240, 240, 240), -1)
+
+    assert detect_rabbit_hunting_break(actions, is_hero_turn=False) is True
+    assert detect_rabbit_hunting_break(actions, is_hero_turn=True) is False
+
+
+
 
 
 

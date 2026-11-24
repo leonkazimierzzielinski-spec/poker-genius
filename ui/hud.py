@@ -93,6 +93,18 @@ def set_exclude_from_capture(hwnd: int, enabled: bool = True) -> None:
         pass
 
 
+def _apply_exclude_from_capture(widget: Any) -> None:
+    """Exclude a Qt overlay widget from Windows screen capture (WDA_EXCLUDEFROMCAPTURE)."""
+    if sys.platform != "win32" or widget is None:
+        return
+    try:
+        hwnd = int(widget.winId())
+        if hwnd:
+            ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 0x11)
+    except Exception:
+        pass
+
+
 class _DecisionSignalDescriptor:
     """Descriptor supporting both 2-arg (legacy) and 3-arg decision_updated emissions."""
 
@@ -480,7 +492,7 @@ class ActionBarOverlay(QWidget):
         super().showEvent(event)
         hwnd = int(self.winId()) if self.effectiveWinId() else 0
         set_click_through(hwnd, True)
-        set_exclude_from_capture(hwnd, True)
+        _apply_exclude_from_capture(self)
 
     @Slot(object)
     def on_action_bar_updated(self, data: Any) -> None:
@@ -675,7 +687,7 @@ class DebugRoiOverlay(QWidget):
         super().showEvent(event)
         hwnd = int(self.winId()) if self.effectiveWinId() else 0
         set_click_through(hwnd, True)
-        set_exclude_from_capture(hwnd, True)
+        _apply_exclude_from_capture(self)
 
     @Slot(object)
     def on_debug_overlay_updated(self, data: Any) -> None:
@@ -1914,6 +1926,7 @@ class HudOverlay(QWidget):
         super().showEvent(event)
         self._apply_lock_state()
         self._clamp_to_screen()
+        _apply_exclude_from_capture(self)
 
     def resizeEvent(self, event: Any) -> None:
         super().resizeEvent(event)

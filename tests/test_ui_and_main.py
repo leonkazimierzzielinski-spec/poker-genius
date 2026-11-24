@@ -2231,6 +2231,18 @@ def test_hud_initial_buy_in_sync(qapp) -> None:
     assert hud.buy_in == pytest.approx(0.50)
 
 
+def test_exclude_from_capture_helper_is_safe_on_all_platforms(qapp) -> None:
+    """Verify V18 D8: _apply_exclude_from_capture safely executes without raising on any platform."""
+    from unittest.mock import MagicMock
+    from ui.hud import _apply_exclude_from_capture
+
+    mock_widget = MagicMock()
+    mock_widget.winId.return_value = 12345
+    _apply_exclude_from_capture(mock_widget)
+    _apply_exclude_from_capture(None)
+
+
+
 
 
 
