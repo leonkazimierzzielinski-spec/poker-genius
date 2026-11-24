@@ -1,5 +1,23 @@
 # Poker Genius — Dziennik Postępu Prac (Progress Log)
 
+## V17.2 — Hotfix: DigitOCR pod monitory 1080p / małe okna (0.54x–0.65x) i weryfikacja ultrawide 2560×1080 (2026-11-24)
+
+### 1. Wdrożone poprawki
+1. **Poprawa rozpoznawania małych cyfr w `vision/ocr.py` (`DigitOCR`):**
+   - W `preprocess()` zmieniono powiększenie 2x z `cv2.INTER_LINEAR` na `cv2.INTER_CUBIC` dla ostrzejszych krawędzi małych cyfr z monitorów 1080p.
+   - W `_prepare_binary_image()` ograniczono `MORPH_OPEN (2×2)` wyłącznie do wycinków o wysokości `>= 55 px`, aby nie niszczyć cienkich linii w `0`, `8`, `9`.
+   - Wydzielono metodę `_match_digit_crop()`, która po `_split_wide_box()` przycina każdy wycinek do ścisłego bounding boxa niezerowych pikseli (`np.where(crop > 0)`), dodaje **2-pikselowy czarny padding** (`cv2.copyMakeBorder`) i porównuje przez `cv2.matchTemplate(..., cv2.TM_CCOEFF_NORMED)` biorąc `max_val` z całej macierzy.
+   - W `read_blinds()` dodano ochronę przed myleniem ukośnika `/` z cyfrą `7` (odrzucenie dopasowania `7`, gdy lewy górny róg wycinka jest pusty).
+2. **Wyostrzenie upscalingu stołu w `vision/pipeline.py`:**
+   - W `_warp_to_canonical()` przy powiększaniu małych okien do kanonicznego rozmiaru (`tw < CW or th < CH`) zastosowano `cv2.INTER_CUBIC` zamiast `cv2.INTER_LINEAR`.
+3. **Próg OCR w `config.json`:**
+   - Obniżono `ocr_threshold` z `0.70` na `0.62` (spójność liczbową w 100% pilnuje `StateValidator` sumą `== 900`).
+4. **Testy i weryfikacja ultrawide `2560×1080` (`tests/test_vision.py`):**
+   - Dodano test `test_digit_ocr_and_rim_on_ultrawide_2560x1080_left_and_right_scaled` weryfikujący klatki `765` i `2370` (`Nagrywanie 2026-11-18 224127.mp4`) w skalach `0.54x` (`~951×540`) i `0.65x` po lewej i prawej stronie płótna `2560×1080` (z fallbackiem syntetycznym 8 px dla CI).
+   - Pełny wynik testów: **144 passed in 4.66s (100% sukcesu)**.
+
+---
+
 ## V17.1 — Hotfix: Multi-monitor / Mixed-DPI Overlay Geometry (2026-11-24)
 
 ### 1. Wdrożone poprawki

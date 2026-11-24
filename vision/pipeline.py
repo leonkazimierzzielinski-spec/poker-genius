@@ -139,7 +139,8 @@ class VisionPipeline:
             canvas[cy1:cy2, cx1:cx2] = frame[fy1:fy2, fx1:fx2]
 
         if (tw, th) != (CW, CH):
-            return cv2.resize(canvas, (CW, CH), interpolation=cv2.INTER_LINEAR)
+            interp = cv2.INTER_CUBIC if (tw < CW or th < CH) else cv2.INTER_LINEAR
+            return cv2.resize(canvas, (CW, CH), interpolation=interp)
         return canvas
 
     def resolve_table_id(

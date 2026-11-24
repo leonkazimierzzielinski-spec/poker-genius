@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "ocr_threshold": 0.70,
+  "ocr_threshold": 0.62,
   "card_threshold": 0.9,
   "dealer_threshold": 90.0,
   "canonical_table_size": [

@@ -66,7 +66,7 @@ class DigitOCR:
             gray = roi.copy()
 
         resized = cv2.resize(
-            gray, (0, 0), fx=2.0, fy=2.0, interpolation=cv2.INTER_LINEAR
+            gray, (0, 0), fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC
         )
         _otsu_thresh, thresh = cv2.threshold(
             resized, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
@@ -92,11 +92,47 @@ class DigitOCR:
         if sum(1 for c in corners if c > 127) >= 3:
             bin_img = cv2.bitwise_not(bin_img)
 
-        # 2x2 morphological opening to disconnect touching characters (e.g. slash and digits)
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
-        bin_img = cv2.morphologyEx(bin_img, cv2.MORPH_OPEN, kernel)
+        # 2x2 morphological opening to disconnect touching characters only on larger crops
+        if bin_img.shape[0] >= 55:
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+            bin_img = cv2.morphologyEx(bin_img, cv2.MORPH_OPEN, kernel)
 
         return bin_img
+
+    def _match_digit_crop(self, crop: np.ndarray) -> tuple[int | None, float]:
+        """Trim split crop to tight non-zero bbox, resize, pad 2px, and match templates."""
+        if crop.size == 0:
+            return None, -1.0
+
+        ys, xs = np.where(crop > 0)
+        if len(ys) == 0 or len(xs) == 0:
+            return None, -1.0
+
+        y_min, y_max = int(ys.min()), int(ys.max())
+        x_min, x_max = int(xs.min()), int(xs.max())
+        trimmed = crop[y_min : y_max + 1, x_min : x_max + 1]
+        if trimmed.size == 0 or trimmed.shape[0] < 2 or trimmed.shape[1] < 1:
+            return None, -1.0
+
+        best_digit: int | None = None
+        best_score = -1.0
+
+        for d_val, tmpl in self.templates.items():
+            th, tw = tmpl.shape[:2]
+            resized_crop = cv2.resize(
+                trimmed, (tw, th), interpolation=cv2.INTER_AREA
+            )
+            padded_crop = cv2.copyMakeBorder(
+                resized_crop, 2, 2, 2, 2, cv2.BORDER_CONSTANT, value=0
+            )
+            res = cv2.matchTemplate(padded_crop, tmpl, cv2.TM_CCOEFF_NORMED)
+            _min_val, max_val, _min_loc, _max_loc = cv2.minMaxLoc(res)
+            score = float(max_val)
+            if score > best_score:
+                best_score = score
+                best_digit = d_val
+
+        return best_digit, best_score
 
     def _split_wide_box(
         self, box: tuple[int, int, int, int], bin_img: np.ndarray
@@ -159,20 +195,7 @@ class DigitOCR:
         digits: list[str] = []
         for bx, by, bw_b, bh_b in valid_boxes:
             crop = bin_img[by : by + bh_b, bx : bx + bw_b]
-            best_digit: int | None = None
-            best_score = -1.0
-
-            for d_val, tmpl in self.templates.items():
-                th, tw = tmpl.shape[:2]
-                resized_crop = cv2.resize(
-                    crop, (tw, th), interpolation=cv2.INTER_AREA
-                )
-                res = cv2.matchTemplate(resized_crop, tmpl, cv2.TM_CCOEFF_NORMED)
-                _min_val, max_val, _min_loc, _max_loc = cv2.minMaxLoc(res)
-                score = float(max_val)
-                if score > best_score:
-                    best_score = score
-                    best_digit = d_val
+            best_digit, best_score = self._match_digit_crop(crop)
 
             if best_score >= self.threshold and best_digit is not None:
                 digits.append(str(best_digit))
@@ -228,19 +251,7 @@ class DigitOCR:
         tokens: list[tuple[int, str]] = []
         for bx, by, bw_b, bh_b in valid_boxes:
             crop = bin_img[by : by + bh_b, bx : bx + bw_b]
-            best_digit: int | None = None
-            best_score = -1.0
-
-            for d_val, tmpl in self.templates.items():
-                th, tw = tmpl.shape[:2]
-                resized_crop = cv2.resize(
-                    crop, (tw, th), interpolation=cv2.INTER_AREA
-                )
-                res = cv2.matchTemplate(resized_crop, tmpl, cv2.TM_CCOEFF_NORMED)
-                score = float(cv2.minMaxLoc(res)[1])
-                if score > best_score:
-                    best_score = score
-                    best_digit = d_val
+            best_digit, best_score = self._match_digit_crop(crop)
 
             if best_score >= self.threshold and best_digit is not None:
                 tokens.append((bx, str(best_digit)))
@@ -300,20 +311,16 @@ class DigitOCR:
         recognized: list[tuple[tuple[int, int, int, int], str | None]] = []
         for bx, by, bw_b, bh_b in boxes:
             crop = bin_img[by : by + bh_b, bx : bx + bw_b]
-            best_digit: int | None = None
-            best_score = -1.0
+            best_digit, best_score = self._match_digit_crop(crop)
 
-            for d_val, tmpl in self.templates.items():
-                th, tw = tmpl.shape[:2]
-                resized_crop = cv2.resize(
-                    crop, (tw, th), interpolation=cv2.INTER_AREA
-                )
-                res = cv2.matchTemplate(resized_crop, tmpl, cv2.TM_CCOEFF_NORMED)
-                _min_val, max_val, _min_loc, _max_loc = cv2.minMaxLoc(res)
-                score = float(max_val)
-                if score > best_score:
-                    best_score = score
-                    best_digit = d_val
+            # A '/' separator in blinds can resemble '7' without a top bar; reject if top-left is empty.
+            if best_digit == 7 and best_score >= self.threshold:
+                ys, xs = np.where(crop > 0)
+                if len(ys) > 0 and len(xs) > 0:
+                    tr = crop[int(ys.min()) : int(ys.max()) + 1, int(xs.min()) : int(xs.max()) + 1]
+                    tl_mean = float(np.mean(tr[: max(1, tr.shape[0] // 4), : max(1, tr.shape[1] // 2)]))
+                    if tl_mean < 40.0:
+                        best_digit = None
 
             if best_score >= self.threshold and best_digit is not None:
                 recognized.append(((bx, by, bw_b, bh_b), str(best_digit)))

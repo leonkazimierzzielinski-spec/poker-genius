@@ -1077,6 +1077,91 @@ def test_opponents_signature_same_vs_different(tmp_path: Path) -> None:
     assert match_diff < 0.65, f"Expected low similarity for different opponents, got {match_diff}"
 
 
+def test_digit_ocr_and_rim_on_ultrawide_2560x1080_left_and_right_scaled() -> None:
+    """Verify DigitOCR and golden rim on 2560x1080 canvas at 0.54x & 0.65x (left & right), or synthetic 8px fallback."""
+    from vision.anchor import find_golden_rim, compute_table_rect_from_rim
+    from vision.pipeline import VisionPipeline
+    from state.validator import StateValidator
+
+    video_path = Path("nagrania testowe/Nagrywanie 2026-11-18 224127.mp4")
+    if video_path.exists():
+        cap = cv2.VideoCapture(str(video_path))
+        assert cap.isOpened(), f"Failed to open {video_path}"
+
+        pipe = VisionPipeline("config.json")
+        expected_by_frame = {
+            765: ((10, 20), 30, [260, 350, 260]),
+            2370: ((15, 30), 90, [260, 350, 200]),
+        }
+
+        try:
+            for fnum, (exp_blinds, exp_pot, exp_stacks) in expected_by_frame.items():
+                cap.set(cv2.CAP_PROP_POS_FRAMES, fnum)
+                ret, frame = cap.read()
+                assert ret and frame is not None, f"Could not read frame {fnum}"
+
+                for scale in (0.54, 0.65):
+                    scaled = cv2.resize(frame, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+                    sh, sw = scaled.shape[:2]
+
+                    for label, (ox, oy) in [("LEFT", (60, 180)), ("RIGHT", (1540, 120))]:
+                        canvas = np.zeros((1080, 2560, 3), dtype=np.uint8)
+                        x2 = min(2560, ox + sw)
+                        y2 = min(1080, oy + sh)
+                        canvas[oy:y2, ox:x2] = scaled[: y2 - oy, : x2 - ox]
+
+                        rim = find_golden_rim(canvas)
+                        assert rim is not None, f"Rim not detected on frame {fnum} scale={scale} {label}"
+
+                        rect = compute_table_rect_from_rim(rim, pipe.golden_rim_rel)
+                        st = pipe.process_frame(
+                            canvas,
+                            table_id=f"uw_{fnum}_{scale}_{label}",
+                            table_rect=rect,
+                            has_anchor=True,
+                        )
+                        val = StateValidator()
+                        is_val, errs = val.validate(st)
+                        assert is_val, f"Frame {fnum} scale={scale} {label} invalid: {errs}"
+                        assert (st.small_blind, st.big_blind) == exp_blinds, (
+                            f"Blinds mismatch on {fnum} {scale} {label}: {(st.small_blind, st.big_blind)}"
+                        )
+                        assert st.pot == exp_pot, f"Pot mismatch on {fnum} {scale} {label}: {st.pot}"
+                        stacks = [st.players[i].stack for i in (0, 1, 2)]
+                        assert stacks == exp_stacks, f"Stacks mismatch on {fnum} {scale} {label}: {stacks}"
+        finally:
+            cap.release()
+    else:
+        # Synthetic fallback for CI without local .mp4 recordings
+        ocr = DigitOCR(threshold=0.62)
+        if not ocr.templates:
+            pytest.skip("Digit templates not available")
+
+        def _render_synthetic(text: str, target_h: int = 8) -> np.ndarray:
+            parts: list[np.ndarray] = []
+            for ch in text:
+                if ch == "/":
+                    slash = np.zeros((20, 10), dtype=np.uint8)
+                    cv2.line(slash, (2, 18), (8, 2), 255, 2)
+                    parts.append(slash)
+                else:
+                    tmpl = ocr.templates[int(ch)]
+                    th, tw = tmpl.shape[:2]
+                    resized = cv2.resize(tmpl, (max(4, int(round(tw * 20 / max(1, th)))), 20), interpolation=cv2.INTER_AREA)
+                    parts.append(resized)
+                parts.append(np.zeros((20, 4), dtype=np.uint8))
+            full = np.hstack(parts)
+            padded = cv2.copyMakeBorder(full, 6, 6, 8, 8, cv2.BORDER_CONSTANT, value=0)
+            scale = target_h / 20.0
+            small = cv2.resize(padded, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+            return cv2.cvtColor(small, cv2.COLOR_GRAY2BGR)
+
+        assert ocr.read_int(_render_synthetic("300", 8)) == 300
+        assert ocr.read_int(_render_synthetic("280", 8)) == 280
+        assert ocr.read_blinds(_render_synthetic("10/20", 8)) == (10, 20)
+
+
+
 
 
 
