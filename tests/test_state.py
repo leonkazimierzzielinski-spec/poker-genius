@@ -1875,3 +1875,178 @@ def test_validator_self_heals_blinds_decreased_after_3_consistent_frames() -> No
 
 
 
+
+def test_tracker_no_false_check_after_hero_allin():
+    from core.contracts import PlayerState, TableState
+    from state.tracker import TableTracker
+
+    tracker = TableTracker("T1")
+    t0 = TableState(
+        table_id="T1",
+        prize_pool=1.0,
+        small_blind=10,
+        big_blind=20,
+        street="PREFLOP",
+        pot=30,
+        board_cards=[],
+        hero_cards=["Ac", "Qh"],
+        timestamp_ms=500,
+        is_hero_turn=True,
+        available_actions=["CALL", "RAISE", "FOLD"],
+        is_valid=True,
+        players={
+            0: PlayerState(seat_id=0, stack=290, current_bet=10, is_dealer=True, is_active=True),
+            1: PlayerState(seat_id=1, stack=280, current_bet=20, is_dealer=False, is_active=True),
+            2: PlayerState(seat_id=2, stack=300, current_bet=0, is_dealer=False, is_active=False, status_text="FOLDED"),
+        },
+    )
+    tracker.update(t0)
+
+    t1 = TableState(
+        table_id="T1",
+        prize_pool=1.0,
+        small_blind=10,
+        big_blind=20,
+        street="FLOP",
+        pot=300,
+        board_cards=["As", "Kd", "7c"],
+        hero_cards=["Ac", "Qh"],
+        timestamp_ms=1000,
+        is_hero_turn=True,
+        available_actions=["CHECK", "BET"],
+        is_valid=True,
+        players={
+            0: PlayerState(seat_id=0, stack=150, current_bet=0, is_dealer=True, is_active=True),
+            1: PlayerState(seat_id=1, stack=150, current_bet=0, is_dealer=False, is_active=True),
+            2: PlayerState(seat_id=2, stack=300, current_bet=0, is_dealer=False, is_active=False, status_text="FOLDED"),
+        },
+    )
+    tracker.update(t1)
+
+    # Hero goes ALL-IN (stack becomes 0)
+    t2 = TableState(
+        table_id="T1",
+        prize_pool=1.0,
+        small_blind=10,
+        big_blind=20,
+        street="FLOP",
+        pot=450,
+        board_cards=["As", "Kd", "7c"],
+        hero_cards=["Ac", "Qh"],
+        timestamp_ms=2000,
+        is_hero_turn=False,
+        available_actions=[],
+        is_valid=True,
+        players={
+            0: PlayerState(seat_id=0, stack=0, current_bet=150, is_dealer=True, is_active=True),
+            1: PlayerState(seat_id=1, stack=150, current_bet=0, is_dealer=False, is_active=True),
+            2: PlayerState(seat_id=2, stack=300, current_bet=0, is_dealer=False, is_active=False, status_text="FOLDED"),
+        },
+    )
+    tracker.update(t2)
+
+    # Next street TURN: Hero stack is 0, current_bet=0, opp current_bet=0 -> MUST NOT log CHECK
+    t3 = TableState(
+        table_id="T1",
+        prize_pool=1.0,
+        small_blind=10,
+        big_blind=20,
+        street="TURN",
+        pot=600,
+        board_cards=["As", "Kd", "7c", "2h"],
+        hero_cards=["Ac", "Qh"],
+        timestamp_ms=3000,
+        is_hero_turn=False,
+        available_actions=[],
+        is_valid=True,
+        players={
+            0: PlayerState(seat_id=0, stack=0, current_bet=0, is_dealer=True, is_active=True),
+            1: PlayerState(seat_id=1, stack=0, current_bet=0, is_dealer=False, is_active=True),
+            2: PlayerState(seat_id=2, stack=300, current_bet=0, is_dealer=False, is_active=False, status_text="FOLDED"),
+        },
+    )
+    tracker.update(t3)
+    checks_for_hero = [
+        e for e in tracker.current_hand["action_log"]
+        if e.get("seat_id") == 0 and e.get("action") == "CHECK"
+    ]
+    assert len(checks_for_hero) == 0
+
+
+def test_tracker_ignores_river_showdown_pot_sweep_bet():
+    from core.contracts import PlayerState, TableState
+    from state.tracker import TableTracker
+
+    tracker = TableTracker("T2", bet_confirm_frames=2)
+    t0 = TableState(
+        table_id="T2",
+        prize_pool=1.0,
+        small_blind=10,
+        big_blind=20,
+        street="PREFLOP",
+        pot=30,
+        board_cards=[],
+        hero_cards=["Ac", "Qh"],
+        timestamp_ms=500,
+        is_hero_turn=True,
+        available_actions=["CALL", "RAISE", "FOLD"],
+        is_valid=True,
+        players={
+            0: PlayerState(seat_id=0, stack=440, current_bet=10, is_dealer=True, is_active=True),
+            1: PlayerState(seat_id=1, stack=430, current_bet=20, is_dealer=False, is_active=True),
+            2: PlayerState(seat_id=2, stack=None, current_bet=0, is_dealer=False, is_active=False, status_text="ELIMINATED"),
+        },
+    )
+    tracker.update(t0)
+
+    t1 = TableState(
+        table_id="T2",
+        prize_pool=1.0,
+        small_blind=10,
+        big_blind=20,
+        street="RIVER",
+        pot=600,
+        board_cards=["As", "Kd", "7c", "2h", "9s"],
+        hero_cards=["Ac", "Qh"],
+        timestamp_ms=1000,
+        is_hero_turn=False,
+        available_actions=[],
+        is_valid=True,
+        players={
+            0: PlayerState(seat_id=0, stack=150, current_bet=0, is_dealer=True, is_active=True),
+            1: PlayerState(seat_id=1, stack=150, current_bet=0, is_dealer=False, is_active=True),
+            2: PlayerState(seat_id=2, stack=None, current_bet=0, is_dealer=False, is_active=False, status_text="ELIMINATED"),
+        },
+    )
+    tracker.update(t1)
+    tracker.current_hand["players"][0]["last_action"] = "ALL-IN"
+    tracker.current_hand["pot"] = 600
+
+    # Showdown pot sweep animation: opp current_bet jumps to 600 while pot=600
+    for ts in (1200, 1400):
+        t_sweep = TableState(
+            table_id="T2",
+            prize_pool=1.0,
+            small_blind=10,
+            big_blind=20,
+            street="RIVER",
+            pot=600,
+            board_cards=["As", "Kd", "7c", "2h", "9s"],
+            hero_cards=["Ac", "Qh"],
+            timestamp_ms=ts,
+            is_hero_turn=False,
+            available_actions=[],
+            is_valid=True,
+            players={
+                0: PlayerState(seat_id=0, stack=0, current_bet=0, is_dealer=True, is_active=True),
+                1: PlayerState(seat_id=1, stack=0, current_bet=600, is_dealer=False, is_active=True),
+                2: PlayerState(seat_id=2, stack=None, current_bet=0, is_dealer=False, is_active=False, status_text="ELIMINATED"),
+            },
+        )
+        tracker.update(t_sweep)
+
+    opp_bets = [
+        e for e in tracker.current_hand["action_log"]
+        if e.get("seat_id") == 1 and e.get("street") == "RIVER" and e.get("action") in ("RAISE", "ALL-IN", "BET")
+    ]
+    assert len(opp_bets) == 0

@@ -428,3 +428,67 @@ def test_build_villain_range_from_history_narrows_across_streets() -> None:
 
 
 
+
+def test_parse_node_view_handles_call_and_fold_actions():
+    from tools.run_gtopen_overnight import parse_node_view_to_categories
+
+    node_res = {
+        "player": 0,
+        "actions": [
+            {"kind": "fold", "label": "Fold", "amount": 0.0},
+            {"kind": "call", "label": "Call 1.5bb", "amount": 1.5},
+            {"kind": "allin", "label": "All-in 12.5bb", "amount": 12.5},
+        ],
+        "players": [
+            {
+                "hands": [
+                    {"combo": "AsKs", "reach": 1.0, "weight": 1.0, "strategy": [0.0, 0.3, 0.7], "evs": [0.0, 2.5, 3.1]},
+                    {"combo": "7c2d", "reach": 1.0, "weight": 1.0, "strategy": [0.9, 0.1, 0.0], "evs": [0.0, -0.5, -1.2]},
+                ]
+            }
+        ],
+    }
+    parsed = parse_node_view_to_categories(
+        node_res=node_res,
+        board_cards=["Ah", "8d", "3c"],
+        starting_pot=4.5,
+        effective_stack=12.5,
+    )
+    assert "CALL" in parsed["strategy"]
+    assert "FOLD" in parsed["strategy"]
+    assert "ALL_IN" in parsed["strategy"]
+    assert "CALL" in parsed["evs"]
+    assert parsed["CALL"] == parsed["evs"]["CALL"]
+
+
+def test_flop_db_lookup_respects_node_type_and_depth_fallback(tmp_path):
+    import json
+    from engine.flop_db import FlopDatabase
+
+    db_file = tmp_path / "test_49.json"
+    db_file.write_text(
+        json.dumps(
+            {
+                "HU_SB_vs_BB_SRP": {
+                    "AsKd7c": {
+                        "evs": {"CHECK": 1.1, "BET_30": 1.0, "ALL_IN": 0.5},
+                        "nodes": {
+                            "oop_root": {"evs": {"CHECK": 1.1, "BET_30": 1.0, "ALL_IN": 0.5}},
+                            "ip_after_check": {"evs": {"CHECK": 1.2, "BET_30": 1.8, "ALL_IN": 0.6}},
+                            "oop_vs_cbet": {"evs": {"CALL": 1.4, "FOLD": 0.0, "ALL_IN": 0.3}},
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    fdb = FlopDatabase(db_path=tmp_path / "missing.json", gtopen_path=db_file)
+    res_ip = fdb.lookup_nearest_flop(["As", "Kd", "7c"], "HU_SB_vs_BB_SRP_18BB", ["Ac", "Qh"], node_type="ip_after_check")
+    assert res_ip is not None
+    assert res_ip["BET_30"] == 1.8
+
+    res_vs_cbet = fdb.lookup_nearest_flop(["As", "Kd", "7c"], "HU_SB_vs_BB_SRP_6BB", ["Ac", "Qh"], node_type="oop_vs_cbet")
+    assert res_vs_cbet is not None
+    assert res_vs_cbet["CALL"] == 1.4
+    assert res_vs_cbet["FOLD"] == 0.0

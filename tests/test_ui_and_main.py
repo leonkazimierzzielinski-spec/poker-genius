@@ -2126,7 +2126,7 @@ def test_evaluate_candidates_hits_gtopen_flop_db_when_not_facing_bet_and_uses_ra
         big_blind=20,
         players={
             0: SimpleNamespace(seat_id=0, stack=280, current_bet=0, is_active=True),
-            1: SimpleNamespace(seat_id=1, stack=240, current_bet=40, is_active=True),
+            1: SimpleNamespace(seat_id=1, stack=200, current_bet=80, is_active=True),
             2: SimpleNamespace(seat_id=2, stack=None, is_active=False, status_text="FOLDED"),
         },
     )

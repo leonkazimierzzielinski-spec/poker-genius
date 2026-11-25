@@ -109,10 +109,15 @@ class FlopDatabase:
     def __init__(
         self,
         db_path: str | Path = "data/postflop_db/flops_1755.json",
-        gtopen_path: str | Path = "data/flop_db/gtopen_47_flops.json",
+        gtopen_path: str | Path | None = None,
     ) -> None:
         self.db_path = Path(db_path)
-        self.gtopen_path = Path(gtopen_path)
+        if gtopen_path is None:
+            p49 = Path("data/flop_db/gtopen_49_flops.json")
+            p47 = Path("data/flop_db/gtopen_47_flops.json")
+            self.gtopen_path = p49 if p49.exists() else p47
+        else:
+            self.gtopen_path = Path(gtopen_path)
         self.db: dict[str, dict] = {}
         self.gtopen_db: dict[str, dict] = {}
 
@@ -135,13 +140,15 @@ class FlopDatabase:
         board_cards: list[str],
         spot: str,
         hero_cards: list[str],
+        node_type: str | None = None,
     ) -> dict[str, float] | None:
-        """Find strategy from GTOpen 47-flop database matching exact or nearest cluster.
+        """Find strategy from GTOpen flop database matching exact or nearest cluster.
 
         Args:
             board_cards: 3 board cards (e.g. ["Ah", "7d", "2c"]).
             spot: Postflop spot name (e.g. "BTN_vs_BB_SRP", "SB_vs_BB_LIMPED").
             hero_cards: 2 hero hole cards (e.g. ["As", "Kh"]).
+            node_type: Optional node key ("oop_root", "ip_after_check", "oop_vs_cbet").
 
         Returns:
             Dictionary of candidate EVs or action frequencies (e.g. {"CHECK": 0.4, "BET_30": 0.6, "ALL_IN": 0.0})
@@ -151,6 +158,9 @@ class FlopDatabase:
             return None
 
         spot_db = self.gtopen_db.get(spot)
+        if (not spot_db or not isinstance(spot_db, dict)) and (spot.endswith("_6BB") or spot.endswith("_18BB")):
+            base_spot = spot.rsplit("_", 1)[0]
+            spot_db = self.gtopen_db.get(base_spot)
         if not spot_db or not isinstance(spot_db, dict):
             return None
 
@@ -193,6 +203,12 @@ class FlopDatabase:
         if not selected_entry or not isinstance(selected_entry, dict):
             return None
 
+        if node_type and isinstance(selected_entry.get("nodes"), dict):
+            if node_type in selected_entry["nodes"] and isinstance(selected_entry["nodes"][node_type], dict):
+                selected_entry = selected_entry["nodes"][node_type]
+            elif node_type in ("ip_after_check", "oop_vs_cbet"):
+                return None
+
         # Direct hero cards lookup (e.g. "AsKh" or "KhAs")
         h1 = f"{hero_cards[0][0].upper()}{hero_cards[0][1].lower()}"
         h2 = f"{hero_cards[1][0].upper()}{hero_cards[1][1].lower()}"
@@ -215,7 +231,7 @@ class FlopDatabase:
         if "evs" in selected_entry and isinstance(selected_entry["evs"], dict):
             return {k: float(v) for k, v in selected_entry["evs"].items()}
 
-        if any(k in selected_entry for k in ("CHECK", "BET_30", "ALL_IN")):
+        if any(k in selected_entry for k in ("CHECK", "BET_30", "ALL_IN", "CALL", "FOLD")):
             return {k: float(selected_entry[k]) for k in ("CHECK", "BET_30", "BET_MED", "ALL_IN", "CALL", "FOLD") if k in selected_entry}
 
         return None

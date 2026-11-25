@@ -451,21 +451,26 @@ class TableTracker:
                         "decision_sec": None,
                     })
                 elif max_opp <= hero_prev_bet and hero_curr_bet == hero_prev_bet:
-                    reaction_ms = max(0, state.timestamp_ms - (self.last_state_change_ms or state.timestamp_ms))
-                    dec_sec = round(reaction_ms / 1000.0, 1)
-                    p0_dict["last_action"] = "CHECK"
-                    p0_dict["last_decision_sec"] = dec_sec
-                    self.current_hand["action_log"].append({
-                        "time_str": self._format_time(state.timestamp_ms),
-                        "street": self._current_real_street,
-                        "seat_id": 0,
-                        "player_name": p0_dict["name"],
-                        "action": "CHECK",
-                        "amount": 0,
-                        "invested_total": p0_dict["invested_total"],
-                        "decision_sec": dec_sec,
-                    })
-                    self.last_state_change_ms = state.timestamp_ms
+                    hero_allin = (
+                        getattr(state.players.get(0), "stack", None) == 0
+                        or str(p0_dict.get("last_action", "")).startswith("ALL-IN")
+                    )
+                    if not hero_allin:
+                        reaction_ms = max(0, state.timestamp_ms - (self.last_state_change_ms or state.timestamp_ms))
+                        dec_sec = round(reaction_ms / 1000.0, 1)
+                        p0_dict["last_action"] = "CHECK"
+                        p0_dict["last_decision_sec"] = dec_sec
+                        self.current_hand["action_log"].append({
+                            "time_str": self._format_time(state.timestamp_ms),
+                            "street": self._current_real_street,
+                            "seat_id": 0,
+                            "player_name": p0_dict["name"],
+                            "action": "CHECK",
+                            "amount": 0,
+                            "invested_total": p0_dict["invested_total"],
+                            "decision_sec": dec_sec,
+                        })
+                        self.last_state_change_ms = state.timestamp_ms
 
         # Fold Condition A: Player explicitly folded or inactive / eliminated
         for sid in (0, 1, 2):
@@ -520,6 +525,17 @@ class TableTracker:
                     if curr_p.current_bet > p_dict["street_bet"]:
                         # Reject physically impossible bets (> pot or > 900)
                         if curr_p.current_bet > 900 or (state.pot > 0 and curr_p.current_bet > state.pot):
+                            self._pending_bets.pop(seat_id, None)
+                            continue
+                        # Reject River showdown pot sweep animations after an ALL-IN
+                        is_river = self._current_real_street == "RIVER" or len(getattr(state, "board_cards", []) or []) == 5
+                        any_allin = any(
+                            str(p.get("last_action", "")).startswith("ALL-IN")
+                            for p in self.current_hand["players"].values()
+                        )
+                        if is_river and any_allin and (
+                            curr_p.current_bet >= max(1, self.current_hand.get("pot", 0)) or state.pot == 0
+                        ):
                             self._pending_bets.pop(seat_id, None)
                             continue
 

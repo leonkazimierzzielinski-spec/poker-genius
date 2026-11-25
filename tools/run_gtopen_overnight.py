@@ -28,22 +28,31 @@ if str(ROOT_DIR) not in sys.path:
 
 from engine.range_engine import classify_combo
 GTOPEN_DIR = Path(r"C:\Users\leonk\Desktop\porjekty\gtopen")
-PROGRESS_FILE = ROOT_DIR / "data" / "flop_db" / "gtopen_progress.json"
-FLOP_47_DB_FILE = ROOT_DIR / "data" / "flop_db" / "gtopen_47_flops.json"
+PROGRESS_FILE = ROOT_DIR / "data" / "flop_db" / "gtopen_49_progress.json"
+FLOP_49_DB_FILE = ROOT_DIR / "data" / "flop_db" / "gtopen_49_flops.json"
 PREFLOP_TABLE_FILE = ROOT_DIR / "data" / "preflop_tables" / "nash_3max.json"
 PREFLOP_BACKUP_FILE = ROOT_DIR / "data" / "preflop_tables" / "nash_3max.backup.json"
 
-CANONICAL_47_FLOPS = [
-    "Ah 7d 2c", "Jh Ts 8s", "Kd Kh 4c", "As Kd Qs", "9s 8d 7c",
-    "Qd 9d 4c", "Ks 7s 2d", "Jc 8c 3c", "6h 5d 4c", "Ac Td 5s",
-    "Kh 9c 2s", "Qh Jd 8c", "8s 8d 3c", "As 5s 2d", "Td 9d 6c",
-    "Ks Js 9c", "7c 7d 7s", "Ac Qc 2s", "Kh 8d 4c", "Qc 7c 3s",
-    "Jd 6d 2c", "Ts 7s 4d", "9c 6c 3s", "8h 5d 2c", "7d 4d 2c",
-    "6c 4c 2s", "5d 3d 2c", "As Ah 8d", "Ks Kh 7d", "Qs Qh 6d",
-    "Js Jh 5d", "Ts Th 4d", "9s 9h 3d", "7s 7h 2d", "4s 4h 2d",
-    "Ac Kc Qc", "Kd Qd Jd", "Ts 9s 8s", "7s 6s 5s", "4c 3c 2c",
-    "Ah Ad Ac", "Kh Kd Ks", "Qh Qd Qs", "Jh Jd Js", "9h 9d 9s",
-    "6h 6d 6s", "3h 3d 3s",
+CANONICAL_49_FLOPS = [
+    # A-high (9)
+    "As Kd 7c", "Ah Qs 4d", "Ac Jd 8h", "As Tc 3d", "Ah 9h 2c",
+    "Ad 8d 5s", "Ac 7s 2d", "As 6h 4s", "Ah 5d 3c",
+    # K-high (8)
+    "Ks Qd 6c", "Kh Js 3d", "Kc Th 8c", "Ks 9d 4s", "Kh 8h 2d",
+    "Kd 7c 3s", "Kc 6d 2h", "Ks 5s 2c",
+    # Q-high & J-high (8)
+    "Qs Jd 5c", "Qh Ts 7d", "Qc 9h 3c", "Qs 8d 2s",
+    "Jh Tc 6d", "Js 9s 4h", "Jd 8c 3s", "Jc 7h 2d",
+    # T-high & mid connected/unconnected (8)
+    "Ts 9d 5c", "Th 8s 4d", "Tc 7h 2s", "9s 8d 6c",
+    "9h 7s 3d", "8s 7c 5h", "8d 6s 2c", "7h 6d 4s",
+    # Low boards (4)
+    "6s 5d 3c", "6h 4s 2d", "5c 4d 2s", "7s 5c 2h",
+    # Paired boards (8)
+    "As Ah 7d", "Ks Kh 5c", "Qs Qd 8s", "Js Jd 4c",
+    "Ts Th 6d", "8s 8d 3c", "5h 5d 9c", "3s 3d Kc",
+    # Monotone boards (4)
+    "As 9s 4s", "Kh Th 6h", "Qd 8d 3d", "9c 7c 4c",
 ]
 
 DRY_TEST_FLOPS = [
@@ -53,29 +62,75 @@ DRY_TEST_FLOPS = [
 ]
 
 SPOTS_CONFIG = {
+    # 1. 3-max BTN min-raise vs BB call (~10-12 BB)
     "BTN_vs_BB_SRP": {
         "starting_pot": 4.0,
         "effective_stack": 10.0,
-        "oop_range": "22+,A2s+,K2s+,Q2s+,J2s+,T2s+,92s+,82s+,72s+,62s+,52s+,42s+,32s+,A2o+,K2o+,Q2o+,J2o+,T2o+,92o+,82o+,72o+,62o+,52o+,42o+,32o",
-        "ip_range": "22+,A2s+,K2s+,Q2s+,J2s+,T2s+,92s+,82s+,72s+,62s+,52s+,42s+,32s+,A2o+,K2o+,Q2o+,J2o+,T2o+,92o+,82o+,72o+,62o+,52o+,42o+,32o",
+        "ip_range": "22+,A2s+,K2s+,Q4s+,J6s+,T6s+,96s+,86s+,75s+,65s,54s,A2o+,K7o+,Q9o+,J9o+,T9o",
+        "oop_range": "22-77,A2s-A9s,K2s-KJs,Q2s-QJs,J4s+,T5s+,95s+,85s+,74s+,64s+,53s+,43s,A2o-ATo,K5o-KJo,Q7o+,J8o+,T8o+,97o+,87o",
     },
+    # 2. 3-max SB limp vs BB check (~12-14 BB)
     "SB_vs_BB_LIMPED": {
         "starting_pot": 2.0,
         "effective_stack": 14.0,
-        "oop_range": "22+,A2s+,K2s+,Q2s+,J2s+,T2s+,92s+,82s+,72s+,62s+,52s+,42s+,32s+,A2o+,K2o+,Q2o+,J2o+,T2o+,92o+,82o+,72o+,62o+,52o+,42o+,32o",
-        "ip_range": "22+,A2s+,K2s+,Q2s+,J2s+,T2s+,92s+,82s+,72s+,62s+,52s+,42s+,32s+,A2o+,K2o+,Q2o+,J2o+,T2o+,92o+,82o+,72o+,62o+,52o+,42o+,32o",
+        "oop_range": "22-66,A2s-A7s,K2s-K9s,Q2s-Q9s,J2s-J9s,T2s-T9s,94s+,84s+,74s+,63s+,53s+,43s,A2o-A8o,K2o-K9o,Q4o-QTo,J6o-JTo,T6o+,96o+,86o+,75o+,65o",
+        "ip_range": "22-66,A2s-A6s,K2s-K8s,Q2s-Q9s,J2s-J9s,T2s-T8s,92s+,83s+,73s+,63s+,52s+,42s+,32s,A2o-A7o,K2o-K9o,Q2o-Q9o,J4o-J9o,T5o+,95o+,85o+,74o+,64o+,54o",
     },
+    # 3. 3-max SB min-raise vs BB call (~10 BB)
+    "SB_vs_BB_SRP": {
+        "starting_pot": 4.0,
+        "effective_stack": 10.0,
+        "oop_range": "55+,A5s+,K6s+,Q8s+,J8s+,T8s+,97s+,87s,76s,A7o+,K9o+,QTo+,JTo",
+        "ip_range": "22-66,A2s-A9s,K2s-KTs,Q2s-QTs,J5s+,T6s+,96s+,85s+,75s+,64s+,54s,A2o-A9o,K6o-KTo,Q8o+,J8o+,T8o+,98o",
+    },
+    # 4. BB iso-raise (2.5-3x) vs SB limp-call (~10 BB, SPR ~1.6)
+    "BB_ISO_vs_SB_LIMP": {
+        "starting_pot": 6.0,
+        "effective_stack": 10.0,
+        "oop_range": "22-66,A2s-A8s,K2s-K9s,Q4s-Q9s,J6s-J9s,T6s-T8s,96s+,86s+,75s+,65s,A2o-A8o,K7o-K9o,Q8o-QTo,J8o-JTo,T8o+",
+        "ip_range": "66+,A7s+,K8s+,Q9s+,J9s+,T9s,98s,A9o+,KTo+,QJo",
+    },
+    # 5. HU SB/BTN min-raise vs BB call (~10-12 BB)
     "HU_SB_vs_BB_SRP": {
         "starting_pot": 4.0,
         "effective_stack": 10.0,
-        "oop_range": "22+,A2s+,K2s+,Q2s+,J2s+,T2s+,92s+,82s+,72s+,62s+,52s+,42s+,32s+,A2o+,K2o+,Q2o+,J2o+,T2o+,92o+,82o+,72o+,62o+,52o+,42o+,32o",
-        "ip_range": "22+,A2s+,K2s+,Q2s+,J2s+,T2s+,92s+,82s+,72s+,62s+,52s+,42s+,32s+,A2o+,K2o+,Q2o+,J2o+,T2o+,92o+,82o+,72o+,62o+,52o+,42o+,32o",
+        "ip_range": "22+,A2s+,K2s+,Q2s+,J4s+,T5s+,95s+,85s+,75s+,64s+,54s,A2o+,K4o+,Q7o+,J8o+,T8o+,98o",
+        "oop_range": "22-77,A2s-A9s,K2s-KJs,Q2s-QTs,J2s+,T4s+,95s+,84s+,74s+,63s+,53s+,43s,A2o-A9o,K2o-KTo,Q5o+,J7o+,T7o+,97o+,86o+,76o",
     },
+    # 6. HU SB/BTN limp vs BB check (~12-14 BB)
     "HU_SB_vs_BB_LIMPED": {
         "starting_pot": 2.0,
         "effective_stack": 14.0,
-        "oop_range": "22+,A2s+,K2s+,Q2s+,J2s+,T2s+,92s+,82s+,72s+,62s+,52s+,42s+,32s+,A2o+,K2o+,Q2o+,J2o+,T2o+,92o+,82o+,72o+,62o+,52o+,42o+,32o",
-        "ip_range": "22+,A2s+,K2s+,Q2s+,J2s+,T2s+,92s+,82s+,72s+,62s+,52s+,42s+,32s+,A2o+,K2o+,Q2o+,J2o+,T2o+,92o+,82o+,72o+,62o+,52o+,42o+,32o",
+        "ip_range": "22-55,A2s-A5s,K2s-K7s,Q2s-Q8s,J2s-J8s,T2s-T8s,92s+,83s+,73s+,63s+,52s+,42s+,32s,A2o-A6o,K2o-K8o,Q2o-Q9o,J4o-J9o,T5o+,95o+,85o+,74o+,64o+,54o",
+        "oop_range": "22-55,A2s-A5s,K2s-K7s,Q2s-Q8s,J2s-J8s,T2s-T7s,92s+,82s+,72s+,62s+,52s+,42s+,32s,A2o-A6o,K2o-K8o,Q2o-Q8o,J2o-J8o,T4o+,95o+,84o+,74o+,63o+,53o+",
+    },
+    # 7. HU Shallow SRP (6 BB)
+    "HU_SB_vs_BB_SRP_6BB": {
+        "starting_pot": 4.0,
+        "effective_stack": 6.0,
+        "ip_range": "66+,A8s+,K9s+,Q9s+,J9s+,T9s,A9o+,KTo+,QJo",
+        "oop_range": "22-55,A2s-A7s,K2s-K9s,Q4s-Q9s,J6s+,T6s+,96s+,85s+,75s+,64s+,54s,A2o-A8o,K6o-K9o,Q8o-QTo,J8o+,T8o+,98o",
+    },
+    # 8. HU Shallow Limped (6 BB)
+    "HU_SB_vs_BB_LIMPED_6BB": {
+        "starting_pot": 2.0,
+        "effective_stack": 6.0,
+        "ip_range": "22-44,A2s-A4s,K2s-K6s,Q2s-Q7s,J3s-J8s,T4s-T7s,95s+,84s+,74s+,64s+,53s+,43s,A2o-A4o,K2o-K7o,Q4o-Q8o,J6o-J8o,T6o+,96o+,86o+,75o+",
+        "oop_range": "22-44,A2s-A4s,K2s-K6s,Q2s-Q7s,J2s-J7s,T2s-T7s,92s+,82s+,72s+,62s+,52s+,42s+,32s,A2o-A5o,K2o-K7o,Q2o-Q7o,J3o-J7o,T4o+,94o+,84o+,74o+,64o+,54o",
+    },
+    # 9. HU Deep SRP (18 BB)
+    "HU_SB_vs_BB_SRP_18BB": {
+        "starting_pot": 4.0,
+        "effective_stack": 18.0,
+        "ip_range": "22+,A2s+,K2s+,Q2s+,J4s+,T5s+,95s+,85s+,74s+,64s+,53s+,43s,A2o+,K4o+,Q7o+,J7o+,T8o+,98o",
+        "oop_range": "22-88,A2s-ATs,K2s-KJs,Q2s-QJs,J2s+,T4s+,94s+,84s+,74s+,63s+,53s+,43s,A2o-ATo,K2o-KJo,Q5o+,J7o+,T7o+,96o+,86o+,76o",
+    },
+    # 10. HU Deep Limped (18 BB)
+    "HU_SB_vs_BB_LIMPED_18BB": {
+        "starting_pot": 2.0,
+        "effective_stack": 18.0,
+        "ip_range": "22-55,A2s-A5s,K2s-K7s,Q2s-Q8s,J2s-J8s,T2s-T7s,92s+,83s+,73s+,62s+,52s+,42s+,32s,A2o-A6o,K2o-K8o,Q2o-Q8o,J4o-J8o,T5o+,95o+,85o+,74o+,64o+,54o",
+        "oop_range": "22-55,A2s-A5s,K2s-K7s,Q2s-Q8s,J2s-J8s,T2s-T7s,92s+,82s+,72s+,62s+,52s+,42s+,32s,A2o-A6o,K2o-K8o,Q2o-Q8o,J2o-J8o,T4o+,94o+,84o+,74o+,63o+,53o+",
     },
 }
 
@@ -213,6 +268,8 @@ def parse_node_view_to_categories(
 
         if kind == "check" or "check" in label:
             action_keys.append("CHECK")
+        elif kind == "call" or "call" in label:
+            action_keys.append("CALL")
         elif kind == "fold" or "fold" in label:
             action_keys.append("FOLD")
         elif kind == "allin" or "all-in" in label or "allin" in label or amount >= effective_stack * 0.85:
@@ -241,7 +298,11 @@ def parse_node_view_to_categories(
     if not hands:
         raise RuntimeError(f"/api/node response has 0 hands for acting player {acting_p}")
 
-    canonical_actions = ["CHECK", "BET_30", "BET_MED", "ALL_IN"]
+    ordered_canonical = ["CHECK", "BET_30", "BET_MED", "ALL_IN", "CALL", "FOLD"]
+    present_keys = set(action_keys)
+    canonical_actions = [a for a in ordered_canonical if a in present_keys]
+    if not canonical_actions:
+        canonical_actions = ["CHECK", "BET_30", "BET_MED", "ALL_IN"]
     categories = ["ROOT", "MONSTER", "STRONG", "MEDIUM", "DRAW", "AIR"]
 
     total_weights: dict[str, float] = {c: 0.0 for c in categories}
@@ -312,21 +373,18 @@ def parse_node_view_to_categories(
     output: dict[str, Any] = {
         "strategy": root_strat,
         "evs": root_ev,
-        "CHECK": root_ev["CHECK"],
-        "BET_30": root_ev["BET_30"],
-        "BET_MED": root_ev["BET_MED"],
-        "ALL_IN": root_ev["ALL_IN"],
     }
+    for a in canonical_actions:
+        output[a] = root_ev[a]
 
     for cat in ["MONSTER", "STRONG", "MEDIUM", "DRAW", "AIR"]:
-        output[cat] = {
+        cat_dict: dict[str, Any] = {
             "strategy": strat_result[cat],
             "evs": ev_result[cat],
-            "CHECK": ev_result[cat]["CHECK"],
-            "BET_30": ev_result[cat]["BET_30"],
-            "BET_MED": ev_result[cat]["BET_MED"],
-            "ALL_IN": ev_result[cat]["ALL_IN"],
         }
+        for a in canonical_actions:
+            cat_dict[a] = ev_result[cat][a]
+        output[cat] = cat_dict
 
     return output
 
@@ -336,8 +394,8 @@ def solve_flop_via_gtopen(
     spot: str,
     flop_str: str,
     config: dict[str, Any],
-    target_dgap: float = 0.005,
-    max_iter: int = 150,
+    target_dgap: float = 0.008,
+    max_iter: int = 120,
     mode: str = "overnight",
 ) -> dict[str, Any]:
     """Build spot and solve flop using GTOpen server API, extracting real per-combo CFR strategies & EVs in BB."""
@@ -394,7 +452,7 @@ def solve_flop_via_gtopen(
     # 3. Poll Status until solved or timeout
     t0 = time.perf_counter()
     expl = 0.01
-    max_solve_time = 45.0 if mode == "dry-test" else 180.0
+    max_solve_time = 45.0 if mode == "dry-test" else 90.0
     while True:
         time.sleep(1.0)
         st = http_request(f"{base_url}/api/status", method="GET", timeout=5.0)
@@ -415,23 +473,93 @@ def solve_flop_via_gtopen(
             if st and st.get("state") != "running":
                 break
 
-    # 4. Query Root Node Strategy
+    # 4. Query Root Node Strategy + IP After Check + OOP vs CBet
     node_res = http_request(f"{base_url}/api/node", method="POST", payload={"path": []}, timeout=60.0)
     if not node_res or not isinstance(node_res, dict):
         raise RuntimeError(f"/api/node returned invalid or empty response for flop {flop_str}: {node_res}")
 
     board_cards = [c.strip() for c in flop_str.split()]
-    parsed_data = parse_node_view_to_categories(
+    parsed_oop_root = parse_node_view_to_categories(
         node_res=node_res,
         board_cards=board_cards,
         starting_pot=config["starting_pot"],
         effective_stack=config["effective_stack"],
     )
 
+    nodes: dict[str, Any] = {
+        "oop_root": dict(parsed_oop_root),
+    }
+
+    # Find CHECK action index in root node
+    check_idx: int | None = None
+    for idx, act in enumerate(node_res.get("actions", [])):
+        lbl = str(act.get("label", "")).lower()
+        knd = str(act.get("kind", "")).lower()
+        if knd == "check" or "check" in lbl:
+            check_idx = idx
+            break
+
+    if check_idx is not None:
+        ip_node_res = http_request(
+            f"{base_url}/api/node",
+            method="POST",
+            payload={"path": [{"type": "action", "index": check_idx}]},
+            timeout=60.0,
+        )
+        if ip_node_res and isinstance(ip_node_res, dict) and ip_node_res.get("actions"):
+            parsed_ip = parse_node_view_to_categories(
+                node_res=ip_node_res,
+                board_cards=board_cards,
+                starting_pot=config["starting_pot"],
+                effective_stack=config["effective_stack"],
+            )
+            nodes["ip_after_check"] = parsed_ip
+
+            # Find CBet 33% (or smallest non-allin bet, else 50%) in IP node
+            cbet_idx: int | None = None
+            fallback_bet_idx: int | None = None
+            for idx, act in enumerate(ip_node_res.get("actions", [])):
+                lbl = str(act.get("label", "")).lower()
+                knd = str(act.get("kind", "")).lower()
+                amt = float(act.get("amount", 0.0))
+                if knd in ("check", "fold", "call") or "check" in lbl:
+                    continue
+                if "33%" in lbl or (config["starting_pot"] > 0 and 0 < amt <= 0.45 * config["starting_pot"]):
+                    cbet_idx = idx
+                    break
+                if fallback_bet_idx is None and knd != "allin" and "allin" not in lbl and "all-in" not in lbl:
+                    fallback_bet_idx = idx
+            if cbet_idx is None:
+                cbet_idx = fallback_bet_idx
+
+            if cbet_idx is not None:
+                oop_vs_cbet_res = http_request(
+                    f"{base_url}/api/node",
+                    method="POST",
+                    payload={
+                        "path": [
+                            {"type": "action", "index": check_idx},
+                            {"type": "action", "index": cbet_idx},
+                        ]
+                    },
+                    timeout=60.0,
+                )
+                if oop_vs_cbet_res and isinstance(oop_vs_cbet_res, dict) and oop_vs_cbet_res.get("actions"):
+                    parsed_vs_cbet = parse_node_view_to_categories(
+                        node_res=oop_vs_cbet_res,
+                        board_cards=board_cards,
+                        starting_pot=config["starting_pot"],
+                        effective_stack=config["effective_stack"],
+                    )
+                    nodes["oop_vs_cbet"] = parsed_vs_cbet
+
+    parsed_data = dict(parsed_oop_root)
+    parsed_data["nodes"] = nodes
+
     return {
         "data": parsed_data,
-        "strategy": parsed_data.get("strategy", {}),
-        "evs": parsed_data.get("evs", {}),
+        "strategy": parsed_oop_root.get("strategy", {}),
+        "evs": parsed_oop_root.get("evs", {}),
         "exploitability": expl,
     }
 
@@ -551,12 +679,12 @@ def save_progress(progress: dict[str, Any]) -> None:
 
 
 def export_flop_db(progress: dict[str, Any]) -> None:
-    """Export completed spots into data/flop_db/gtopen_47_flops.json."""
-    FLOP_47_DB_FILE.parent.mkdir(parents=True, exist_ok=True)
+    """Export completed spots into data/flop_db/gtopen_49_flops.json."""
+    FLOP_49_DB_FILE.parent.mkdir(parents=True, exist_ok=True)
     export_data: dict[str, Any] = {}
-    if FLOP_47_DB_FILE.exists():
+    if FLOP_49_DB_FILE.exists():
         try:
-            with open(FLOP_47_DB_FILE, "r", encoding="utf-8") as f:
+            with open(FLOP_49_DB_FILE, "r", encoding="utf-8") as f:
                 export_data = json.load(f)
         except Exception:
             export_data = {}
@@ -567,7 +695,7 @@ def export_flop_db(progress: dict[str, Any]) -> None:
         for flop_str, flop_info in spot_data.get("flops", {}).items():
             export_data[spot][flop_str] = flop_info.get("data", flop_info.get("strategy", {}))
 
-    with open(FLOP_47_DB_FILE, "w", encoding="utf-8") as f:
+    with open(FLOP_49_DB_FILE, "w", encoding="utf-8") as f:
         json.dump(export_data, f, indent=2)
 
 
@@ -582,7 +710,7 @@ def run_pipeline(
     mode: str = "dry-test",
     resume: bool = True,
     threads: int = 12,
-    target_dgap: float = 0.005,
+    target_dgap: float = 0.008,
     port: int = 3737,
 ) -> None:
     """Main pipeline execution."""
@@ -606,7 +734,7 @@ def run_pipeline(
         use_live_server = is_server_alive(base_url)
         print(f"Solver Engine: {'GTOpen Server (' + base_url + ')' if use_live_server else 'High-Precision Native Fallback'}")
 
-        flops_to_run = DRY_TEST_FLOPS if mode == "dry-test" else CANONICAL_47_FLOPS
+        flops_to_run = DRY_TEST_FLOPS if mode == "dry-test" else CANONICAL_49_FLOPS
         spots_to_run = ["BTN_vs_BB_SRP"] if mode == "dry-test" else list(SPOTS_CONFIG.keys())
 
         total_flops = len(spots_to_run) * len(flops_to_run)
@@ -673,11 +801,11 @@ def run_pipeline(
 
         print("=" * 80)
         avg_time = sum(flop_times) / len(flop_times) if flop_times else 0.0
-        full_overnight_est_hours = (4 * 47 * max(1.0, avg_time)) / 3600.0
+        full_overnight_est_hours = (len(SPOTS_CONFIG) * len(CANONICAL_49_FLOPS) * max(1.0, avg_time)) / 3600.0
         print(f"PIPELINE COMPLETED SUCCESSFULLY!")
         print(f"Average time per flop: {avg_time:.2f}s")
-        print(f"Estimated full overnight runtime (4x47 flops): {full_overnight_est_hours:.2f} hours")
-        print(f"Exported database: {FLOP_47_DB_FILE} ({FLOP_47_DB_FILE.stat().st_size if FLOP_47_DB_FILE.exists() else 0} bytes)")
+        print(f"Estimated full overnight runtime ({len(SPOTS_CONFIG)}x{len(CANONICAL_49_FLOPS)} flops): {full_overnight_est_hours:.2f} hours")
+        print(f"Exported database: {FLOP_49_DB_FILE} ({FLOP_49_DB_FILE.stat().st_size if FLOP_49_DB_FILE.exists() else 0} bytes)")
         print("=" * 80)
 
     finally:

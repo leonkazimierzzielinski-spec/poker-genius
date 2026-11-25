@@ -708,3 +708,175 @@ def test_decision_maker_never_folds_when_to_call_is_zero_even_if_check_missing()
 
 
 
+
+def test_determine_postflop_spot_all_10_spots():
+    from core.contracts import PlayerState, TableState
+    from main import determine_postflop_spot
+
+    # 1. 3-max BTN_vs_BB_SRP
+    st_btn = TableState(
+        table_id="T1",
+        timestamp_ms=1000,
+        prize_pool=1.0,
+        small_blind=10,
+        big_blind=20,
+        street="FLOP",
+        pot=90,
+        hero_cards=["As", "Kh"],
+        board_cards=["Ac", "7d", "2s"],
+        is_hero_turn=True,
+        available_actions=["CHECK", "BET"],
+        players={
+            0: PlayerState(seat_id=0, stack=250, is_dealer=True, is_active=True),
+            1: PlayerState(seat_id=1, stack=290, is_dealer=False, is_active=False, status_text="FOLDED"),
+            2: PlayerState(seat_id=2, stack=250, is_dealer=False, is_active=True),
+        },
+    )
+    hs_btn = {
+        "players": {0: {"eliminated": False}, 1: {"eliminated": False}, 2: {"eliminated": False}},
+        "action_log": [{"street": "PREFLOP", "seat": 0, "action": "RAISE", "amount": 40}],
+    }
+    assert determine_postflop_spot(st_btn, hs_btn) == "BTN_vs_BB_SRP"
+
+    # 2. 3-max SB_vs_BB_SRP
+    hs_sb = {
+        "players": {0: {"eliminated": False}, 1: {"eliminated": False}, 2: {"eliminated": False}},
+        "action_log": [{"street": "PREFLOP", "seat": 1, "action": "RAISE", "amount": 40}],
+    }
+    assert determine_postflop_spot(st_btn, hs_sb) == "SB_vs_BB_SRP"
+
+    # 3. 3-max BB_ISO_vs_SB_LIMP
+    hs_iso = {
+        "players": {0: {"eliminated": False}, 1: {"eliminated": False}, 2: {"eliminated": False}},
+        "action_log": [
+            {"street": "PREFLOP", "seat": 1, "action": "CALL", "amount": 20},
+            {"street": "PREFLOP", "seat": 2, "action": "RAISE", "amount": 60},
+        ],
+    }
+    assert determine_postflop_spot(st_btn, hs_iso) == "BB_ISO_vs_SB_LIMP"
+
+    # 4. HU 6BB & 18BB
+    st_hu = TableState(
+        table_id="T1",
+        timestamp_ms=1000,
+        prize_pool=1.0,
+        small_blind=10,
+        big_blind=20,
+        street="FLOP",
+        pot=90,
+        hero_cards=["As", "Kh"],
+        board_cards=["Ac", "7d", "2s"],
+        is_hero_turn=True,
+        available_actions=["CHECK", "BET"],
+        players={
+            0: PlayerState(seat_id=0, stack=120, is_dealer=True, is_active=True),
+            1: PlayerState(seat_id=1, stack=120, is_dealer=False, is_active=True),
+            2: PlayerState(seat_id=2, stack=None, is_dealer=False, is_active=False, status_text="ELIMINATED"),
+        },
+    )
+    hs_hu_srp = {
+        "players": {0: {"eliminated": False}, 1: {"eliminated": False}, 2: {"eliminated": True}},
+        "action_log": [{"street": "PREFLOP", "seat": 0, "action": "RAISE", "amount": 40}],
+    }
+    assert determine_postflop_spot(st_hu, hs_hu_srp, effective_bb=6.0) == "HU_SB_vs_BB_SRP_6BB"
+    assert determine_postflop_spot(st_hu, hs_hu_srp, effective_bb=18.0) == "HU_SB_vs_BB_SRP_18BB"
+    assert determine_postflop_spot(st_hu, hs_hu_srp, effective_bb=11.0) == "HU_SB_vs_BB_SRP"
+
+
+def test_evaluate_candidates_ip_and_oop_vs_cbet_routing():
+    from core.contracts import PlayerState, TableState
+    from main import evaluate_candidates
+
+    class DummyFlopDB:
+        def __init__(self):
+            self.calls = []
+
+        def lookup_nearest_flop(self, board_cards, spot, hero_cards, node_type=None):
+            self.calls.append((spot, node_type))
+            if node_type == "ip_after_check":
+                return {"CHECK": 1.0, "BET_30": 1.5, "ALL_IN": 0.4}
+            if node_type == "oop_vs_cbet":
+                return {"CALL": 1.3, "FOLD": 0.0, "ALL_IN": 0.2}
+            return {"CHECK": 0.8, "BET_30": 0.9, "ALL_IN": 0.1}
+
+    db = DummyFlopDB()
+    # IP not facing bet -> ip_after_check
+    st_ip = TableState(
+        table_id="T1",
+        timestamp_ms=1000,
+        prize_pool=1.0,
+        small_blind=10,
+        big_blind=20,
+        street="FLOP",
+        pot=90,
+        board_cards=["As", "Kd", "7c"],
+        hero_cards=["Ac", "Qh"],
+        is_hero_turn=True,
+        available_actions=["CHECK", "BET"],
+        players={
+            0: PlayerState(seat_id=0, stack=250, current_bet=0, is_dealer=True, is_active=True),
+            1: PlayerState(seat_id=1, stack=250, current_bet=0, is_dealer=False, is_active=True),
+            2: PlayerState(seat_id=2, stack=None, is_dealer=False, is_active=False, status_text="ELIMINATED"),
+        },
+    )
+    evs_ip, _ = evaluate_candidates(st_ip, None, db, None)
+    assert db.calls[-1][1] == "ip_after_check"
+    assert evs_ip["BET_30"] == 1.5
+
+    # OOP facing c-bet 33% -> oop_vs_cbet
+    st_oop = TableState(
+        table_id="T1",
+        timestamp_ms=1000,
+        prize_pool=1.0,
+        small_blind=10,
+        big_blind=20,
+        street="FLOP",
+        pot=90,
+        board_cards=["As", "Kd", "7c"],
+        hero_cards=["Ac", "Qh"],
+        is_hero_turn=True,
+        available_actions=["CALL", "FOLD", "RAISE"],
+        players={
+            0: PlayerState(seat_id=0, stack=250, current_bet=0, is_dealer=False, is_active=True),
+            1: PlayerState(seat_id=1, stack=220, current_bet=30, is_dealer=True, is_active=True),
+            2: PlayerState(seat_id=2, stack=None, is_dealer=False, is_active=False, status_text="ELIMINATED"),
+        },
+    )
+    evs_oop, _ = evaluate_candidates(st_oop, None, db, None)
+    assert db.calls[-1][1] == "oop_vs_cbet"
+    assert evs_oop["CALL"] == 1.3
+
+
+def test_preflop_bb_vs_mr_and_18bb_no_weak_open_shove():
+    from core.contracts import PlayerState, TableState
+    from engine.preflop_nash import PreflopNashEngine
+    from main import evaluate_candidates
+
+    engine = PreflopNashEngine("data/preflop_tables/nash_3max.json")
+    # 1. At 18 BB BTN_OPEN, Q5s / K3s / A7o must NOT be ALL_IN
+    for weak_hand in (["Qs", "5s"], ["Kd", "3d"], ["Ac", "7h"]):
+        act, _ = engine.get_action(weak_hand, 18.0, "BTN_OPEN")
+        assert act != "ALL_IN", f"{weak_hand} should not ALL_IN at 18BB BTN_OPEN, got {act}"
+
+    # 2. BB_VS_BTN_RAISE with HU min-raise 2BB routes through BB_VS_MR / HU_BB_VS_MR
+    st = TableState(
+        table_id="T1",
+        timestamp_ms=1000,
+        prize_pool=1.0,
+        small_blind=10,
+        big_blind=20,
+        street="PREFLOP",
+        pot=70,
+        hero_cards=["As", "Kd"],
+        board_cards=[],
+        is_hero_turn=True,
+        available_actions=["CALL", "FOLD", "RAISE"],
+        players={
+            0: PlayerState(seat_id=0, stack=280, current_bet=20, is_dealer=False, is_active=True),
+            1: PlayerState(seat_id=1, stack=260, current_bet=40, is_dealer=True, is_active=True),
+            2: PlayerState(seat_id=2, stack=None, is_dealer=False, is_active=False, status_text="ELIMINATED"),
+        },
+    )
+    evs, spot = evaluate_candidates(st, engine, None, None)
+    assert spot in ("BB_VS_BTN_RAISE", "BB_VS_SB_RAISE")
+    assert any(k in evs and k != "FOLD" for k in ("ALL_IN", "CALL", "MIN_RAISE"))

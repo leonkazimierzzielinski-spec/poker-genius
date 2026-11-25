@@ -296,8 +296,9 @@ def determine_preflop_spot(state: Any) -> str:
 def determine_postflop_spot(
     state: Any,
     hand_summary: dict[str, Any] | None = None,
+    effective_bb: float | None = None,
 ) -> str:
-    """Map current postflop state + hand history to one of the 4 GTOpen database spot keys."""
+    """Map current postflop state + hand history to one of the 10 GTOpen database spot keys."""
     players = getattr(state, "players", {}) or {}
     bb_val = max(1, int(getattr(state, "big_blind", 20) or 20))
     pot_val = int(getattr(state, "pot", 0) or 0)
@@ -320,23 +321,83 @@ def determine_postflop_spot(
         )
     is_hu = eliminated_count >= 1
 
-    # 2. Detect SRP (Single Raised Pot) vs LIMPED
+    # 2. Detect SRP / ISO / LIMPED and raiser position
     had_preflop_raise = False
+    raiser_seat: int | None = None
+    sb_limped = False
+    bb_raised = False
+    dealer_sid = next((sid for sid in (0, 1, 2) if sid in players and getattr(players[sid], "is_dealer", False)), None)
+    sb_sid = (dealer_sid + 1) % 3 if dealer_sid is not None else None
+    bb_sid = (dealer_sid + 2) % 3 if dealer_sid is not None else None
+
     if hand_summary and isinstance(hand_summary.get("action_log"), list):
         for entry in hand_summary["action_log"]:
-            if entry.get("street") == "PREFLOP" and entry.get("action") in ("RAISE", "ALL-IN"):
+            if entry.get("street") != "PREFLOP":
+                continue
+            act = entry.get("action")
+            seat = entry.get("seat")
+            if act == "CALL" and sb_sid is not None and seat == sb_sid and not had_preflop_raise:
+                sb_limped = True
+            if act in ("RAISE", "ALL-IN"):
                 had_preflop_raise = True
-                break
+                raiser_seat = seat
+                if bb_sid is not None and seat == bb_sid:
+                    bb_raised = True
         if not had_preflop_raise:
-            # Fallback if joined mid-hand without preflop log
             if hand_summary.get("mid_hand_join") and pot_val >= int(round(3.5 * bb_val)):
                 had_preflop_raise = True
     else:
         had_preflop_raise = pot_val >= int(round(3.5 * bb_val))
 
     if is_hu:
-        return "HU_SB_vs_BB_SRP" if had_preflop_raise else "HU_SB_vs_BB_LIMPED"
-    return "BTN_vs_BB_SRP" if had_preflop_raise else "SB_vs_BB_LIMPED"
+        base_spot = "HU_SB_vs_BB_SRP" if had_preflop_raise else "HU_SB_vs_BB_LIMPED"
+        if effective_bb is None:
+            hero_stack = getattr(players.get(0), "stack", None)
+            opp_stacks = [
+                getattr(players[sid], "stack", None)
+                for sid in (1, 2)
+                if sid in players and getattr(players[sid], "stack", None) is not None
+            ]
+            if hero_stack is not None and opp_stacks:
+                effective_bb = min(int(hero_stack), max(int(s) for s in opp_stacks)) / bb_val
+        if effective_bb is not None:
+            if effective_bb <= 7.5:
+                return f"{base_spot}_6BB"
+            if effective_bb >= 15.5:
+                return f"{base_spot}_18BB"
+        return base_spot
+
+    if sb_limped and bb_raised:
+        return "BB_ISO_vs_SB_LIMP"
+    if had_preflop_raise:
+        if sb_sid is not None and raiser_seat == sb_sid:
+            return "SB_vs_BB_SRP"
+        return "BTN_vs_BB_SRP"
+    return "SB_vs_BB_LIMPED"
+
+
+def is_hero_in_position_postflop(state: Any) -> bool:
+    """Return True when Hero (seat 0) acts last postflop (IP)."""
+    players = getattr(state, "players", {}) or {}
+    hero = players.get(0)
+    if hero is None:
+        return False
+    if getattr(hero, "is_dealer", False):
+        return True
+
+    dealer_sid = next((sid for sid in (0, 1, 2) if sid in players and getattr(players[sid], "is_dealer", False)), None)
+    if dealer_sid is None:
+        return False
+    sb_sid = (dealer_sid + 1) % 3
+    bb_sid = (dealer_sid + 2) % 3
+    active_villains = [
+        sid
+        for sid in (1, 2)
+        if sid in players
+        and getattr(players[sid], "is_active", True)
+        and getattr(players[sid], "status_text", "") not in ("FOLDED", "SIT_OUT", "ELIMINATED")
+    ]
+    return bb_sid == 0 and active_villains == [sb_sid]
 
 
 def evaluate_candidates(
@@ -422,6 +483,32 @@ def evaluate_candidates(
             )
             num_opps_in_pot = max(1, min(2, num_opps_in_pot))
 
+            if (
+                num_opps_in_pot == 1
+                and spot in ("BB_VS_BTN_RAISE", "BB_VS_SB_RAISE")
+                and max_opp_bet <= int(round(2.5 * bb_val))
+                and preflop_engine is not None
+                and hasattr(preflop_engine, "get_action")
+                and len(hero_cards) == 2
+            ):
+                eliminated_opps = sum(
+                    1
+                    for sid in (1, 2)
+                    if sid not in players
+                    or (
+                        getattr(players[sid], "stack", None) is None
+                        and not getattr(players[sid], "is_active", True)
+                    )
+                    or getattr(players[sid], "status_text", "") == "ELIMINATED"
+                )
+                mr_spot = "HU_BB_VS_MR" if eliminated_opps >= 1 else "BB_VS_MR"
+                try:
+                    mr_action, mr_ev_bb = preflop_engine.get_action(hero_cards, effective_bb, mr_spot)
+                    candidate_evs[mr_action] = float(mr_ev_bb)
+                    return candidate_evs, spot
+                except Exception:
+                    pass
+
             if mc_calc is not None and hasattr(mc_calc, "estimate_equity") and len(hero_cards) == 2:
                 try:
                     v_combos = None
@@ -492,7 +579,11 @@ def evaluate_candidates(
 
     # POSTFLOP streets (FLOP, TURN, RIVER)
     if street in ("FLOP", "TURN", "RIVER"):
-        postflop_spot = determine_postflop_spot(state, hand_summary) if street == "FLOP" else street
+        postflop_spot = (
+            determine_postflop_spot(state, hand_summary, effective_bb=effective_bb)
+            if street == "FLOP"
+            else street
+        )
         spot = postflop_spot
         candidate_evs = None
 
@@ -506,8 +597,9 @@ def evaluate_candidates(
         pot_bb = pot / bb_val
         bet30_bb = max(0.5, 0.3 * pot_bb)
         stack_bb = effective_bb
+        hero_is_ip = is_hero_in_position_postflop(state)
 
-        # 1. GTOpen 47 clusters / Flop canonical database lookup (FLOP only, and ONLY when not facing_bet)
+        # 1. GTOpen clusters / Flop canonical database lookup (FLOP only)
         if (
             street == "FLOP"
             and not facing_bet
@@ -516,8 +608,14 @@ def evaluate_candidates(
             and len(hero_cards) == 2
         ):
             if hasattr(flop_db, "lookup_nearest_flop"):
+                node_type = "ip_after_check" if hero_is_ip else "oop_root"
                 try:
-                    lookup_res = flop_db.lookup_nearest_flop(board_cards, postflop_spot, hero_cards)
+                    try:
+                        lookup_res = flop_db.lookup_nearest_flop(
+                            board_cards, postflop_spot, hero_cards, node_type=node_type
+                        )
+                    except TypeError:
+                        lookup_res = flop_db.lookup_nearest_flop(board_cards, postflop_spot, hero_cards)
                     if (
                         lookup_res is not None
                         and isinstance(lookup_res, dict)
@@ -542,6 +640,31 @@ def evaluate_candidates(
                             candidate_evs["FOLD"] = 0.0
                 except Exception:
                     candidate_evs = None
+        elif (
+            street == "FLOP"
+            and facing_bet
+            and not hero_is_ip
+            and pot_bb > 0
+            and (to_call_bb / pot_bb) <= 0.55
+            and flop_db is not None
+            and hasattr(flop_db, "lookup_nearest_flop")
+            and len(board_cards) == 3
+            and len(hero_cards) == 2
+        ):
+            try:
+                lookup_res = flop_db.lookup_nearest_flop(
+                    board_cards, postflop_spot, hero_cards, node_type="oop_vs_cbet"
+                )
+                if (
+                    lookup_res is not None
+                    and isinstance(lookup_res, dict)
+                    and any(k in lookup_res for k in ("CALL", "FOLD", "ALL_IN"))
+                ):
+                    candidate_evs = {k: float(v) for k, v in lookup_res.items()}
+                    if "FOLD" not in candidate_evs:
+                        candidate_evs["FOLD"] = 0.0
+            except Exception:
+                candidate_evs = None
 
         # 2. Range-vs-Range / Monte Carlo estimation (< 400 ms) or CALL EV computation when facing bet
         if candidate_evs is None:
