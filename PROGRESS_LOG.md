@@ -1,5 +1,32 @@
 # Poker Genius — Dziennik Postępu Prac (Progress Log)
 
+## V19 — Rozszerzenie Strategii GTOpen (10 Spotów × 49 Flopów × 3 Węzły) i Preflop 12–20 BB (`feature/v19-strategy-gtopen`, 2026-11-27)
+
+### 1. Wdrożone zmiany
+1. **Rozszerzenie solvera GTOpen (`tools/run_gtopen_overnight.py`):**
+   - Rozbudowano bazę do **49 kanonicznych flopów** (`CANONICAL_49_FLOPS`) i **10 spotów GTO** (4 × 3-max: `BTN_vs_BB_SRP`, `SB_vs_BB_SRP`, `SB_vs_BB_LIMPED`, `BB_ISO_vs_SB_LIMP`; 6 × HU w 3 głębokościach: `HU_SB_vs_BB_SRP` / `_6BB` / `_18BB`, `HU_SB_vs_BB_LIMPED` / `_6BB` / `_18BB`).
+   - Rozszerzono `parse_node_view_to_categories()` o obsługę akcji `CALL` i `FOLD` oraz dynamiczny dobór `canonical_actions`.
+   - W `solve_flop_via_gtopen()` wdrożono ekstrakcję 3 węzłów na flop (`oop_root`, `ip_after_check`, `oop_vs_cbet`) z poprawnym formatem ścieżki `[{"type": "action", "index": idx}]` oraz budżetem `max_iter=120`, `target_dgap=0.008`, `max_solve_time=90.0s`.
+   - Wygenerowano pełną bazę **`data/flop_db/gtopen_49_flops.json`** (`5,484,104` bajtów; `10` spotów × `49` flopów = `490` solve'ów, 0 `NaN`, bez nadpisywania `gtopen_47_flops.json`).
+2. **Routing `FlopDatabase` i `main.py` (`engine/flop_db.py`, `main.py`):**
+   - `FlopDatabase.__init__()` ładuje domyślnie `gtopen_49_flops.json` z automatycznym fallbackiem do `gtopen_47_flops.json`.
+   - `FlopDatabase.lookup_nearest_flop(..., node_type=None)` obsługuje węzły `oop_root`, `ip_after_check`, `oop_vs_cbet` oraz fallback po obcięciu sufiksu `_6BB`/`_18BB`.
+   - W `main.py` zaktualizowano `determine_postflop_spot()` (wszystkie 10 spotów + głębokości HU `<= 7.5 BB` / `>= 15.5 BB`), dodano `is_hero_in_position_postflop()`, a w `evaluate_candidates()` podpięto routing `ip_after_check` (IP bez beta), `oop_root` (OOP bez beta) oraz `oop_vs_cbet` (OOP przeciwko c-betowi `<= 55%` puli, z fallbackiem do `range_engine`).
+3. **Preflop 12–20 BB i obrona `BB_VS_MR` (`data/preflop_tables/nash_3max.json`, `main.py`):**
+   - Utworzono backup `data/preflop_tables/nash_3max.backup.json` i dodano poziom `"20"` w `nash_3max.json`.
+   - Przeniesiono słabe open-shove'y 15–20 BB (`Q4s-Q8s`, `K2s-K5s`, `J7s-J8s`, `T8s-T9s`, `98s`, `A6o-A9o`, `K8o-KTo`, `QTo`, `JTo`) z `ALL_IN` do `MIN_RAISE`/`FOLD` w `BTN_OPEN`, `HU_SB` i `SB_OPEN`.
+   - W `main.py` dla `BB_VS_BTN_RAISE` / `BB_VS_SB_RAISE` przeciwko min-raise `<= 2.5 BB` (1 rywal) podpięto lookup `BB_VS_MR` / `HU_BB_VS_MR` z `PreflopNashEngine`.
+4. **Kosmetyka `TableTracker` (`state/tracker.py`):**
+   - Zablokowano logowanie fałszywego `CHECK` po `ALL-IN` Hero (`stack == 0` lub `last_action == "ALL-IN"`).
+   - Odrzucono animacje zgarniania puli po `ALL-IN` na `RIVER` w śledzeniu wzrostu betów.
+
+### 2. Testy i weryfikacja
+- Dodano 7 nowych testów jednostkowych w `tests/test_engine.py`, `tests/test_strategy.py` i `tests/test_state.py`.
+- Pełny wynik `pytest -v tests/`: **173 passed in 10.44s (100% sukcesu)**.
+- Weryfikacja `python tools/verify_postflop_v17.py`: wszystkie 4 klatki testowe (`FLOP` / `TURN`, w tym `oop_vs_cbet` i `ip_after_check`) działają poprawnie z czasem odpowiedzi `< 1 ms` dla zapytań `flop_db`.
+
+---
+
 ## V18.99 — Auto-Detekcja Buy-in, Czysty HUD, Priorytet SHOVE, Zakres `BB_VS_*_RAISE` i Zakaz `FOLD` przy `to_call == 0` (2026-11-24)
 
 ### 1. Wdrożone zmiany
